@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111115"><meta name="description" content="Turn video inspiration into your next creation. Import a video, explore its scenes, add your words, and download a vertical MP4 with Pixfun.">
+<title>Pixfun — Make your next video your own.</title>
+<link rel="icon" href="/assets/images/pixfun-logo.png"><link rel="stylesheet" href="/assets/pixfun.css"><link rel="stylesheet" href="/assets/studio.css"><link rel="stylesheet" href="/assets/hero.css"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/typography.css"><link rel="stylesheet" href="/assets/sections.css"><link rel="stylesheet" href="/assets/story-layout.css"><link rel="stylesheet" href="/assets/controls.css">
+<link rel="stylesheet" href="/assets/studio-flow.css">
+<script src="/assets/motion.js" defer></script><script src="/assets/pixfun.js" defer></script>
+</head>
+<body>
+<a href="#create" class="skip">Skip to video upload</a>
+<header class="header wrap"><a class="brand" href="#" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span class="studio-context">Studio</span><nav aria-label="Main navigation"><a href="#features">Features</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav><div class="home-header-actions"><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><a class="button small primary" href="#create">Start creating</a></div><div class="studio-header-actions"><button id="backHome" class="text-button" type="button">Back to home</button></div></header>
+<main>
+<section class="hero hero-remix" aria-labelledby="heroTitle">
+<p class="eyebrow hero-label">VIDEO REMIX STUDIO</p>
+<h1 id="heroTitle">Turn your ideas into videos worth watching.</h1>
+<p class="hero-copy">Start with inspiration. Explore the scenes, add your words, and create your next video.</p>
+<div class="import-box" id="create">
+<form id="urlForm" class="url-form"><label class="sr-only" for="urlInput">YouTube video link</label><input id="urlInput" type="url" placeholder="Paste a YouTube video link" aria-describedby="importHelp" required><button class="button primary" id="analyzeBtn" type="submit">Import video</button></form>
+<div class="upload-row"><span>or</span><button id="uploadBtn" type="button" aria-describedby="importHelp">Upload a video</button><input id="fileInput" class="sr-only" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" tabindex="-1"></div>
+<p class="status" id="importStatus" role="status"></p>
+</div>
+<p class="hero-note" id="importHelp">YouTube links or local video files up to 500 MB.</p>
+
+</section>
+
+<section class="workspace wrap" id="results" hidden aria-labelledby="studioTitle">
+<div class="studio-heading"><div><p class="eyebrow purple">PIXFUN STUDIO</p><h1 id="studioTitle" tabindex="-1">Make this video yours.</h1></div><button class="button secondary" id="changeVideo" type="button">New video</button></div>
+<nav class="studio-steps" aria-label="Creation steps">
+<button type="button" data-studio-step="1" aria-current="step"><span class="step-number">1</span><span><b>Review & direction</b></span></button>
+<button type="button" data-studio-step="2" disabled><span class="step-number">2</span><span><b>Edit text</b></span></button>
+<button type="button" data-studio-step="3" disabled><span class="step-number">3</span><span><b>Export</b></span></button>
+</nav>
+<div class="studio-canvas">
+<div class="studio-controls">
+<section class="studio-panel" data-studio-panel="1" aria-labelledby="reviewTitle">
+<h2 id="reviewTitle" tabindex="-1">Review your video.</h2>
+<div id="reviewPreviewSlot">
+<div class="preview-card" id="previewCard">
+<div class="preview-bar"><span id="previewLabel">Source video</span><div class="preview-switch" id="previewSwitch" aria-label="Preview selection" hidden><button id="originalPreview" type="button" aria-pressed="true">Original</button><button id="resultPreview" type="button" aria-pressed="false" disabled>Result</button></div></div>
+<div class="preview-screen"><video id="sourceVideo" controls playsinline preload="metadata"></video><video id="outputVideo" controls playsinline preload="metadata" hidden></video></div>
+<div class="source-info" id="sourceInfo"><p id="fileName"></p><div id="metrics" class="metrics"></div></div>
+</div>
+</div>
+<div class="timeline-panel"><div class="timeline-heading"><h3>Timeline</h3><span id="segmentCount"></span></div><div class="timeline-editor" id="timelineEditor"><div class="timeline-ruler" id="timelineRuler" aria-hidden="true"></div><div class="timeline-track" id="timelineTrack"><div id="timeline" class="timeline"></div><div class="workspace-playhead" id="workspacePlayhead" aria-hidden="true"><span id="timelineCurrentTime">0:00</span><em id="timelineNow">Now · 0:00</em></div></div></div><div class="split-bar"><button id="splitBtn" class="button secondary" type="button">Create clips</button><p id="splitStatus" class="status" role="status"></p></div><div id="clipOutputs" class="clip-outputs" hidden><div class="clip-output-heading"><h4>Your clips</h4><span id="clipOutputCount"></span></div><div id="clipOutputList" class="clip-output-list"></div></div></div>
+<form class="quick-direction studio-brief-form" id="briefForm">
+<div class="quick-direction-row"><textarea id="extraBrief" aria-label="Describe your version" maxlength="5000" rows="1" placeholder="Describe what you want to change…"></textarea><button id="saveBrief" type="submit" class="button primary">Continue</button></div>
+<p id="briefStatus" class="status" role="status"></p>
+</form>
+</section>
+<section class="studio-panel" data-studio-panel="2" hidden aria-labelledby="editTitle">
+<p class="studio-kicker">STEP 02 / EDIT TEXT</p><h2 id="editTitle" tabindex="-1">Put it in your words.</h2><p class="panel-description">Write three short lines to appear over your footage.</p>
+<div id="briefSummary" class="brief-summary" hidden></div>
+<form id="textForm" class="studio-text-form" novalidate>
+<div class="field-heading"><label for="hookInput">Opening hook</label><span>First 3 seconds</span></div><input id="hookInput" maxlength="100" required placeholder="The first line worth stopping for">
+<div class="field-heading"><label for="subjectInput">Main message</label><span>Middle section</span></div><input id="subjectInput" maxlength="100" required placeholder="Your idea, product, or message">
+<div class="field-heading"><label for="ctaInput">Closing line</label><span>Last 3 seconds</span></div><input id="ctaInput" maxlength="100" required placeholder="Give your audience a next step">
+<p id="textStatus" class="status" role="status"></p>
+<div class="panel-actions"><button id="editBack" class="text-button" type="button">Back</button><button class="button primary" id="textNext" type="submit">Review export</button></div>
+</form>
+<details class="studio-details notes"><summary>Script notes</summary><label class="sr-only" for="transcriptInput">Manual script notes</label><textarea id="transcriptInput" rows="4" placeholder="Keep notes for your next edit."></textarea><button id="saveTranscript" type="button" class="button secondary">Save notes</button><p id="transcriptStatus" class="status" role="status"></p></details>
+</section>
+<section class="studio-panel" data-studio-panel="3" hidden aria-labelledby="exportTitle">
+<p class="studio-kicker">STEP 03 / EXPORT</p><h2 id="exportTitle" tabindex="-1">Bring it all together.</h2><p id="exportDescription" class="panel-description">Check your original footage and text, then create your video.</p>
+<div id="resultPreviewSlot"></div>
+<form id="renderForm" class="studio-render-form">
+<dl class="export-summary"><div><dt>Opening hook</dt><dd id="summaryHook"></dd></div><div><dt>Main message</dt><dd id="summaryMessage"></dd></div><div><dt>Closing line</dt><dd id="summaryCta"></dd></div></dl>
+<div class="export-specs"><span>MP4</span><span>9:16 · 720 × 1280</span><span>Original audio</span></div>
+<p class="scope-note">Your text will be added to a vertical crop of the original video. Saved references do not change the presenter, footage, or audio.</p>
+<div class="panel-actions review-actions"><button class="button primary" id="renderBtn" type="submit">Create video</button></div>
+</form>
+<p id="renderStatus" class="status" role="status"></p>
+<div id="outputBox" class="studio-output" hidden><div><span class="output-check" aria-hidden="true">✓</span><div><h3 id="outputTitle">Your video is ready.</h3><p id="outputDescription">Play the result above, then download your video.</p></div></div><a id="downloadLink" class="button primary" download>Download MP4</a></div>
+<button id="exportBack" class="text-button export-back" type="button">Back to edit text</button>
+</section>
+<div class="studio-bottomline"><span id="studioProgressLabel" role="status">Step 1 of 3</span></div>
+</div></div></section>
+
+<section class="story-intro wrap" id="features"><div class="section-heading"><p class="eyebrow purple">MAKE IT YOURS</p><h2>From inspiration to your next video.</h2></div></section>
+<section class="story" id="story" aria-label="Five-stage video creation demonstration">
+<div class="story-sticky">
+<div class="story-top"><span>PIXFUN STUDIO</span><span>Interactive demo</span></div>
+<div class="story-layout">
+<nav class="chapter-nav" aria-label="Demo chapters"><button type="button" data-go="0" aria-current="step"><span>01</span> Import</button><button type="button" data-go="1"><span>02</span> Analyze</button><button type="button" data-go="2"><span>03</span> Customize</button><button type="button" data-go="3"><span>04</span> Edit</button><button type="button" data-go="4"><span>05</span> Export</button></nav>
+<div class="story-copy">
+<div class="chapter active" data-chapter="0"><p class="eyebrow">01 / IMPORT</p><h2>Start with<br><span>what inspires you.</span></h2><p>Found a video you love? Paste the link or upload a file to get started.</p><div class="chapter-tags"><span>Video links</span><span>Local files</span></div></div>
+<div class="chapter" data-chapter="1"><p class="eyebrow">02 / ANALYZE</p><h2>Break it down.<br><span>Find your angle.</span></h2><p>See where each scene starts and how long it lasts. Use the structure to plan your own version.</p><div class="chapter-tags"><span>Scene detection</span><span>Segment timing</span></div></div>
+<div class="chapter" data-chapter="2"><p class="eyebrow">03 / CUSTOMIZE</p><h2>Your cast.<br><span>Your language.</span></h2><p>Set the direction: a male presenter, a black suit, a new stage, and Spanish instead of English.</p><div class="chapter-tags"><span>Footage & people</span><span>Script & language</span></div><p class="capability-note">Save your ideas now. Person replacement and translation are shown as a demo only.</p></div>
+<div class="chapter" data-chapter="3"><p class="eyebrow">04 / EDIT</p><h2>A new face.<br><span>The same idea.</span></h2><p>Preview a new presenter and a Spanish script in this demo.</p></div>
+<div class="chapter" data-chapter="4"><p class="eyebrow">05 / EXPORT</p><h2>Your version.<br><span>Ready to share.</span></h2><p>Add your words and download a vertical MP4, ready for your next post. Your original audio stays.</p><div class="chapter-tags"><span>Vertical video</span><span>MP4 export</span></div></div>
+
+</div>
+<div class="stage" id="stage" aria-label="The same video moving from original footage to a vertical composition">
+<div class="stage-grid" aria-hidden="true"></div>
+<div class="source-badge float-layer" id="sourceBadge"><span class="source-icon">▶</span><div><b>Ideas worth sharing</b><small>Conference talk · 00:32</small></div><span class="check">✓</span></div>
+<div class="media-frame" id="mediaFrame"><div class="media-toolbar"><span>Video preview</span><span id="ratioLabel">16:9</span></div><div class="media-picture"><img id="originalScene" src="/assets/images/speaker-medium.png" alt="Before: a female speaker on a violet-lit conference stage" width="1536" height="1024" fetchpriority="high"><img id="replacementScene" src="/assets/images/speaker-male-suit.png" alt="After: a male presenter in a black suit holding a microphone on a blue keynote stage" width="1536" height="1024"><span class="media-original" id="originalBadge">BEFORE</span><span class="media-original" id="replacementBadge">AFTER</span><div class="caption" id="demoCaption" lang="es"><strong>El mundo te espera.</strong></div><span class="timecode">00:08 / 00:32</span></div><div class="media-footer"><span>▶</span><div><i></i></div><span>32s</span></div></div>
+<div class="demo-timeline" id="demoTimeline"><div class="timeline-head"><span>Video track</span><span>00:00　　 00:10　　 00:20　　 00:30</span></div><div class="filmstrip"><div><img src="/assets/images/speaker-wide.png" alt="Wide shot of the stage and audience" width="1536" height="1024" loading="lazy"><span>01 · Opening</span></div><div class="is-current" aria-current="true"><img src="/assets/images/speaker-medium.png" alt="Medium shot of the speaker gesturing, matching the video preview" width="1536" height="1024" loading="lazy"><em>Now · 00:08</em><span>02 · Key idea</span></div><div><img src="/assets/images/speaker-audience.png" alt="Audience listening and taking notes" width="1536" height="1024" loading="lazy"><span>03 · Reaction</span></div><div><img src="/assets/images/speaker-close.png" alt="Close-up of the speaker delivering the closing line" width="1536" height="1024" loading="lazy"><span>04 · Closing</span></div></div><div class="audio-track" aria-hidden="true"></div><div class="playhead" id="playhead"><span>00:08</span></div><p><span class="current-dot" aria-hidden="true"></span>Scene 02 matches the preview above</p></div>
+<div class="edit-card float-layer" id="editCard"><span class="editor-kicker">ESPAÑOL / SAMPLE SCRIPT</span><div><span>01 / Hook</span><b lang="es">Cambia de perspectiva.</b></div><div class="selected"><span>02 / STORY</span><b lang="es">El mundo te espera.<i></i></b></div><div><span>03 / CTA</span><b lang="es">Empieza hoy.</b></div></div>
+<div class="brief-card float-layer" id="briefCard"><span class="editor-kicker">CREATIVE BRIEF</span><h4>Your version starts here.</h4><div class="brief-mini"><span>Person · Male presenter</span></div><div class="reference-chip"><img src="/assets/images/speaker-male-suit.png" alt="Male presenter reference preview" width="32" height="36"><span>male-presenter-suit.png</span><b>✓ Added</b></div><div class="brief-mini"><span>Language · English → Spanish</span></div><p>Male presenter. Black suit. Blue stage. Rewrite the English script in Spanish.</p><div class="brief-saved">✓ Creative brief saved</div><small>Brief preview · Person replacement and translation are not connected</small></div>
+<div class="export-card float-layer" id="exportCard"><span class="success-icon">✓</span><div><b>Your next video is ready</b><small>MP4 · 720 × 1280</small></div><span>↓</span></div>
+</div>
+</div>
+<div class="story-bottom"><span id="sceneLabel">01 — Choose a reference</span><div class="story-progress"><i id="storyProgress"></i></div></div>
+</div>
+</section>
+
+<section class="how wrap workflow-section" id="how" aria-labelledby="howTitle">
+<div class="workflow-heading section-heading">
+<p class="eyebrow purple">HOW IT WORKS</p><h2 id="howTitle">Your next video. <span>Three simple steps.</span></h2>
+<p>Start with a video. Finish with your own point of view.</p>
+</div>
+<ol class="workflow-cards">
+<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">01</span><span class="workflow-label">IMPORT</span></div><h3>Bring the inspiration.</h3><p>Paste a video link or upload footage you have permission to use.</p><div class="workflow-card-footer"><span>Video links</span><span>Local files</span></div></li>
+<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">02</span><span class="workflow-label">MAKE IT YOURS</span></div><h3>Add your perspective.</h3><p>Explore the scenes, save your ideas, and write the words your audience will see.</p><div class="workflow-card-footer"><span>Scene breakdown</span><span>Your message</span></div></li>
+<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">03</span><span class="workflow-label">EXPORT</span></div><h3>Ready for your next post.</h3><p>Preview your edit and download a vertical video with your text and original audio.</p><div class="workflow-card-footer"><span>9:16 video</span><span>MP4 download</span></div></li>
+</ol>
+</section>
+<section class="faq wrap faq-section" id="faq" aria-labelledby="faqTitle">
+<div class="faq-heading section-heading"><p class="eyebrow purple">GOOD TO KNOW</p><h2 id="faqTitle">Frequently <span>asked.</span></h2><p>The essentials before your first creation.</p></div>
+<div class="faq-list">
+<details open><summary>What can Pixfun do today?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Import a video, explore its scenes, save ideas and references, and add timed text to a vertical MP4.</p><p class="faq-limit">The before-and-after scene is a demo. AI video generation, person replacement, translation, dubbing, transcription, and automatic posting are not available yet.</p></div></details>
+<details><summary>Can I use a link or upload a file?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Both. Upload MP4, MOV, WebM, MKV, or another supported video file up to 500 MB. You can also import a YouTube or other supported video link.</p><p>Links depend on platform support, your connection, and access permissions. If a link does not work, upload a file you have permission to use.</p></div></details>
+<details><summary>Where are my videos stored?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Your videos, notes, and references stay on this computer in Pixfun’s local folder. They are not sent to third-party AI services. Importing a video link still needs an internet connection.</p></div></details>
+<details><summary>Do I need to sign up?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>No account or paid AI service is needed for the current local tools. Start with a video and create on your own computer.</p></div></details>
+<details><summary>Can I reuse someone else’s video?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Only use footage you own or have permission to use. Adding text does not change ownership. Pixfun helps you explore creative structure; it does not guarantee views or performance.</p></div></details>
+</div>
+</section>
+<section class="closing"><img class="closing-background" src="/assets/images/creator-studio-background.png" alt="" aria-hidden="true" width="2172" height="724" loading="lazy" decoding="async"><h2>Your next video starts with an idea.</h2><a class="button primary" href="#create">Start creating</a></section>
+</main>
+<footer class="footer wrap"><a href="#" class="brand" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span>© 2026 Pixfun. Make it yours.</span><span id="engineText" role="status">Connecting to your local engine…</span></footer>
+<noscript><p class="noscript">Enable JavaScript to use video imports, processing, and interactive effects.</p></noscript>
+</body></html>

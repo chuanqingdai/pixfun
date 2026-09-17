@@ -1,0 +1,6 @@
+data/uploads/*
+data/jobs/*
+data/outputs/*
+!data/uploads/.gitkeep
+!data/jobs/.gitkeep
+!data/outputs/.gitkeep

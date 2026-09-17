@@ -1,0 +1,124 @@
+/* One type scale across the landing page, demo and local editor. No remote fonts. */
+:root {
+  font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  font-size: 100%;
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+  --type-meta: .8125rem;
+  --type-label: .875rem;
+  --type-ui: .9375rem;
+  --type-body: 1rem;
+  --type-lead: 1.125rem;
+}
+body { font-size: var(--type-body); line-height: 1.6; }
+h1, h2, h3, h4 { text-wrap: balance; }
+button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
+.button, .header nav, .text-button { font-size: var(--type-ui); font-weight: 500; line-height: 1.45; letter-spacing: 0; }
+.header nav { gap: 30px; }
+.eyebrow, .hero-remix .hero-label, .story-intro .eyebrow, .how>.eyebrow, .chapter>.eyebrow {
+  font-size: .75rem; font-weight: 600; letter-spacing: .12em; line-height: 1.5;
+}
+.hero-remix h1 {
+  font-size: clamp(2.5rem, 4.4vw, 4rem);
+  font-weight: 600;
+  line-height: 1.13;
+  letter-spacing: -.035em;
+  margin-block: 18px;
+}
+.hero-remix .hero-copy { font-size: var(--type-lead); line-height: 1.65; max-width: 780px; }
+.hero-remix .url-form input { font-size: var(--type-body); line-height: 1.5; }
+.hero-remix .url-form .button, .hero-remix .upload-row button { font-size: var(--type-ui); font-weight: 500; }
+.hero-remix .hero-note { font-size: var(--type-meta); line-height: 1.65; }
+.story-intro h2, .how h2, .faq h2, .closing h2 {
+  font-size: clamp(1.875rem, 3.1vw, 2.625rem);
+  font-weight: 500; line-height: 1.2; letter-spacing: -.025em;
+}
+.story-copy .chapter h2 { font-size: clamp(1.875rem, 2.6vw, 2.375rem); font-weight: 500; line-height: 1.22; letter-spacing: -.025em; }
+.story-copy .chapter>p:not(.eyebrow) { font-size: var(--type-body); line-height: 1.7; max-width: 32ch; }
+.story-copy .chapter>p.capability-note { font-size: var(--type-meta); line-height: 1.6; }
+.story-copy, .motion-enabled .story-copy { min-height: 370px; }
+.chapter-tags span { font-size: .75rem; line-height: 1.4; }
+.chapter .button { font-size: var(--type-ui); }
+.story .chapter-nav button { font-size: var(--type-label); gap: 9px; }
+.story .chapter-nav button span { font-size: .75rem; font-variant-numeric: tabular-nums; }
+.story-top, .story-top span:last-child, .story-bottom { font-size: .75rem; line-height: 1.5; letter-spacing: .025em; }
+.stage-footnote { font-size: .75rem; line-height: 1.5; text-align: right; max-width: 100%; }
+.media-toolbar, .media-footer, .timecode, .media-original { font-size: .75rem; line-height: 1.4; }
+.media-toolbar>span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.timecode, .timeline-head, .source-info .metrics { font-variant-numeric: tabular-nums; }
+.media-original { letter-spacing: .06em; }
+.source-badge b, .export-card b { font-size: var(--type-label); font-weight: 500; }
+.source-badge small, .export-card small, .timeline-head, .demo-timeline p, .filmstrip span, .playhead span { font-size: .75rem; line-height: 1.4; }
+.timeline-head { gap: 12px; flex-wrap: wrap; }
+.timeline-head>span:last-child { white-space: normal; }
+.demo-timeline { padding: 14px; }
+.brief-card, .edit-card { width: min(290px, 68%); padding: 17px; }
+.editor-kicker, .brief-mini span, .reference-chip, .reference-chip b, .brief-card small, .edit-card>div>span, .brief-saved { font-size: .75rem; line-height: 1.5; }
+.editor-kicker { font-weight: 500; letter-spacing: .05em; }
+.brief-card h4 { font-size: 1.125rem; font-weight: 500; line-height: 1.3; letter-spacing: -.015em; margin: 10px 0 14px; }
+.brief-card p { font-size: var(--type-meta); line-height: 1.6; }
+.reference-chip { flex-wrap: wrap; }
+.reference-chip>span { flex: 1; min-width: 80px; }
+.edit-card b { font-size: var(--type-label); font-weight: 500; line-height: 1.5; }
+.caption>span { font-size: .8125rem; }
+.caption strong { font-size: clamp(.875rem, 1.2vw, 1rem); font-weight: 600; }
+.steps h3 { font-size: 1.25rem; font-weight: 500; line-height: 1.4; letter-spacing: -.015em; }
+.steps p, .faq-list details p { font-size: var(--type-body); line-height: 1.75; }
+.faq-list summary { font-size: 1.0625rem; font-weight: 500; line-height: 1.5; }
+.faq-list details p { max-width: 64ch; }
+.closing>p:last-child, .footer { font-size: var(--type-meta); line-height: 1.65; }
+.footer { flex-wrap: wrap; }
+
+/* The editor favors readable controls over miniature dashboard labels. */
+.studio-heading h1 { font-size: 2rem; font-weight: 500; line-height: 1.25; letter-spacing: -.025em; }
+.studio-panel h2 { font-size: 1.75rem; font-weight: 500; line-height: 1.3; letter-spacing: -.02em; }
+.studio-heading .eyebrow, .studio-kicker, .studio-kicker>span { font-size: .75rem; line-height: 1.6; letter-spacing: .08em; }
+.panel-description, .studio-panel input:not([type=file]), .studio-panel select, .studio-panel textarea { font-size: var(--type-body); line-height: 1.65; }
+.studio-panel label, .studio-steps b, .import-complete b, .review-guide b, .source-info>p { font-size: var(--type-ui); font-weight: 500; line-height: 1.5; }
+.studio-steps small, .step-number, .studio-header-actions>span, .source-info .metrics, .timeline-heading>span,
+.timeline-panel>p, .local-note, .studio-panel label>span, .reference-upload small, .reference-list li,
+.reference-list li span:last-child, .field-heading>span, .export-specs span, .studio-bottomline,
+.studio-bottomline span:last-child, .scope-note { font-size: .75rem; line-height: 1.65; }
+.scope-note { font-size: var(--type-meta); }
+.preview-bar>span, .preview-switch button, .workspace .timeline-heading h3, .workspace .timeline button,
+.studio-details summary, .reference-upload input, .reference-upload input::file-selector-button,
+.import-complete p, .review-guide p, .brief-summary, .studio-output p { font-size: var(--type-label); line-height: 1.65; }
+.workspace .timeline button { min-width: 120px; }
+.workspace .timeline button span { font-size: .75rem; }
+.source-info .metrics b { font-size: var(--type-body); font-weight: 500; }
+.panel-actions { flex-wrap: wrap; }
+.panel-actions .button, .panel-actions .text-button, .studio-heading .button,
+.workspace .notes .button, .studio-panel .status { font-size: var(--type-label); line-height: 1.5; }
+.review-guide h3, .studio-output h3 { font-size: var(--type-body); font-weight: 500; }
+.review-guide>div>span { font-size: .75rem; }
+.field-heading { flex-wrap: wrap; column-gap: 12px; }
+.preview-bar { flex-wrap: wrap; }
+.studio-bottomline { flex-wrap: wrap; }
+@media (min-width: 761px) and (max-width: 1100px) {
+  .story .chapter-nav button { font-size: 0; gap: 0; }
+  .brief-card, .edit-card { width: min(270px, 74%); padding: 14px; }
+}
+@media (max-width: 760px) {
+  .hero-remix h1 { font-size: clamp(2.125rem, 7.7vw, 3rem); letter-spacing: -.03em; line-height: 1.15; }
+  .hero-remix .hero-copy { font-size: var(--type-body); line-height: 1.7; }
+  .hero-remix .url-form input { width: 100%; font-size: 1rem; }
+  .hero-remix .hero-note { max-width: 330px; }
+  .header { height: auto; min-height: 72px; padding-block: 14px; flex-wrap: wrap; }
+  .header nav { font-size: var(--type-label); }
+  .home-header-actions .button, .home-header-actions .text-button, .studio-header-actions .text-button { font-size: var(--type-label); }
+  .story-intro h2, .how h2, .faq h2, .closing h2 { font-size: clamp(1.75rem, 6.5vw, 2.125rem); line-height: 1.25; }
+  .story-copy .chapter h2 { font-size: 1.875rem; }
+  .story-copy, .motion-enabled .story-copy { min-height: 0; }
+  .story-copy .chapter>p:not(.eyebrow) { max-width: none; }
+  .story-bottom { flex-wrap: wrap; }
+  .story-bottom>span { white-space: normal; }
+  .brief-card, .edit-card { width: min(290px, 90%); }
+  .studio-heading { align-items: flex-start; flex-wrap: wrap; }
+  .studio-heading h1 { font-size: 1.625rem; }
+  .studio-panel h2 { font-size: 1.5rem; }
+  .studio-steps>button { flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; min-width: 0; }
+  .studio-steps b { font-size: var(--type-label); overflow-wrap: anywhere; }
+  .studio-panel { padding: 22px; }
+  .panel-actions .button { flex-grow: 1; }
+  .studio-mode .header { height: auto; min-height: 66px; }
+}

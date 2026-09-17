@@ -1,0 +1,122 @@
+/* Reference-led hero. Scoped to avoid changing the local workspace layout. */
+body:not(.studio-mode) .header {
+  max-width: none;
+  padding-inline: max(32px, calc((100vw - 1152px) / 2));
+  background: #050505;
+  color: #dedde1;
+  border-bottom: 0;
+}
+body:not(.studio-mode) .header .text-button { color: #ccc6db; }
+body:not(.studio-mode) .header nav a:hover { color: #b8a3ff; }
+.hero.hero-remix {
+  background: #050505;
+  color: #fafafa;
+  padding: 48px 32px 64px;
+  overflow: visible;
+}
+.hero-remix .hero-label {
+  color: #e8e7eb;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .035em;
+}
+.hero-remix h1 {
+  max-width: 1320px;
+  margin: 13px auto 16px;
+  font-size: clamp(38px, 4.25vw, 62px);
+  font-weight: 650;
+  letter-spacing: -.045em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+.hero-remix .hero-copy {
+  max-width: 900px;
+  margin-inline: auto;
+  color: #a5a3a9;
+  font-size: 18px;
+  line-height: 1.6;
+}
+.hero-remix .import-box {
+  display: grid;
+  grid-template-columns: minmax(0, 500px) auto;
+  align-items: center;
+  column-gap: 14px;
+  width: 100%;
+  max-width: 696px;
+  margin: 46px auto 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 36px;
+  box-shadow: none;
+}
+.hero-remix .import-box:focus-within { box-shadow: none; }
+.hero-remix .import-box.dragging { outline: 2px dashed var(--accent); outline-offset: 12px; }
+.hero-remix .url-form {
+  min-width: 0;
+  gap: 12px;
+  padding: 6px;
+  border: 1px solid #303033;
+  border-radius: 36px;
+  background: #29292c;
+  transition: border-color .2s, box-shadow .2s;
+}
+.hero-remix .url-form:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px #7856ff30;
+}
+.hero-remix .url-form input {
+  color: #fff;
+  padding: 13px 0 13px 19px;
+  font-size: 16px;
+  line-height: 1.5;
+  outline-offset: -2px;
+  border-radius: 26px;
+}
+.hero-remix .url-form input::placeholder { color: #b3b0b8; }
+.hero-remix .url-form .button {
+  min-height: 54px;
+  padding: 14px 25px;
+  border-radius: 30px;
+  background: #fafafa;
+  color: #141217;
+  font-size: 16px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.hero-remix .url-form .button:hover { background: #ece6ff; transform: none; }
+.hero-remix .upload-row { padding: 0; gap: 14px; border: 0; color: #b6b3bd; font-size: 14px; }
+.hero-remix .upload-row button {
+  min-height: 68px;
+  padding: 17px 26px;
+  border: 1px solid #333136;
+  border-radius: 36px;
+  background: transparent;
+  color: #f6f5f8;
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background .2s, border-color .2s;
+}
+.hero-remix .upload-row button:hover { background: #16131d; border-color: var(--accent); }
+.hero-remix .status { grid-column: 1 / -1; color: #d4c8fc; margin: 16px 4px 0; padding: 0; font-size: 14px; line-height: 1.6; }
+.hero-remix .status:empty { display: none; }
+.hero-remix .status.error { color: #ffadb6; }
+.hero-remix .hero-note { margin-top: 17px; color: #929098; font-size: 12px; line-height: 1.7; }
+@media (max-width: 760px) {
+  body:not(.studio-mode) .header { padding-inline: 20px; gap: 16px; }
+  .hero.hero-remix { padding: 38px 22px 45px; }
+  .hero-remix .hero-label { font-size: 12px; }
+  .hero-remix h1 { max-width: 580px; margin: 15px auto 18px; font-size: clamp(36px, 7.7vw, 52px); line-height: 1.12; }
+  .hero-remix .hero-copy { max-width: 440px; font-size: 16px; }
+  .hero-remix .import-box { margin-top: 30px; max-width: 500px; grid-template-columns: minmax(0, 1fr); row-gap: 15px; }
+  .hero-remix .url-form { gap: 6px; padding: 5px; }
+  .hero-remix .url-form input { padding-left: 11px; font-size: 14px; }
+  .hero-remix .url-form .button { min-height: 49px; padding: 12px 17px; font-size: 14px; }
+  .hero-remix .upload-row button { min-height: 48px; padding: 12px 24px; font-size: 14px; }
+  .hero-remix .hero-note { max-width: 300px; margin-inline: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-remix .url-form, .hero-remix .upload-row button { transition: none; }
+}

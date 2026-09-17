@@ -1,0 +1,56 @@
+/* Shared action styles, with no decorative trailing arrows. */
+:root { --control-radius: 12px; --control-height: 48px; --control-padding: 22px; }
+.button, .header .button, .story .chapter .button, .studio-heading .button,
+.panel-actions .button, .workspace .notes .button, .studio-output .button,
+.hero-remix .url-form .button, .hero-remix .upload-row button {
+  min-height: var(--control-height);
+  padding: 12px var(--control-padding);
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  font-size: .9375rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  gap: 8px;
+  text-align: center;
+  box-shadow: none;
+  transition: background-color .16s, border-color .16s, color .16s, box-shadow .16s;
+}
+.button.primary, .hero-remix .url-form .button.primary {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: #fff;
+}
+.button.primary:hover, .hero-remix .url-form .button.primary:hover {
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
+  box-shadow: 0 3px 14px #7856ff24;
+}
+.button.secondary, .studio-heading .button.secondary, .hero-remix .upload-row button {
+  background: #17151d;
+  border-color: #41394d;
+  color: #e6deee;
+}
+.button.secondary:hover, .studio-heading .button.secondary:hover, .hero-remix .upload-row button:hover {
+  background: #241e30;
+  border-color: #6b528f;
+  color: #fff;
+}
+.button:hover, .button:active, .hero-remix .url-form .button:hover { transform: none; }
+.button.primary:active, .hero-remix .url-form .button.primary:active { background: #5d38da; border-color: #5d38da; box-shadow: none; }
+.button:focus-visible, .hero-remix .upload-row button:focus-visible, .text-button:focus-visible { outline: 2px solid #c9b7ff; outline-offset: 4px; }
+.button:disabled, .button:disabled:hover, .hero-remix .upload-row button:disabled:hover { opacity: .5; box-shadow: none; transform: none; cursor: wait; }
+.button.primary:disabled:hover, .hero-remix .url-form .button.primary:disabled:hover { background: var(--purple); border-color: var(--purple); box-shadow: none; }
+.header .button, .studio-heading .button, .workspace .notes .button { min-height: 44px; padding: 10px 20px; font-size: .875rem; }
+.hero-remix .url-form { border-radius: 18px; }
+.hero-remix .url-form input { border-radius: 10px; }
+.hero-remix .upload-row button { min-height: 62px; padding-inline: 24px; border-radius: 18px; }
+.text-button { border-radius: 8px; min-height: 44px; font-weight: 500; transition: color .16s; }
+.panel-actions .text-button:hover, .text-button:hover { color: var(--accent); }
+@media (max-width: 760px) {
+  .header .button { padding-inline: 16px; }
+  .hero-remix .upload-row button { min-height: 48px; border-radius: var(--control-radius); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .button, .hero-remix .url-form .button, .hero-remix .upload-row button, .text-button { transition: none; }
+}
