@@ -127,8 +127,6 @@ h2{font-size:42px;line-height:1.4;letter-spacing:-1.5px}
 .export-card>span:last-child{margin-left:15px}
 .stage-footnote{position:absolute;bottom:4px;right:8px;color:#6b6276;font-size:9px}
 .story-bottom{padding-top:18px;border-top:1px solid #ffffff10;letter-spacing:0}
-.story-progress{height:2px;background:#342c3e;flex:1;max-width:280px}
-.story-progress i{height:100%;width:100%;background:var(--accent);display:block;transform:scaleX(0);transform-origin:left}
 .story-bottom>span{white-space:nowrap}
 .story-bottom>span:last-child{font-size:9px;letter-spacing:1.2px}
 .story.motion-enabled{height:440vh;min-height:2600px}
@@ -307,7 +305,6 @@ h2{font-size:42px;line-height:1.4;letter-spacing:-1.5px}
 .source-badge small{font-size:9px}
 .story-bottom{font-size:9px}
 .story-bottom>span:last-child{display:none}
-.story-progress{max-width:100px}
 .stage-footnote{font-size:8px;bottom:10px}
 .how{padding-top:68px;padding-bottom:60px}
 .how h2{font-size:31px}
@@ -437,7 +434,6 @@ h2{font-size:42px;line-height:1.4;letter-spacing:-1.5px}
 .stage-footnote { font-size: 10px; color: #857391; }
 .story-bottom { padding-top: 17px; border-color: #ffffff0c; font-size: 11px; color: #9581a6; }
 .story-bottom>span:first-child { min-width: 0; }
-.story-progress { max-width: 180px; height: 2px; }
 .how { padding-top: 84px; padding-bottom: 80px; }
 .how h2 { font-size: 36px; font-weight: 620; letter-spacing: -1.3px; }
 .how>.eyebrow { font-size: 10px; color: #9a87bf; }

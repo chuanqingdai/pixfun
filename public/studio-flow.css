@@ -154,15 +154,15 @@
   bottom: 16px;
   margin-top: 24px;
   padding: 8px;
-  border: 1px solid #302a37;
+  border: 1px solid #4a3c58;
   border-radius: 14px;
-  background: #141117ed;
-  box-shadow: 0 16px 42px #0007;
+  background: linear-gradient(145deg, #211a29f5, #18131ff5);
+  box-shadow: 0 18px 48px #0008, inset 0 1px #ffffff0a;
   backdrop-filter: blur(18px);
 }
 .workspace .quick-direction-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
-.workspace .quick-direction textarea { min-height: 50px; max-height: 120px; margin: 0; padding: 13px 14px; resize: vertical; border-radius: 10px; background: #0d0b10; line-height: 1.5; }
-.workspace .quick-direction .button { min-width: 112px; min-height: 50px; }
+.workspace .quick-direction textarea { min-height: 50px; max-height: 120px; margin: 0; padding: 13px 14px; resize: vertical; border: 1px solid #40344b; border-radius: 10px; background: #100d14; line-height: 1.5; }
+.workspace .quick-direction .button { min-width: 156px; min-height: 50px; }
 .workspace .quick-direction .status { margin: 8px 4px 0; }
 .workspace .quick-direction .status:empty { display: none; }
 .workspace .panel-actions { margin-top: 28px; padding-top: 20px; gap: 16px; }

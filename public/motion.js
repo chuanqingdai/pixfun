@@ -65,20 +65,19 @@ if (typeof document !== "undefined") (() => {
   const chapters = [...document.querySelectorAll("[data-chapter]")];
   const navigation = [...document.querySelectorAll("[data-go]")];
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  const desktop = matchMedia("(min-width: 1000px) and (min-height: 800px)");
-  const labels = ["01 — Import", "02 — Analyze", "03 — Customize", "04 — Edit", "05 — Export"];
-  const layers = Object.fromEntries(["sourceBadge", "demoTimeline", "briefCard", "editCard", "exportCard", "demoCaption", "originalBadge", "playhead", "ratioLabel", "storyProgress", "sceneLabel"].map(id => [id, document.getElementById(id)]));
-  let enabled = false, scheduled = false, start = 0, distance = 1, width = 1, height = 1, chapter = -1;
+  // Keep the pinned story available in normal MacBook browser windows. The
+  // previous 800px height gate disabled it on common 13–14 inch displays.
+  const desktop = matchMedia("(min-width: 900px) and (min-height: 650px)");
+  const labels = ["01 — Reference", "02 — Deconstruct", "03 — Replace", "04 — Rebuild", "05 — Export"];
+  const layers = Object.fromEntries(["sourceBadge", "demoTimeline", "briefCard", "editCard", "exportCard", "demoCaption", "originalBadge", "playhead", "ratioLabel", "sceneLabel"].map(id => [id, document.getElementById(id)]));
+  let enabled = false, scheduled = false, start = 0, distance = 1, width = 1, height = 1, chapter = -1, staticChapter = 0;
   function opacity(element, amount, shift = 22) {
     element.style.opacity = amount;
     element.style.visibility = amount > 0 ? "visible" : "hidden";
     element.setAttribute("aria-hidden", String(amount <= 0));
     element.style.transform = `translate3d(0,${(1 - amount) * shift}px,0)`;
   }
-  function draw() {
-    scheduled = false;
-    if (!enabled) return;
-    const p = clamp01((scrollY - start) / distance);
+  function render(p) {
     const s = sceneState(p);
     const geometry = sceneGeometry(p, width, height);
     frame.style.width = `${geometry.width}px`;
@@ -103,7 +102,6 @@ if (typeof document !== "undefined") (() => {
     // matching second clip instead of drifting onto a different thumbnail.
     layers.playhead.style.left = "25%";
     layers.ratioLabel.textContent = s.finish > .5 ? "9:16" : "16:9";
-    layers.storyProgress.style.transform = `scaleX(${p})`;
     if (chapter !== s.chapter) {
       chapter = s.chapter;
       chapters.forEach((element, i) => {
@@ -114,6 +112,11 @@ if (typeof document !== "undefined") (() => {
       navigation.forEach((button, i) => i === chapter ? button.setAttribute("aria-current", "step") : button.removeAttribute("aria-current"));
       layers.sceneLabel.textContent = labels[chapter];
     }
+  }
+  function draw() {
+    scheduled = false;
+    if (!enabled) return;
+    render(clamp01((scrollY - start) / distance));
   }
   function schedule() { if (enabled && !scheduled) { scheduled = true; requestAnimationFrame(draw); } }
   function measure() {
@@ -133,18 +136,24 @@ if (typeof document !== "undefined") (() => {
       frame.removeAttribute("style");
       replacementScene.removeAttribute("style");
       replacementBadge.removeAttribute("style");
-      replacementBadge.removeAttribute("aria-hidden");
       originalScene.removeAttribute("aria-hidden");
       replacementScene.removeAttribute("aria-hidden");
       Object.values(layers).forEach(element => { element.removeAttribute("style"); element.removeAttribute("aria-hidden"); });
-      chapters.forEach(element => { element.removeAttribute("aria-hidden"); element.inert = false; });
-      layers.sceneLabel.textContent = "From inspiration to your creation";
-      layers.ratioLabel.textContent = "16:9";
+      width = stage.clientWidth; height = stage.clientHeight;
+      // Reduced-motion and compact windows keep the same five-step story as
+      // an explicit, click-driven demo instead of exposing every layer at once.
+      render(staticChapter / 4);
     }
   }
   navigation.forEach(button => button.addEventListener("click", () => {
-    if (!enabled) return;
-    scrollTo({ top: start + distance * Number(button.dataset.go) / 4, behavior: "smooth" });
+    const target = Number(button.dataset.go);
+    if (enabled) scrollTo({ top: start + distance * target / 4, behavior: "smooth" });
+    else {
+      staticChapter = target;
+      chapter = -1;
+      width = stage.clientWidth; height = stage.clientHeight;
+      render(staticChapter / 4);
+    }
   }));
   addEventListener("scroll", schedule, { passive: true });
   addEventListener("resize", measure, { passive: true });

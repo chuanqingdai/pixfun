@@ -30,6 +30,7 @@ assert.match(html, /id="workspacePlayhead"/, 'Review includes a synchronized pla
 assert.match(html, /id="timelineEditor"/, 'Timeline can follow the playhead in a narrow viewport');
 assert.match(html, /id="splitBtn"/, 'Review can render detected segments as separate MP4 clips');
 assert.match(html, /class="quick-direction studio-brief-form" id="briefForm"/, 'Review includes the merged direction composer');
+assert.match(html, />Continue to script<\/button>/, 'Direction action clearly names the next step');
 assert.equal((html.match(/data-studio-step=/g) || []).length, 3, 'Studio has three progressive steps');
 const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => [id, new Element(id)]));
 const steps = [1, 2, 3].map(n => { const e = new Element(); e.dataset.studioStep = String(n); return e; });

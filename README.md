@@ -1,6 +1,6 @@
 # Pixfun — Local video studio
 
-An English-language landing page and local video workspace. The five-stage scroll story covers import, analysis, creative requirements, script editing, and export.
+An English-language landing page and local video workspace for turning a reference edit into a reusable creative blueprint. The five-stage story covers reference selection, structural deconstruction, asset replacement planning, rebuilding, and export while clearly separating the product vision from the current prototype.
 
 ## Run on this Mac
 

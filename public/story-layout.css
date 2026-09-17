@@ -38,6 +38,7 @@
 .story .story-copy .chapter>p:not(.eyebrow) { margin: 12px auto 0; max-width: 670px; line-height: 1.6; }
 .story .chapter-tags { display: inline-flex; vertical-align: middle; justify-content: center; margin-top: 12px; }
 .story.motion-enabled .chapter-tags { display: none; }
+.story.motion-enabled .capability-note { display: none; }
 .story .chapter .button { margin: 12px 0 0 12px; vertical-align: middle; }
 .story .story-copy .chapter>p.capability-note { max-width: 680px; margin-top: 8px; }
 .story .stage, .story.motion-enabled .stage {
@@ -64,7 +65,7 @@
 .story.motion-enabled .story-copy .chapter h2 { font-size: clamp(1.875rem, 2.7vw, 2.375rem); }
 .story .story-top { padding-bottom: 12px; }
 .story .story-top, .story .story-bottom { flex-shrink: 0; }
-.story .story-bottom { padding-top: 12px; margin-top: 12px; }
+.story .story-bottom { padding-top: 12px; margin-top: 12px; justify-content: flex-start; }
 .story .stage-grid { inset: 0; }
 .story .source-badge { top: 8px; left: 50%; translate: -50% 0; white-space: nowrap; }
 .story .brief-card, .story .edit-card {
@@ -139,26 +140,32 @@
 .story .export-card { left: 18px; bottom: 46px; max-width: calc(100% - 36px); }
 .story .stage-footnote { bottom: 5px; right: 12px; }
 
-/* Keep the complete narrative accessible without a pinned or animated viewport. */
+/* Compact and reduced-motion fallback: one explicit step at a time. */
 .story:not(.motion-enabled) .story-layout {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "copy" "media";
-  grid-template-rows: auto auto;
-  row-gap: 28px;
+  grid-template-columns: 108px minmax(0, 1fr);
+  grid-template-areas: "copy copy" "rail media";
+  grid-template-rows: auto minmax(400px, 1fr);
+  row-gap: 12px;
 }
-.story:not(.motion-enabled) .chapter-nav { display: none; }
-.story:not(.motion-enabled) .story-copy { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; text-align: left; }
-.story:not(.motion-enabled) .chapter { margin: 0; padding: 0 0 22px; border-bottom: 1px solid var(--line); }
-.story:not(.motion-enabled) .chapter:last-child { grid-column: 1 / -1; }
-.story:not(.motion-enabled) .chapter-tags { justify-content: flex-start; }
+.story:not(.motion-enabled) .chapter-nav { display: flex; }
+.story:not(.motion-enabled) .story-copy { display: grid; text-align: center; }
+.story:not(.motion-enabled) .chapter { display: none !important; margin: 0; padding: 0; border: 0; }
+.story:not(.motion-enabled) .chapter.active { display: block !important; }
 .story:not(.motion-enabled) .stage { height: clamp(350px, 44vw, 500px); min-height: 350px; }
-.story:not(.motion-enabled) .media-frame { width: min(760px, 94%); height: calc(100% - 110px); top: 54%; transform: translate(-50%, -50%); }
-.story:not(.motion-enabled) .source-badge { display: none; }
-.story:not(.motion-enabled) .brief-card, .story:not(.motion-enabled) .edit-card,
-.story:not(.motion-enabled) .export-card, .story:not(.motion-enabled) .demo-timeline { display: none; }
 @media (max-width: 760px) {
-  .story:not(.motion-enabled) .story-copy { grid-template-columns: minmax(0, 1fr); gap: 22px; }
-  .story:not(.motion-enabled) .chapter:last-child { grid-column: auto; }
+  .story:not(.motion-enabled) .story-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "copy" "rail" "media";
+    grid-template-rows: auto auto minmax(350px, 1fr);
+    row-gap: 16px;
+  }
+  .story:not(.motion-enabled) .chapter-nav {
+    width: 100%; flex-direction: row; justify-content: space-between;
+    overflow-x: auto; margin-top: 0;
+  }
+  .story:not(.motion-enabled) .chapter-nav:before { display: none; }
+  .story:not(.motion-enabled) .chapter-nav button { justify-content: center; min-width: 44px; font-size: 0; }
+  .story:not(.motion-enabled) .chapter-nav button span { font-size: 10px; }
   .story .story-copy .chapter h2 { font-size: 1.75rem; }
   .story .story-copy .chapter>p:not(.eyebrow) { margin-left: 0; margin-right: 0; }
   .story .stage-footnote { right: 0; left: 0; text-align: center; }

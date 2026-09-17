@@ -2,27 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#111115"><meta name="description" content="Turn video inspiration into your next creation. Import a video, explore its scenes, add your words, and download a vertical MP4 with Pixfun.">
-<title>Pixfun — Make your next video your own.</title>
+<meta name="theme-color" content="#111115"><meta name="description" content="Turn a reference video into a reusable creative blueprint. Study the structure, replace the ingredients, and rebuild the format with your own story in Pixfun.">
+<title>Pixfun — Turn video strategy into your next original.</title>
 <link rel="icon" href="/assets/images/pixfun-logo.png"><link rel="stylesheet" href="/assets/pixfun.css"><link rel="stylesheet" href="/assets/studio.css"><link rel="stylesheet" href="/assets/hero.css"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/typography.css"><link rel="stylesheet" href="/assets/sections.css"><link rel="stylesheet" href="/assets/story-layout.css"><link rel="stylesheet" href="/assets/controls.css">
 <link rel="stylesheet" href="/assets/studio-flow.css">
 <script src="/assets/motion.js" defer></script><script src="/assets/pixfun.js" defer></script>
 </head>
 <body>
 <a href="#create" class="skip">Skip to video upload</a>
-<header class="header wrap"><a class="brand" href="#" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span class="studio-context">Studio</span><nav aria-label="Main navigation"><a href="#features">Features</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav><div class="home-header-actions"><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><a class="button small primary" href="#create">Start creating</a></div><div class="studio-header-actions"><button id="backHome" class="text-button" type="button">Back to home</button></div></header>
+<header class="header wrap"><a class="brand" href="#" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span class="studio-context">Studio</span><nav aria-label="Main navigation"><a href="#features">Features</a><a href="#useCases">Use cases</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav><div class="home-header-actions"><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><a class="button small primary" href="#create">Build a blueprint</a></div><div class="studio-header-actions"><button id="backHome" class="text-button" type="button">Back to home</button></div></header>
 <main>
 <section class="hero hero-remix" aria-labelledby="heroTitle">
-<p class="eyebrow hero-label">VIDEO REMIX STUDIO</p>
-<h1 id="heroTitle">Turn your ideas into videos worth watching.</h1>
-<p class="hero-copy">Start with inspiration. Explore the scenes, add your words, and create your next video.</p>
+<p class="eyebrow hero-label">VIRAL VIDEO BLUEPRINT</p>
+<h1 id="heroTitle">Decode what works. Rebuild it as your own.</h1>
+<p class="hero-copy">Turn a reference video into a creative blueprint for scenes, pacing, transitions, captions, and beats—then rebuild the format with your own footage, story, and brand.</p>
 <div class="import-box" id="create">
-<form id="urlForm" class="url-form"><label class="sr-only" for="urlInput">YouTube video link</label><input id="urlInput" type="url" placeholder="Paste a YouTube video link" aria-describedby="importHelp" required><button class="button primary" id="analyzeBtn" type="submit">Import video</button></form>
-<div class="upload-row"><span>or</span><button id="uploadBtn" type="button" aria-describedby="importHelp">Upload a video</button><input id="fileInput" class="sr-only" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" tabindex="-1"></div>
+<form id="urlForm" class="url-form"><label class="sr-only" for="urlInput">Reference video link</label><input id="urlInput" type="url" placeholder="Paste a reference video link" required><button class="button primary" id="analyzeBtn" type="submit">Build blueprint</button></form>
+<div class="upload-row"><span>or</span><button id="uploadBtn" type="button">Upload a reference</button><input id="fileInput" class="sr-only" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" tabindex="-1"></div>
 <p class="status" id="importStatus" role="status"></p>
 </div>
-<p class="hero-note" id="importHelp">YouTube links or local video files up to 500 MB.</p>
-
 </section>
 
 <section class="workspace wrap" id="results" hidden aria-labelledby="studioTitle">
@@ -45,7 +43,7 @@
 </div>
 <div class="timeline-panel"><div class="timeline-heading"><h3>Timeline</h3><span id="segmentCount"></span></div><div class="timeline-editor" id="timelineEditor"><div class="timeline-ruler" id="timelineRuler" aria-hidden="true"></div><div class="timeline-track" id="timelineTrack"><div id="timeline" class="timeline"></div><div class="workspace-playhead" id="workspacePlayhead" aria-hidden="true"><span id="timelineCurrentTime">0:00</span><em id="timelineNow">Now · 0:00</em></div></div></div><div class="split-bar"><button id="splitBtn" class="button secondary" type="button">Create clips</button><p id="splitStatus" class="status" role="status"></p></div><div id="clipOutputs" class="clip-outputs" hidden><div class="clip-output-heading"><h4>Your clips</h4><span id="clipOutputCount"></span></div><div id="clipOutputList" class="clip-output-list"></div></div></div>
 <form class="quick-direction studio-brief-form" id="briefForm">
-<div class="quick-direction-row"><textarea id="extraBrief" aria-label="Describe your version" maxlength="5000" rows="1" placeholder="Describe what you want to change…"></textarea><button id="saveBrief" type="submit" class="button primary">Continue</button></div>
+<div class="quick-direction-row"><textarea id="extraBrief" aria-label="Describe your version" maxlength="5000" rows="1" placeholder="Describe what you want to change…"></textarea><button id="saveBrief" type="submit" class="button primary">Continue to script</button></div>
 <p id="briefStatus" class="status" role="status"></p>
 </form>
 </section>
@@ -77,57 +75,80 @@
 <div class="studio-bottomline"><span id="studioProgressLabel" role="status">Step 1 of 3</span></div>
 </div></div></section>
 
-<section class="story-intro wrap" id="features"><div class="section-heading"><p class="eyebrow purple">MAKE IT YOURS</p><h2>From inspiration to your next video.</h2></div></section>
-<section class="story" id="story" aria-label="Five-stage video creation demonstration">
+<section class="story-intro wrap" id="features"><div class="section-heading"><p class="eyebrow purple">CREATIVE BLUEPRINT</p><h2>One reference. A format you can rebuild.</h2></div></section>
+<section class="story" id="story" aria-label="Five-stage creative blueprint demonstration">
 <div class="story-sticky">
 <div class="story-top"><span>PIXFUN STUDIO</span><span>Interactive demo</span></div>
 <div class="story-layout">
-<nav class="chapter-nav" aria-label="Demo chapters"><button type="button" data-go="0" aria-current="step"><span>01</span> Import</button><button type="button" data-go="1"><span>02</span> Analyze</button><button type="button" data-go="2"><span>03</span> Customize</button><button type="button" data-go="3"><span>04</span> Edit</button><button type="button" data-go="4"><span>05</span> Export</button></nav>
+<nav class="chapter-nav" aria-label="Demo chapters"><button type="button" data-go="0" aria-current="step"><span>01</span> Reference</button><button type="button" data-go="1"><span>02</span> Deconstruct</button><button type="button" data-go="2"><span>03</span> Replace</button><button type="button" data-go="3"><span>04</span> Rebuild</button><button type="button" data-go="4"><span>05</span> Export</button></nav>
 <div class="story-copy">
-<div class="chapter active" data-chapter="0"><p class="eyebrow">01 / IMPORT</p><h2>Start with<br><span>what inspires you.</span></h2><p>Found a video you love? Paste the link or upload a file to get started.</p><div class="chapter-tags"><span>Video links</span><span>Local files</span></div></div>
-<div class="chapter" data-chapter="1"><p class="eyebrow">02 / ANALYZE</p><h2>Break it down.<br><span>Find your angle.</span></h2><p>See where each scene starts and how long it lasts. Use the structure to plan your own version.</p><div class="chapter-tags"><span>Scene detection</span><span>Segment timing</span></div></div>
-<div class="chapter" data-chapter="2"><p class="eyebrow">03 / CUSTOMIZE</p><h2>Your cast.<br><span>Your language.</span></h2><p>Set the direction: a male presenter, a black suit, a new stage, and Spanish instead of English.</p><div class="chapter-tags"><span>Footage & people</span><span>Script & language</span></div><p class="capability-note">Save your ideas now. Person replacement and translation are shown as a demo only.</p></div>
-<div class="chapter" data-chapter="3"><p class="eyebrow">04 / EDIT</p><h2>A new face.<br><span>The same idea.</span></h2><p>Preview a new presenter and a Spanish script in this demo.</p></div>
-<div class="chapter" data-chapter="4"><p class="eyebrow">05 / EXPORT</p><h2>Your version.<br><span>Ready to share.</span></h2><p>Add your words and download a vertical MP4, ready for your next post. Your original audio stays.</p><div class="chapter-tags"><span>Vertical video</span><span>MP4 export</span></div></div>
+<div class="chapter active" data-chapter="0"><p class="eyebrow">01 / REFERENCE</p><h2>Bring a format<br><span>worth studying.</span></h2><p>Paste a link or upload an authorized reference. Pixfun treats it as a format to understand, not footage to republish.</p><div class="chapter-tags"><span>Video links</span><span>Local files</span></div></div>
+<div class="chapter" data-chapter="1"><p class="eyebrow">02 / DECONSTRUCT</p><h2>See the system.<br><span>Not just the scenes.</span></h2><p>Map the hook, shot order, scene length, pacing, transitions, captions, and beats behind the edit.</p><div class="chapter-tags"><span>Creative structure</span><span>Timing & rhythm</span></div></div>
+<div class="chapter" data-chapter="2"><p class="eyebrow">03 / REPLACE</p><h2>Swap in<br><span>your world.</span></h2><p>Plan your own footage, presenter, script, brand, language, and licensed music around the blueprint.</p><div class="chapter-tags"><span>Your assets</span><span>Your story</span></div><p class="capability-note">The current local prototype saves direction; automatic replacement remains a product demo.</p></div>
+<div class="chapter" data-chapter="3"><p class="eyebrow">04 / REBUILD</p><h2>Rebuild the rhythm.<br><span>Keep your point of view.</span></h2><p>Fit your own scenes and message to the creative blueprint. The presenter and Spanish script shown here are a demo.</p></div>
+<div class="chapter" data-chapter="4"><p class="eyebrow">05 / EXPORT</p><h2>An original.<br><span>Built on strategy.</span></h2><p>Export your vertical version, ready to test and refine. The current prototype keeps the source footage and audio.</p><div class="chapter-tags"><span>Vertical video</span><span>MP4 export</span></div></div>
 
 </div>
 <div class="stage" id="stage" aria-label="The same video moving from original footage to a vertical composition">
 <div class="stage-grid" aria-hidden="true"></div>
-<div class="source-badge float-layer" id="sourceBadge"><span class="source-icon">▶</span><div><b>Ideas worth sharing</b><small>Conference talk · 00:32</small></div><span class="check">✓</span></div>
-<div class="media-frame" id="mediaFrame"><div class="media-toolbar"><span>Video preview</span><span id="ratioLabel">16:9</span></div><div class="media-picture"><img id="originalScene" src="/assets/images/speaker-medium.png" alt="Before: a female speaker on a violet-lit conference stage" width="1536" height="1024" fetchpriority="high"><img id="replacementScene" src="/assets/images/speaker-male-suit.png" alt="After: a male presenter in a black suit holding a microphone on a blue keynote stage" width="1536" height="1024"><span class="media-original" id="originalBadge">BEFORE</span><span class="media-original" id="replacementBadge">AFTER</span><div class="caption" id="demoCaption" lang="es"><strong>El mundo te espera.</strong></div><span class="timecode">00:08 / 00:32</span></div><div class="media-footer"><span>▶</span><div><i></i></div><span>32s</span></div></div>
-<div class="demo-timeline" id="demoTimeline"><div class="timeline-head"><span>Video track</span><span>00:00　　 00:10　　 00:20　　 00:30</span></div><div class="filmstrip"><div><img src="/assets/images/speaker-wide.png" alt="Wide shot of the stage and audience" width="1536" height="1024" loading="lazy"><span>01 · Opening</span></div><div class="is-current" aria-current="true"><img src="/assets/images/speaker-medium.png" alt="Medium shot of the speaker gesturing, matching the video preview" width="1536" height="1024" loading="lazy"><em>Now · 00:08</em><span>02 · Key idea</span></div><div><img src="/assets/images/speaker-audience.png" alt="Audience listening and taking notes" width="1536" height="1024" loading="lazy"><span>03 · Reaction</span></div><div><img src="/assets/images/speaker-close.png" alt="Close-up of the speaker delivering the closing line" width="1536" height="1024" loading="lazy"><span>04 · Closing</span></div></div><div class="audio-track" aria-hidden="true"></div><div class="playhead" id="playhead"><span>00:08</span></div><p><span class="current-dot" aria-hidden="true"></span>Scene 02 matches the preview above</p></div>
+<div class="source-badge float-layer" id="sourceBadge"><span class="source-icon">▶</span><div><b>A format worth studying</b><small>Conference talk · 00:32</small></div><span class="check">✓</span></div>
+<div class="media-frame" id="mediaFrame"><div class="media-toolbar"><span>Blueprint preview</span><span id="ratioLabel">16:9</span></div><div class="media-picture"><img id="originalScene" src="/assets/images/speaker-medium.png" alt="Before: a female speaker on a violet-lit conference stage" width="1536" height="1024" fetchpriority="high"><img id="replacementScene" src="/assets/images/speaker-male-suit.png" alt="After: a male presenter in a black suit holding a microphone on a blue keynote stage" width="1536" height="1024"><span class="media-original" id="originalBadge">REFERENCE</span><span class="media-original" id="replacementBadge">REBUILD</span><div class="caption" id="demoCaption" lang="es"><strong>El mundo te espera.</strong></div><span class="timecode">00:08 / 00:32</span></div><div class="media-footer"><span>▶</span><div><i></i></div><span>32s</span></div></div>
+<div class="demo-timeline" id="demoTimeline"><div class="timeline-head"><span>Structure map</span><span>00:00　　 00:10　　 00:20　　 00:30</span></div><div class="filmstrip"><div><img src="/assets/images/speaker-wide.png" alt="Wide shot of the stage and audience" width="1536" height="1024" loading="lazy"><span>01 · Hook</span></div><div class="is-current" aria-current="true"><img src="/assets/images/speaker-medium.png" alt="Medium shot of the speaker gesturing, matching the video preview" width="1536" height="1024" loading="lazy"><em>Now · 00:08</em><span>02 · Key idea</span></div><div><img src="/assets/images/speaker-audience.png" alt="Audience listening and taking notes" width="1536" height="1024" loading="lazy"><span>03 · Proof</span></div><div><img src="/assets/images/speaker-close.png" alt="Close-up of the speaker delivering the closing line" width="1536" height="1024" loading="lazy"><span>04 · CTA</span></div></div><div class="audio-track" aria-hidden="true"></div><div class="playhead" id="playhead"><span>00:08</span></div><p><span class="current-dot" aria-hidden="true"></span>Scene 02 matches the preview above</p></div>
 <div class="edit-card float-layer" id="editCard"><span class="editor-kicker">ESPAÑOL / SAMPLE SCRIPT</span><div><span>01 / Hook</span><b lang="es">Cambia de perspectiva.</b></div><div class="selected"><span>02 / STORY</span><b lang="es">El mundo te espera.<i></i></b></div><div><span>03 / CTA</span><b lang="es">Empieza hoy.</b></div></div>
-<div class="brief-card float-layer" id="briefCard"><span class="editor-kicker">CREATIVE BRIEF</span><h4>Your version starts here.</h4><div class="brief-mini"><span>Person · Male presenter</span></div><div class="reference-chip"><img src="/assets/images/speaker-male-suit.png" alt="Male presenter reference preview" width="32" height="36"><span>male-presenter-suit.png</span><b>✓ Added</b></div><div class="brief-mini"><span>Language · English → Spanish</span></div><p>Male presenter. Black suit. Blue stage. Rewrite the English script in Spanish.</p><div class="brief-saved">✓ Creative brief saved</div><small>Brief preview · Person replacement and translation are not connected</small></div>
-<div class="export-card float-layer" id="exportCard"><span class="success-icon">✓</span><div><b>Your next video is ready</b><small>MP4 · 720 × 1280</small></div><span>↓</span></div>
+<div class="brief-card float-layer" id="briefCard"><span class="editor-kicker">REBUILD PLAN</span><h4>Replace the ingredients.</h4><div class="brief-mini"><span>Person · Male presenter</span></div><div class="reference-chip"><img src="/assets/images/speaker-male-suit.png" alt="Male presenter reference preview" width="32" height="36"><span>male-presenter-suit.png</span><b>✓ Added</b></div><div class="brief-mini"><span>Language · English → Spanish</span></div><p>Male presenter. Black suit. Blue stage. Rewrite the English script in Spanish.</p><div class="brief-saved">✓ Rebuild plan saved</div><small>Demo preview · Automatic replacement and translation are not connected</small></div>
+<div class="export-card float-layer" id="exportCard"><span class="success-icon">✓</span><div><b>Your original is ready</b><small>MP4 · 720 × 1280</small></div><span>↓</span></div>
 </div>
 </div>
-<div class="story-bottom"><span id="sceneLabel">01 — Choose a reference</span><div class="story-progress"><i id="storyProgress"></i></div></div>
+<div class="story-bottom"><span id="sceneLabel">01 — Reference</span></div>
+</div>
+</section>
+
+<section class="use-cases wrap" id="useCases" aria-labelledby="useCasesTitle">
+<div class="use-cases-heading section-heading">
+<p class="eyebrow purple">USE CASES</p>
+<h2 id="useCasesTitle">Start with a pattern. <span>Build for your audience.</span></h2>
+<p>Pixfun works best when the creative structure is proven and the ingredients can become unmistakably yours.</p>
+</div>
+<article class="case-study">
+<figure class="case-study-media"><img src="/assets/images/case-talking-head-v1.png" alt="A female fitness coach in a bright home gym beside a male fitness coach in a dark training studio" width="1672" height="941" loading="lazy"><figcaption><span>REFERENCE FORMAT</span><span>YOUR VERSION</span></figcaption></figure>
+<div class="case-study-copy">
+<p class="case-index">CASE 01 · FITNESS CREATOR</p>
+<h3>Change the presenter.<br>Keep the delivery system.</h3>
+<p>Turn a proven coaching format into a fresh creator video with a new face, environment, and message.</p>
+<dl class="case-change-list"><div><dt>Keep</dt><dd>Hook · Framing · Delivery rhythm</dd></div><div><dt>Change</dt><dd>Presenter · Studio · Script · Brand</dd></div></dl>
+</div>
+</article>
+<div class="scenario-grid" aria-label="Typical Pixfun use cases">
+<article class="scenario-card"><div class="scenario-media"><img src="/assets/images/case-localized-v1.png" alt="Travel creator presenting from a Mediterranean food market" width="1448" height="1086" loading="lazy"></div><div class="scenario-card-body"><p class="scenario-label">CASE 02 · LOCALIZED VERSIONS</p><h3>Take a creator format into a new market.</h3><p>Translate the dialogue, voice, and captions while keeping the visual rhythm viewers already understand.</p><div class="scenario-tags"><span>Language</span><span>Captions</span><span>Voice</span></div></div></article>
+<article class="scenario-card"><div class="scenario-media"><img src="/assets/images/case-performance-ad-v1.png" alt="Beauty creator presenting an amber skincare bottle" width="1448" height="1086" loading="lazy"></div><div class="scenario-card-body"><p class="scenario-label">CASE 03 · PERFORMANCE ADS</p><h3>Turn one strong ad structure into more tests.</h3><p>Keep the hook–proof–CTA sequence, then replace the product, offer, creator, and brand assets.</p><div class="scenario-tags"><span>Product</span><span>Offer</span><span>CTA</span></div></div></article>
+<article class="scenario-card"><div class="scenario-media"><img src="/assets/images/case-ai-character-v1.png" alt="Original teal robot chef presenting a dessert in a futuristic kitchen" width="1448" height="1086" loading="lazy"></div><div class="scenario-card-body"><p class="scenario-label">CASE 04 · AI CHARACTER SERIES</p><h3>Switch the character, not the storyboard.</h3><p>Preserve the camera beats and scene order while building a completely new character and visual world.</p><div class="scenario-tags"><span>Character</span><span>Style</span><span>Scene</span></div></div></article>
 </div>
 </section>
 
 <section class="how wrap workflow-section" id="how" aria-labelledby="howTitle">
 <div class="workflow-heading section-heading">
-<p class="eyebrow purple">HOW IT WORKS</p><h2 id="howTitle">Your next video. <span>Three simple steps.</span></h2>
-<p>Start with a video. Finish with your own point of view.</p>
+<p class="eyebrow purple">HOW PIXFUN WORKS</p><h2 id="howTitle">From reference to original. <span>Three clear steps.</span></h2>
+<p>Study the strategy. Replace the ingredients. Rebuild the format.</p>
 </div>
 <ol class="workflow-cards">
-<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">01</span><span class="workflow-label">IMPORT</span></div><h3>Bring the inspiration.</h3><p>Paste a video link or upload footage you have permission to use.</p><div class="workflow-card-footer"><span>Video links</span><span>Local files</span></div></li>
-<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">02</span><span class="workflow-label">MAKE IT YOURS</span></div><h3>Add your perspective.</h3><p>Explore the scenes, save your ideas, and write the words your audience will see.</p><div class="workflow-card-footer"><span>Scene breakdown</span><span>Your message</span></div></li>
-<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">03</span><span class="workflow-label">EXPORT</span></div><h3>Ready for your next post.</h3><p>Preview your edit and download a vertical video with your text and original audio.</p><div class="workflow-card-footer"><span>9:16 video</span><span>MP4 download</span></div></li>
+<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">01</span><span class="workflow-label">REFERENCE</span></div><h3>Start with a format that works.</h3><p>Paste a link or upload an authorized video whose creative structure is worth studying.</p><div class="workflow-card-footer"><span>Video links</span><span>Local files</span></div></li>
+<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">02</span><span class="workflow-label">DECONSTRUCT</span></div><h3>Turn the edit into a blueprint.</h3><p>Understand the hook, shot sequence, pacing, transitions, captions, and beat structure.</p><div class="workflow-card-footer"><span>Creative structure</span><span>Beat map</span></div></li>
+<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">03</span><span class="workflow-label">REBUILD</span></div><h3>Make every ingredient yours.</h3><p>Use your own footage, message, brand, and licensed music to create an original version.</p><div class="workflow-card-footer"><span>Your assets</span><span>Your original</span></div></li>
 </ol>
 </section>
 <section class="faq wrap faq-section" id="faq" aria-labelledby="faqTitle">
-<div class="faq-heading section-heading"><p class="eyebrow purple">GOOD TO KNOW</p><h2 id="faqTitle">Frequently <span>asked.</span></h2><p>The essentials before your first creation.</p></div>
+<div class="faq-heading section-heading"><p class="eyebrow purple">GOOD TO KNOW</p><h2 id="faqTitle">The blueprint, <span>explained.</span></h2><p>What Pixfun studies, what you replace, and where originality begins.</p></div>
 <div class="faq-list">
-<details open><summary>What can Pixfun do today?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Import a video, explore its scenes, save ideas and references, and add timed text to a vertical MP4.</p><p class="faq-limit">The before-and-after scene is a demo. AI video generation, person replacement, translation, dubbing, transcription, and automatic posting are not available yet.</p></div></details>
-<details><summary>Can I use a link or upload a file?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Both. Upload MP4, MOV, WebM, MKV, or another supported video file up to 500 MB. You can also import a YouTube or other supported video link.</p><p>Links depend on platform support, your connection, and access permissions. If a link does not work, upload a file you have permission to use.</p></div></details>
-<details><summary>Where are my videos stored?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Your videos, notes, and references stay on this computer in Pixfun’s local folder. They are not sent to third-party AI services. Importing a video link still needs an internet connection.</p></div></details>
-<details><summary>Do I need to sign up?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>No account or paid AI service is needed for the current local tools. Start with a video and create on your own computer.</p></div></details>
-<details><summary>Can I reuse someone else’s video?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Only use footage you own or have permission to use. Adding text does not change ownership. Pixfun helps you explore creative structure; it does not guarantee views or performance.</p></div></details>
+<details open><summary>What does Pixfun deconstruct?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Pixfun’s product direction is to map the hook, shot order, scene length, pacing, transitions, caption rhythm, and music beats behind a reference edit.</p><p class="faq-limit">Today’s local prototype supports import, scene detection, timeline segmentation, clip export, and timed text. Advanced transition and music analysis, asset replacement, translation, and dubbing remain product demos.</p></div></details>
+<details><summary>Does Pixfun copy the original video?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>No. The goal is to reuse creative strategy, not someone else’s footage or identity. A blueprint describes how the edit works; your final version should use your own authorized assets, story, and brand.</p></div></details>
+<details><summary>What can I replace in a blueprint?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>The intended workflow lets you replace footage, products, presenters, script, language, captions, brand elements, and music while preserving the useful structure and rhythm.</p><p>In the current prototype, you can save direction, split scenes, edit text, and export a vertical MP4. Automatic visual replacement is not connected yet.</p></div></details>
+<details><summary>Can I reuse the reference music?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Only when you have the rights to use it on your destination platform. Otherwise, reuse the tempo and beat strategy with licensed music, platform-cleared audio, or a track you own.</p></div></details>
+<details><summary>Can I use a link or upload a file?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Both. Upload a supported video file up to 500 MB, or import a supported video link. Link access depends on the platform, your connection, and your permissions.</p></div></details>
+<details><summary>What content am I allowed to analyze?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Use content you own, are licensed to use, or have permission to analyze. Pixfun does not bypass private access, DRM, copyright, music rights, or platform rules.</p></div></details>
 </div>
 </section>
-<section class="closing"><img class="closing-background" src="/assets/images/creator-studio-background.png" alt="" aria-hidden="true" width="2172" height="724" loading="lazy" decoding="async"><h2>Your next video starts with an idea.</h2><a class="button primary" href="#create">Start creating</a></section>
+<section class="closing"><img class="closing-background" src="/assets/images/creator-studio-background.png" alt="" aria-hidden="true" width="2172" height="724" loading="lazy" decoding="async"><h2>A proven format. Your original result.</h2><a class="button primary" href="#create">Build your blueprint</a></section>
 </main>
-<footer class="footer wrap"><a href="#" class="brand" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span>© 2026 Pixfun. Make it yours.</span><span id="engineText" role="status">Connecting to your local engine…</span></footer>
+<footer class="footer wrap"><a href="#" class="brand" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span>© 2026 Pixfun. Build the format. Make it yours.</span><span id="engineText" role="status">Connecting to your local engine…</span></footer>
 <noscript><p class="noscript">Enable JavaScript to use video imports, processing, and interactive effects.</p></noscript>
 </body></html>
