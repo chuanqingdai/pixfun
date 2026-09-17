@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Local MVP for turning a reference short video into editable variants.
 
-No third-party Python packages are required. Optional local tools:
+The web server itself uses the Python standard library. Optional local tools:
   - ffmpeg / ffprobe for media inspection and rendering
   - yt-dlp for URL ingestion
+  - a project-local MLX Whisper environment for speech transcription
 """
 
 from __future__ import annotations
 
 import cgi
 import json
+import math
 import mimetypes
 import os
 import re
@@ -31,6 +33,8 @@ DATA = ROOT / "data"
 UPLOADS = DATA / "uploads"
 JOBS = DATA / "jobs"
 OUTPUTS = DATA / "outputs"
+TRANSCRIBER = ROOT / "scripts" / "transcribe_media.py"
+TRANSCRIBER_PYTHON = ROOT / ".venv" / "bin" / "python"
 for folder in (UPLOADS, JOBS, OUTPUTS):
     folder.mkdir(parents=True, exist_ok=True)
 
@@ -109,6 +113,7 @@ def probe_media(source: Path) -> dict:
     streams = data.get("streams", [])
     video = next((s for s in streams if s.get("codec_type") == "video"), {})
     audio = next((s for s in streams if s.get("codec_type") == "audio"), {})
+    subtitles = [s for s in streams if s.get("codec_type") == "subtitle"]
     fmt = data.get("format", {})
     duration = float(fmt.get("duration") or video.get("duration") or 0)
     width = int(video.get("width") or 0)
@@ -127,6 +132,9 @@ def probe_media(source: Path) -> dict:
         "height": height,
         "fps": fps,
         "hasAudio": bool(audio),
+        "hasSubtitles": bool(subtitles),
+        "subtitleCount": len(subtitles),
+        "subtitleCodec": subtitles[0].get("codec_name", "unknown") if subtitles else None,
         "videoCodec": video.get("codec_name", "unknown"),
         "audioCodec": audio.get("codec_name", "unknown") if audio else None,
         "size": int(fmt.get("size") or source.stat().st_size),
@@ -141,41 +149,67 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}:{sec:02d}" if minutes else f"0:{sec:02d}"
 
 
+def minimum_segment_count(duration: float) -> int:
+    if duration < 8:
+        return 1
+    if duration < 16:
+        return 3
+    return min(8, max(4, math.ceil(duration / 10)))
+
+
 def detect_cuts(source: Path, duration: float) -> list[float]:
     if not command_exists("ffmpeg"):
         return []
-    # showinfo emits pts_time for frames selected by the scene detector.
-    filter_expr = r"select=gt(scene\,0.35),showinfo"
-    code, _, stderr = run_command(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-i",
-            str(source),
-            "-vf",
-            filter_expr,
-            "-an",
-            "-f",
-            "null",
-            "-",
-        ],
-        timeout=90,
-    )
-    if code not in (0, 1):
-        return []
-    cuts = []
-    for match in re.finditer(r"pts_time:([0-9.]+)", stderr):
-        value = float(match.group(1))
-        if 0.4 < value < max(0.5, duration - 0.3):
-            if not cuts or value - cuts[-1] > 0.7:
-                cuts.append(round(value, 2))
-    return cuts[:24]
+    desired_cuts = max(0, minimum_segment_count(duration) - 1)
+    cuts: list[float] = []
+    # Start conservative, then lower the threshold for animation, dissolves,
+    # and subtle camera changes until enough real storyboard boundaries exist.
+    for threshold in (0.35, 0.28, 0.22, 0.16):
+        filter_expr = rf"select=gt(scene\,{threshold}),showinfo"
+        code, _, stderr = run_command(
+            [
+                "ffmpeg", "-hide_banner", "-i", str(source), "-vf", filter_expr,
+                "-an", "-f", "null", "-",
+            ],
+            timeout=90,
+        )
+        if code not in (0, 1):
+            continue
+        candidate: list[float] = []
+        for match in re.finditer(r"pts_time:([0-9.]+)", stderr):
+            value = float(match.group(1))
+            if 0.4 < value < max(0.5, duration - 0.3):
+                if not candidate or value - candidate[-1] > 0.7:
+                    candidate.append(round(value, 2))
+        if len(candidate) > len(cuts):
+            cuts = candidate
+        if len(cuts) >= desired_cuts:
+            break
+    # Keep the timeline scannable while sampling boundaries across the whole
+    # video instead of dropping the ending when many rapid cuts are detected.
+    if len(cuts) > 7:
+        cuts = [cuts[round(index * (len(cuts) - 1) / 6)] for index in range(7)]
+    return cuts
 
 
 def make_segments(duration: float, cuts: list[float]) -> list[dict]:
     if duration <= 0:
         duration = 30
-    points = [0.0] + cuts + [duration]
+    points = sorted({0.0, duration, *[cut for cut in cuts if 0.4 < cut < duration - 0.3]})
+    minimum_count = minimum_segment_count(duration)
+    if len(points) - 1 > 8:
+        interior = points[1:-1]
+        points = [0.0] + [interior[round(index * (len(interior) - 1) / 6)] for index in range(7)] + [duration]
+    # Scene detection can miss gradual animation, talking-head edits, and long
+    # dissolves. Preserve detected cuts, then subdivide the longest remaining
+    # spans so the editor always exposes a useful multi-shot timeline.
+    while len(points) - 1 < minimum_count:
+        spans = [(points[index + 1] - points[index], index) for index in range(len(points) - 1)]
+        span, index = max(spans, default=(0, 0))
+        if span < 1.3:
+            break
+        points.append(round(points[index] + span / 2, 3))
+        points.sort()
     raw = []
     for start, end in zip(points, points[1:]):
         if end - start >= 0.65:
@@ -218,6 +252,155 @@ def make_segments(duration: float, cuts: list[float]) -> list[dict]:
     return result
 
 
+def make_timeline_thumbnails(source: Path, job_id: str, segments: list[dict]) -> list[dict]:
+    """Extract one representative frame for every editor timeline segment."""
+    if not command_exists("ffmpeg"):
+        return segments
+    output_dir = OUTPUTS / job_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for index, segment in enumerate(segments[:24]):
+        start = max(0.0, float(segment.get("start") or 0))
+        span = max(0.05, float(segment.get("duration") or 0))
+        timestamp = min(float(segment.get("end") or start + span) - 0.08, start + max(0.08, span * 0.42))
+        filename = f"timeline-{index + 1:02d}.jpg"
+        output = output_dir / filename
+        code, _, _ = run_command(
+            [
+                "ffmpeg", "-y", "-ss", f"{max(0, timestamp):.3f}", "-i", str(source),
+                "-frames:v", "1", "-vf",
+                "scale=480:270:force_original_aspect_ratio=increase,crop=480:270",
+                "-q:v", "3", str(output),
+            ],
+            timeout=30,
+        )
+        if code == 0 and output.exists() and output.stat().st_size > 0:
+            segment["thumbnailUrl"] = media_url("output", job_id, filename)
+            segment["thumbnailTime"] = round(max(0, timestamp), 2)
+    return segments
+
+
+def subtitle_time_seconds(value: str) -> float:
+    parts = value.strip().replace(",", ".").split(":")
+    try:
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+    except ValueError:
+        return 0.0
+    return 0.0
+
+
+def extract_subtitle_cues(source: Path, job_id: str) -> list[dict]:
+    """Extract the first editable subtitle stream into timeline-aligned cues."""
+    if not command_exists("ffmpeg"):
+        return []
+    output_dir = OUTPUTS / job_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / "subtitle-track.srt"
+    code, _, _ = run_command(
+        ["ffmpeg", "-y", "-i", str(source), "-map", "0:s:0", "-c:s", "srt", str(output)],
+        timeout=60,
+    )
+    if code != 0 or not output.exists() or output.stat().st_size == 0:
+        output.unlink(missing_ok=True)
+        return []
+    content = output.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
+    cues: list[dict] = []
+    for block in re.split(r"\n\s*\n", content.strip()):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        timing_index = next((index for index, line in enumerate(lines) if "-->" in line), -1)
+        if timing_index < 0:
+            continue
+        timing = lines[timing_index].split("-->", 1)
+        start = subtitle_time_seconds(timing[0])
+        end = subtitle_time_seconds(timing[1].split()[0])
+        text = " ".join(lines[timing_index + 1:])
+        text = re.sub(r"<[^>]+>", "", text).replace(r"\N", " ").strip()
+        if text and end > start:
+            cues.append({"id": f"sub-{len(cues) + 1}", "start": round(start, 2), "end": round(end, 2), "text": text[:500]})
+    return cues[:200]
+
+
+def transcribe_audio_cues(source: Path, job_id: str) -> tuple[list[dict], dict]:
+    """Create timed subtitle cues from speech with the project-local MLX Whisper runtime."""
+    if not TRANSCRIBER_PYTHON.exists() or not TRANSCRIBER.exists():
+        return [], {"state": "unavailable", "message": "Local speech transcription is not installed"}
+    output_dir = OUTPUTS / job_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output = output_dir / "speech-transcript.json"
+    code, _, stderr = run_command(
+        [str(TRANSCRIBER_PYTHON), str(TRANSCRIBER), str(source), str(output)],
+        timeout=600,
+    )
+    if code != 0 or not output.exists():
+        return [], {"state": "unavailable", "message": (stderr.strip().splitlines()[-1] if stderr.strip() else "Speech transcription failed")[:240]}
+    try:
+        payload = json.loads(output.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return [], {"state": "unavailable", "message": "Speech transcription returned invalid data"}
+    cues = []
+    for item in payload.get("cues", [])[:300]:
+        try:
+            start = max(0.0, float(item.get("start") or 0))
+            end = max(start, float(item.get("end") or start))
+        except (TypeError, ValueError):
+            continue
+        text = " ".join(str(item.get("text") or "").split())
+        if text and end > start:
+            cues.append({"id": f"sub-{len(cues) + 1}", "start": round(start, 2), "end": round(end, 2), "text": text[:500]})
+    return cues, {
+        "state": "transcribed" if cues else "silent",
+        "message": "" if cues else "No speech was detected in this video",
+        "language": payload.get("language"),
+        "text": str(payload.get("text") or "").strip(),
+        "model": payload.get("model"),
+    }
+
+
+def build_creative_plan(brief: dict, has_references: bool = False) -> dict:
+    """Turn a natural-language direction into a concise, capability-aware plan."""
+    instruction = " ".join(str(brief.get("instructions") or "").split())[:5000]
+    clauses = [part.strip(" .") for part in re.split(r"[.!?;\n]+|(?<=[，。；！？])", instruction) if part.strip(" .")]
+    categories = [
+        ("Presenter", r"presenter|person|character|face|man|woman|male|female|人物|角色|男性|女性|主播|讲述者"),
+        ("Setting", r"setting|scene|background|studio|office|location|场景|背景|演播室|办公室"),
+        ("Language", r"language|translate|translation|subtitle|caption|voice|dub|spanish|english|语言|翻译|字幕|配音|西班牙语|英语"),
+        ("Script", r"script|dialogue|rewrite|message|copy|hook|cta|台词|文案|脚本|改写|开场|结尾"),
+        ("Product & brand", r"product|brand|logo|offer|商品|产品|品牌|标志|优惠"),
+        ("Style", r"style|premium|cinematic|energetic|minimal|funny|风格|高级|电影感|活力|极简|幽默"),
+        ("Pacing", r"pace|pacing|rhythm|faster|slower|shorten|tempo|节奏|加快|减慢|缩短"),
+        ("Keep", r"\bkeep\b|preserve|retain|same|保留|保持|不变"),
+    ]
+    items = []
+    used = set()
+    for label, pattern in categories:
+        matching = [clause for clause in clauses if re.search(pattern, clause, re.I)]
+        if label == "Pacing":
+            matching = [clause for clause in matching if not re.search(r"\bkeep\b|preserve|retain|保留|保持|不变", clause, re.I)]
+        if matching:
+            value = ". ".join(matching)[:360]
+            key = (label, value.lower())
+            if key not in used:
+                items.append({"label": label, "value": value, "status": "planned"})
+                used.add(key)
+    explicit = [
+        ("Presenter", brief.get("person")),
+        ("Language", brief.get("language") if str(brief.get("language") or "").lower() not in {"", "keep"} else ""),
+        ("Script", brief.get("dialogue")),
+        ("Product & brand", brief.get("material")),
+    ]
+    for label, value in explicit:
+        value = " ".join(str(value or "").split())
+        if value and not any(item["label"] == label for item in items):
+            items.append({"label": label, "value": value[:360], "status": "planned"})
+    if not items and instruction:
+        items.append({"label": "Creative direction", "value": instruction[:500], "status": "planned"})
+    needs_reference = bool(re.search(r"\b(my|our)\s+(product|logo|photo|footage|presenter|character)\b|我的(产品|标志|照片|素材|人物)", instruction, re.I))
+    missing = [] if has_references or not needs_reference else ["Add the product, brand, presenter, or footage reference mentioned in your request."]
+    return {"items": items, "missing": missing, "ready": bool(items) and not missing}
+
+
 def make_analysis(source: Path, source_name: str, source_url: str = "") -> dict:
     metadata = probe_media(source)
     duration = float(metadata.get("duration") or 30)
@@ -239,7 +422,7 @@ def make_analysis(source: Path, source_name: str, source_url: str = "") -> dict:
             {"key": "subject", "label": "主体/产品", "value": "替换为你的产品、人物或主题"},
             {"key": "cta", "label": "结尾 CTA", "value": "保留一个明确、可执行的下一步"},
         ],
-        "transcript": "尚未连接本地语音模型。你可以先在下方输入台词，后续接入 WhisperX 自动对齐。",
+        "transcript": "",
     }
 
 
@@ -348,52 +531,6 @@ def render_variant(job: dict, hook: str, subject: str, cta: str) -> tuple[bool, 
     return True, media_url("output", job["id"], output_name), ""
 
 
-def split_video(job: dict) -> tuple[bool, list[dict], str]:
-    """Render the detected timeline segments as independently playable MP4 files."""
-    if not command_exists("ffmpeg"):
-        return False, [], "FFmpeg is required to create video clips"
-    source = Path(job["sourcePath"])
-    segments = job.get("analysis", {}).get("segments", [])
-    if not segments:
-        return False, [], "No timeline segments are available for this video"
-    output_dir = OUTPUTS / job["id"]
-    output_dir.mkdir(parents=True, exist_ok=True)
-    clips = []
-    for index, segment in enumerate(segments[:24]):
-        start = max(0.0, float(segment.get("start") or 0))
-        duration = max(0.05, float(segment.get("duration") or 0))
-        filename = f"clip-{index + 1:02d}.mp4"
-        output = output_dir / filename
-        if not output.exists() or output.stat().st_size < 1024:
-            code, _, stderr = run_command(
-                [
-                    "ffmpeg", "-y", "-ss", f"{start:.3f}", "-i", str(source),
-                    "-t", f"{duration:.3f}", "-map", "0:v:0", "-map", "0:a?",
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-                    "-c:a", "aac", "-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
-                    str(output),
-                ],
-                timeout=180,
-            )
-            if code != 0 or not output.exists():
-                return False, clips, stderr[-900:] or f"Could not create clip {index + 1}"
-        clips.append(
-            {
-                "id": segment.get("id") or f"seg-{index + 1}",
-                "label": f"Scene {index + 1:02d}",
-                "start": round(start, 2),
-                "end": round(start + duration, 2),
-                "duration": round(duration, 2),
-                "filename": filename,
-                "url": media_url("output", job["id"], filename),
-            }
-        )
-    job["clips"] = clips
-    job["clipsUpdatedAt"] = int(time.time())
-    write_job(job)
-    return True, clips, ""
-
-
 class Handler(BaseHTTPRequestHandler):
     # HTTP header values are Latin-1 encoded by BaseHTTPRequestHandler.
     server_version = "BaokuanMVP/0.1"
@@ -421,6 +558,7 @@ class Handler(BaseHTTPRequestHandler):
                         "ffmpeg": command_exists("ffmpeg"),
                         "ffprobe": command_exists("ffprobe"),
                         "yt-dlp": command_exists("yt-dlp"),
+                        "transcription": TRANSCRIBER_PYTHON.exists() and TRANSCRIBER.exists(),
                     },
                 }
             )
@@ -476,10 +614,10 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_brief()
         elif parsed.path == "/api/analyze":
             self.handle_analyze()
+        elif parsed.path == "/api/direction":
+            self.handle_direction()
         elif parsed.path == "/api/render":
             self.handle_render()
-        elif parsed.path == "/api/split":
-            self.handle_split()
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -539,9 +677,11 @@ class Handler(BaseHTTPRequestHandler):
             references.append({"name": name, "storedName": stored_name, "size": len(content)})
         job["creativeBrief"] = brief
         job["references"] = references
+        plan = build_creative_plan(brief, bool(references))
+        job["creativePlan"] = plan
         job["briefUpdatedAt"] = int(time.time())
         write_job(job)
-        self.send_json({"ok": True, "brief": brief, "references": references, "applied": False})
+        self.send_json({"ok": True, "brief": brief, "plan": plan, "references": references, "applied": False})
 
     def handle_import(self) -> None:
         content_type = self.headers.get("Content-Type", "")
@@ -599,6 +739,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": "Cannot read this video. Use a valid video file and check that FFmpeg is installed."}, 400)
             return
         analysis = make_analysis(source, source_name, source_url)
+        analysis["segments"] = make_timeline_thumbnails(source, job_id, analysis["segments"])
+        analysis["subtitleCues"] = extract_subtitle_cues(source, job_id)
+        if analysis["subtitleCues"]:
+            analysis["subtitleState"] = "embedded"
+            analysis["subtitleMessage"] = "Extracted from the video's subtitle track"
+        elif analysis["metadata"].get("hasAudio"):
+            analysis["subtitleCues"], transcription = transcribe_audio_cues(source, job_id)
+            analysis["subtitleState"] = transcription.get("state", "unavailable")
+            analysis["subtitleMessage"] = transcription.get("message", "")
+            analysis["subtitleLanguage"] = transcription.get("language")
+            analysis["transcript"] = transcription.get("text", "")
+            if analysis["subtitleCues"]:
+                analysis["transcriptState"] = "Extracted from video speech"
+        else:
+            analysis["subtitleState"] = "silent"
+            analysis["subtitleMessage"] = "This video has no audio track"
         job = {"id": job_id, "createdAt": int(time.time()), "sourcePath": str(source), "analysis": analysis}
         write_job(job)
         relative_media = None
@@ -619,6 +775,27 @@ class Handler(BaseHTTPRequestHandler):
         write_job(job)
         self.send_json({"ok": True, "jobId": job["id"], "analysis": job["analysis"]})
 
+    def handle_direction(self) -> None:
+        payload = self.read_json()
+        try:
+            job = read_job(payload.get("jobId", ""))
+        except FileNotFoundError:
+            self.send_json({"ok": False, "error": "Project not found"}, 404)
+            return
+        prompt = " ".join(str(payload.get("prompt") or "").split())[:2000]
+        if not prompt:
+            self.send_json({"ok": False, "error": "Add a direction for Pixfun"}, 400)
+            return
+        raw_draft = payload.get("draft") if isinstance(payload.get("draft"), dict) else {}
+        draft = {key: " ".join(str(raw_draft.get(key) or "").split())[:100] for key in ("hook", "subject", "cta")}
+        messages = list(job.get("directionConversation", []))[-39:]
+        messages.append({"role": "user", "text": prompt, "createdAt": int(time.time())})
+        job["directionConversation"] = messages
+        job["directionDraft"] = draft
+        job["directionUpdatedAt"] = int(time.time())
+        write_job(job)
+        self.send_json({"ok": True, "prompt": prompt, "draft": draft, "messageCount": len(messages)})
+
     def handle_render(self) -> None:
         payload = self.read_json()
         try:
@@ -634,20 +811,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": False, "error": error}, 400)
             return
         self.send_json({"ok": True, "outputUrl": output_url, "values": {"hook": hook, "subject": subject, "cta": cta}})
-
-    def handle_split(self) -> None:
-        payload = self.read_json()
-        try:
-            job = read_job(payload.get("jobId", ""))
-        except FileNotFoundError:
-            self.send_json({"ok": False, "error": "Project not found"}, 404)
-            return
-        ok, clips, error = split_video(job)
-        if not ok:
-            self.send_json({"ok": False, "error": error}, 400)
-            return
-        self.send_json({"ok": True, "jobId": job["id"], "clips": clips, "count": len(clips)})
-
 
 def main() -> None:
     host = os.environ.get("BAOKUAN_HOST", "127.0.0.1")

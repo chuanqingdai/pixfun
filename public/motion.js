@@ -68,7 +68,7 @@ if (typeof document !== "undefined") (() => {
   // Keep the pinned story available in normal MacBook browser windows. The
   // previous 800px height gate disabled it on common 13–14 inch displays.
   const desktop = matchMedia("(min-width: 900px) and (min-height: 650px)");
-  const labels = ["01 — Reference", "02 — Deconstruct", "03 — Replace", "04 — Rebuild", "05 — Export"];
+  const labels = ["01 — Reference", "02 — Deconstruct", "03 — Replace", "04 — Create", "05 — Export"];
   const layers = Object.fromEntries(["sourceBadge", "demoTimeline", "briefCard", "editCard", "exportCard", "demoCaption", "originalBadge", "playhead", "ratioLabel", "sceneLabel"].map(id => [id, document.getElementById(id)]));
   let enabled = false, scheduled = false, start = 0, distance = 1, width = 1, height = 1, chapter = -1, staticChapter = 0;
   function opacity(element, amount, shift = 22) {

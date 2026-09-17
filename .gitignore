@@ -1,6 +1,10 @@
 data/uploads/*
 data/jobs/*
 data/outputs/*
+.venv/
+data/models/
+__pycache__/
+*.pyc
 !data/uploads/.gitkeep
 !data/jobs/.gitkeep
 !data/outputs/.gitkeep

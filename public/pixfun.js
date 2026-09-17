@@ -1,16 +1,17 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = { jobId: null, busy: false, step: 1, furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], clips: [], outputUrl: null };
+const state = { jobId: null, busy: false, step: 1, furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, creativePlan: null, conversationReady: false, subtitleCues: [], textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], outputUrl: null };
 const timeLabel = seconds => `${Math.floor(Number(seconds || 0) / 60)}:${String(Math.floor(Number(seconds || 0) % 60)).padStart(2, "0")}`;
 let timelineAnimationFrame = 0;
 function status(id, message, error = false) { $(id).textContent = message; $(id).classList.toggle("error", error); }
 function busy(value) {
   state.busy = value;
-  ["analyzeBtn", "uploadBtn", "fileInput", "urlInput", "renderBtn", "saveTranscript", "saveBrief", "splitBtn"].forEach(id => { if ($(id)) $(id).disabled = value; });
+  ["analyzeBtn", "uploadBtn", "fileInput", "urlInput", "renderBtn", "saveTranscript", "saveBrief", "scriptPrompt", "confirmConversation"].forEach(id => { if ($(id)) $(id).disabled = value; });
   document.querySelectorAll("[data-studio-step], #editBack, #textNext, #exportBack, #changeVideo, #backHome, #resumeStudio, #briefForm input, #briefForm textarea, #briefForm select, #textForm input, #transcriptInput").forEach(element => { element.disabled = value; });
   syncStepNavigation();
   $("create").setAttribute("aria-busy", String(value));
   $("results").setAttribute("aria-busy", String(value));
+  if (!value && $("confirmConversation")) $("confirmConversation").disabled = !state.conversationReady;
 }
 function setStudioMode(active, updateHistory = true) {
   active = Boolean(active && state.jobId);
@@ -30,33 +31,29 @@ function syncStepNavigation() {
     const number = Number(button.dataset.studioStep);
     button.disabled = state.busy || number > state.furthestStep;
     if (number === state.step) button.setAttribute("aria-current", "step"); else button.removeAttribute("aria-current");
-    button.classList.toggle("completed", number === 1 ? state.briefSaved && !state.briefDirty : number === 2 ? state.textConfirmed : Boolean(state.outputUrl && !state.textDirty));
+    button.classList.toggle("completed", number === 1 ? state.textConfirmed : Boolean(state.outputUrl && !state.textDirty));
   });
 }
 function setStep(step, focus = true) {
-  const next = Math.max(1, Math.min(3, Number(step)));
-  if (next === 3 && !validateText()) return;
-  if (next === 3) state.textConfirmed = true;
+  const next = Math.max(1, Math.min(2, Number(step)));
+  if (next === 2 && !validateText()) return;
+  if (next === 2) state.textConfirmed = true;
   state.step = next;
   state.furthestStep = Math.max(state.furthestStep, state.step);
   if (state.step > 1) state.reviewed = true;
   document.querySelectorAll("[data-studio-panel]").forEach(panel => { panel.hidden = Number(panel.dataset.studioPanel) !== state.step; });
   syncStepNavigation();
   $("sourceVideo").pause(); $("outputVideo").pause();
-  const exporting = state.step === 3;
+  const exporting = state.step === 2;
   const showResult = exporting && Boolean(state.outputUrl);
   $(exporting ? "resultPreviewSlot" : "reviewPreviewSlot").append($("previewCard"));
   $("previewSwitch").hidden = !showResult;
   $("sourceInfo").hidden = exporting;
   selectPreview(showResult);
-  $("studioProgressLabel").textContent = `Step ${state.step} of 3`;
+  $("studioProgressLabel").textContent = `Step ${state.step} of 2`;
   if (exporting) syncExportState();
-  if (state.step === 2) {
-    $("briefSummary").hidden = !state.briefSaved && !state.briefDirty;
-    $("briefSummary").textContent = state.briefDirty ? "Your direction has unsaved changes." : "Direction saved.";
-  }
   if (focus) {
-    const title = $(["reviewTitle", "editTitle", "exportTitle"][state.step - 1]);
+    const title = $(["reviewTitle", "exportTitle"][state.step - 1]);
     title.focus({ preventScroll: true });
     $("results").scrollIntoView({ block: "start", behavior: "instant" });
   }
@@ -65,13 +62,10 @@ function textValues() {
   return { hook: $("hookInput").value.trim(), subject: $("subjectInput").value.trim(), cta: $("ctaInput").value.trim() };
 }
 function validateText() {
-  const fields = ["hookInput", "subjectInput", "ctaInput"];
-  fields.forEach(id => { $(id).setAttribute("aria-invalid", String(!$(id).value.trim())); $(id).setAttribute("aria-describedby", "textStatus"); });
-  const missing = fields.find(id => !$(id).value.trim());
-  if (!missing) return true;
-  if (state.step !== 2) setStep(2);
-  status("textStatus", "Add an opening hook, a main message, and a closing line to continue.", true);
-  $(missing).focus();
+  if (state.textConfirmed) return true;
+  if (state.step !== 1) setStep(1);
+  status("textStatus", "Send at least one direction and confirm the conversation before export.", true);
+  $("scriptPrompt").focus();
   return false;
 }
 function syncExportState() {
@@ -100,20 +94,6 @@ function selectPreview(result) {
   $("resultPreview").setAttribute("aria-pressed", String(result));
   $("previewLabel").textContent = result ? (state.textDirty ? "Previous result" : "Your new video") : "Source video";
 }
-function renderClipOutputs() {
-  $("clipOutputList").replaceChildren();
-  $("clipOutputs").hidden = !state.clips.length;
-  $("clipOutputCount").textContent = `${state.clips.length} MP4 file${state.clips.length === 1 ? "" : "s"}`;
-  state.clips.forEach((clip, index) => {
-    const item = document.createElement("div"), copy = document.createElement("div"), title = document.createElement("b"), meta = document.createElement("span"), link = document.createElement("a");
-    item.className = "clip-output";
-    title.textContent = clip.label || `Scene ${String(index + 1).padStart(2, "0")}`;
-    meta.textContent = `${timeLabel(clip.start)} – ${timeLabel(clip.end)} · ${Number(clip.duration || 0).toFixed(1)}s`;
-    copy.append(title, meta);
-    link.className = "button secondary"; link.textContent = "Download MP4"; link.href = clip.url; link.download = clip.filename || `clip-${index + 1}.mp4`;
-    item.append(copy, link); $("clipOutputList").append(item);
-  });
-}
 function renderTimelineRuler(duration) {
   $("timelineRuler").replaceChildren();
   for (let index = 0; index < 5; index++) {
@@ -121,6 +101,84 @@ function renderTimelineRuler(duration) {
     mark.textContent = timeLabel(Number(duration || 0) * index / 4);
     $("timelineRuler").append(mark);
   }
+}
+function renderSubtitleTrack(cues, duration, stateName = "none", message = "") {
+  const lane = $("subtitleLane");
+  lane.replaceChildren();
+  $("subtitleCount").textContent = Array.isArray(cues) && cues.length ? `${cues.length} lines` : "";
+  if (!Array.isArray(cues) || !cues.length) {
+    const empty = document.createElement("span");
+    empty.className = "subtitle-empty";
+    empty.textContent = message || (stateName === "unavailable" ? "Speech transcription is unavailable" : stateName === "silent" ? "No speech detected" : "No editable subtitle track detected");
+    lane.append(empty);
+    return;
+  }
+  cues.forEach((cue, index) => {
+    const start = Math.max(0, Number(cue.start || 0)), end = Math.max(start, Number(cue.end || start));
+    const button = document.createElement("button"), time = document.createElement("span"), copy = document.createElement("span");
+    button.type = "button"; button.className = "subtitle-cue";
+    time.className = "subtitle-cue-time"; time.textContent = `${timeLabel(start)} – ${timeLabel(end)}`;
+    copy.className = "subtitle-cue-text"; copy.textContent = cue.text || `Subtitle ${index + 1}`;
+    button.append(time, copy);
+    button.title = cue.text || "";
+    button.setAttribute("aria-label", `${cue.text || `Subtitle ${index + 1}`}, ${timeLabel(start)} to ${timeLabel(end)}`);
+    button.addEventListener("click", () => { selectPreview(false); $("sourceVideo").currentTime = start; syncTimelinePosition(); });
+    lane.append(button);
+  });
+}
+function renderCreativePlan(plan) {
+  state.creativePlan = plan || { items: [], missing: [], ready: false };
+}
+function resizeDirectionInput() {
+  const input = $("extraBrief");
+  input.style.height = "50px";
+  const contentHeight = Number(input.scrollHeight || 50);
+  input.style.height = `${Math.min(120, Math.max(50, contentHeight))}px`;
+  input.style.overflowY = contentHeight > 120 ? "auto" : "hidden";
+}
+function resizeChatInput() {
+  const input = $("scriptPrompt");
+  input.style.height = "50px";
+  const contentHeight = Number(input.scrollHeight || 50);
+  input.style.height = `${Math.min(120, Math.max(50, contentHeight))}px`;
+  input.style.overflowY = contentHeight > 120 ? "auto" : "hidden";
+}
+function appendDirectionMessage(role, text) {
+  const article = document.createElement("article"), body = document.createElement("p");
+  article.className = `conversation-message ${role}`;
+  if (role !== "user") { const label = document.createElement("span"); label.className = "conversation-speaker"; label.textContent = "Pixfun"; article.append(label); }
+  body.textContent = text; article.append(body);
+  $("directionConversation").append(article);
+  $("directionConversation").scrollTop = $("directionConversation").scrollHeight;
+}
+function resetDirectionConversation() {
+  const cues = state.subtitleCues || [], midpoint = cues[Math.floor(cues.length / 2)];
+  $("hookInput").value = cues[0]?.text || "A stronger opening for your version";
+  $("subjectInput").value = midpoint?.text || "Your main message";
+  $("ctaInput").value = cues[cues.length - 1]?.text || "Your closing line";
+  $("directionConversation").replaceChildren();
+  const missing = state.creativePlan?.missing?.join(" ");
+  const firstRequest = $("extraBrief").value.trim();
+  if (firstRequest) appendDirectionMessage("user", firstRequest);
+  appendDirectionMessage("assistant", missing ? `${missing} Add that here when you're ready.` : "Got it. What would you like to refine?");
+  $("scriptPrompt").value = "";
+  resizeChatInput();
+  state.conversationReady = Boolean(firstRequest); state.textConfirmed = false;
+  $("confirmConversation").disabled = !state.conversationReady;
+}
+function applyDirectionInstruction(prompt) {
+  const fields = { hook: "hookInput", opening: "hookInput", main: "subjectInput", message: "subjectInput", closing: "ctaInput", cta: "ctaInput" };
+  const updated = new Set();
+  prompt.split(/[;\n]+/).forEach(part => {
+    const match = part.match(/^\s*(hook|opening|main|message|closing|cta)\s*[:=-]\s*(.+)$/i);
+    if (!match) return;
+    const id = fields[match[1].toLowerCase()];
+    $(id).value = match[2].trim().slice(0, 100); updated.add(id);
+  });
+  if (/shorter|shorten|more concise/i.test(prompt)) {
+    ["hookInput", "subjectInput", "ctaInput"].forEach(id => { $(id).value = $(id).value.slice(0, 48); updated.add(id); });
+  }
+  return updated.size ? "Updated. Anything else?" : "Got it. What else would you like to change?";
 }
 function syncTimelinePosition() {
   const video = $("sourceVideo"), duration = Number(video.duration || 0), current = Math.max(0, Number(video.currentTime || 0));
@@ -170,6 +228,7 @@ async function hydrateTimelineThumbnails(sourceUrl, images, segments) {
     canvas.width = Math.max(1, Math.round((media.videoWidth || 320) * scale));
     canvas.height = Math.max(1, Math.round((media.videoHeight || 180) * scale));
     for (let index = 0; index < images.length; index++) {
+      if (!images[index].hidden && images[index].src) continue;
       const segment = segments[index] || {}, target = Math.min(Math.max(0, Number(segment.end || media.duration) - .05), Number(segment.start || 0) + Math.max(.05, Number(segment.duration || 0) * .45));
       if (Math.abs(media.currentTime - target) > .02 || media.readyState < 2) { media.currentTime = target; await waitFor("seeked"); }
       context.drawImage(media, 0, 0, canvas.width, canvas.height);
@@ -188,7 +247,7 @@ async function request(url, options) {
 const postJSON = (url, data) => request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
 function showAnalysis(data) {
   state.jobId = data.jobId;
-  Object.assign(state, { furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], clips: [], outputUrl: null });
+  Object.assign(state, { furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, creativePlan: null, conversationReady: false, subtitleCues: [], textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], outputUrl: null });
   $("results").hidden = false;
   $("outputBox").hidden = true;
   $("outputVideo").pause(); $("outputVideo").removeAttribute("src"); $("outputVideo").load();
@@ -197,10 +256,11 @@ function showAnalysis(data) {
   selectPreview(false);
   $("sourceVideo").src = data.sourceUrl || "";
   const analysis = data.analysis;
+  state.subtitleCues = analysis.subtitleCues || [];
   $("fileName").textContent = analysis.sourceName;
   const meta = analysis.metadata || {};
   $("metrics").replaceChildren();
-  [[timeLabel(meta.duration), "Duration"], [`${meta.width || "—"} × ${meta.height || "—"}`, "Resolution"], [String(analysis.cutCount || 0), "Scene changes"]].forEach(([value, label]) => {
+  [[timeLabel(meta.duration), "Duration"], [`${meta.width || "—"} × ${meta.height || "—"}`, "Resolution"], [String((analysis.segments || []).length), "Segments"]].forEach(([value, label]) => {
     const item = document.createElement("div"), strong = document.createElement("b");
     strong.textContent = value; item.append(strong, document.createTextNode(label)); $("metrics").append(item);
   });
@@ -208,13 +268,15 @@ function showAnalysis(data) {
   state.segments = analysis.segments || [];
   const segmentTotal = state.segments.length, thumbnailImages = [];
   $("segmentCount").textContent = `${segmentTotal} ${segmentTotal === 1 ? "segment" : "segments"}`;
-  $("splitBtn").textContent = `Create ${segmentTotal} clip${segmentTotal === 1 ? "" : "s"}`;
   state.segments.forEach((segment, i) => {
     const button = document.createElement("button"), thumbnail = document.createElement("span"), image = document.createElement("img"), label = document.createElement("span"), time = document.createElement("span");
     button.type = "button"; button.className = "timeline-clip"; button.style.flexGrow = Math.max(1, Number(segment.duration) || 1);
-    thumbnail.className = "clip-thumbnail"; image.alt = ""; image.hidden = true; image.width = 320; image.height = 180; thumbnail.append(image); thumbnailImages.push(image);
+    thumbnail.className = "clip-thumbnail"; image.alt = `Preview frame for scene ${i + 1}`; image.hidden = !segment.thumbnailUrl; image.width = 320; image.height = 180; image.loading = "lazy";
+    if (segment.thumbnailUrl) image.src = segment.thumbnailUrl;
+    thumbnail.append(image); thumbnailImages.push(image);
     label.className = "clip-label"; label.textContent = `Scene ${String(i + 1).padStart(2, "0")}`;
     time.className = "clip-time"; time.textContent = `${timeLabel(segment.start)} – ${timeLabel(segment.end)}`; button.append(thumbnail, label, time);
+    button.setAttribute("aria-label", `Scene ${i + 1}, ${timeLabel(segment.start)} to ${timeLabel(segment.end)}`);
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => {
       selectPreview(false);
@@ -224,26 +286,41 @@ function showAnalysis(data) {
     }); $("timeline").append(button);
   });
   renderTimelineRuler(meta.duration);
+  renderSubtitleTrack(analysis.subtitleCues || [], Number(meta.duration || 0), analysis.subtitleState, analysis.subtitleMessage);
   syncTimelinePosition();
   hydrateTimelineThumbnails(data.sourceUrl || "", thumbnailImages, state.segments);
-  renderClipOutputs();
   $("transcriptInput").value = analysis.transcriptState ? analysis.transcript || "" : "";
   $("textForm").reset();
+  $("directionConversation").replaceChildren();
+  appendDirectionMessage("assistant", "What would you like to change?");
+  $("confirmConversation").disabled = true;
   $("renderForm").hidden = false;
-  if ($("briefForm")) $("briefForm").reset();
+  if ($("briefForm")) { $("briefForm").reset(); $("briefForm").hidden = false; }
+  $("textForm").hidden = true;
+  resizeDirectionInput();
+  renderCreativePlan(null);
   $("renderBtn").textContent = "Create video";
   setStep(1, false);
-  ["renderStatus", "textStatus", "transcriptStatus", "briefStatus", "splitStatus"].forEach(id => { if ($(id)) status(id, ""); });
+  ["renderStatus", "textStatus", "transcriptStatus", "briefStatus"].forEach(id => { if ($(id)) status(id, ""); });
   setStudioMode(true);
 }
 async function importVideo(form, link = false) {
   if (state.busy) return;
   if (state.jobId && (state.briefDirty || state.textDirty || state.notesDirty) && !window.confirm("Start a new video? Unsaved edits in this workspace will be replaced after the import succeeds.")) { $("fileInput").value = ""; return; }
+  const loadingButton = $(link ? "analyzeBtn" : "uploadBtn");
+  const idleLabel = link ? "Analyze" : "Upload video";
   busy(true);
-  status("importStatus", link ? "Downloading the YouTube video and detecting scenes. This may take a few minutes." : "Uploading the video and detecting scenes. Keep this page open.");
-  try { showAnalysis(await request("/api/import", { method: "POST", body: form })); status("importStatus", "Video imported. Open your studio to continue."); }
+  loadingButton.textContent = "Loading…";
+  loadingButton.setAttribute("aria-busy", "true");
+  status("importStatus", "");
+  try { showAnalysis(await request("/api/import", { method: "POST", body: form })); status("importStatus", ""); }
   catch (error) { status("importStatus", error.message === "Failed to fetch" ? "Cannot connect to the local service. Make sure the server is running." : error.message, true); }
-  finally { busy(false); $("fileInput").value = ""; }
+  finally {
+    loadingButton.textContent = idleLabel;
+    loadingButton.removeAttribute("aria-busy");
+    busy(false);
+    $("fileInput").value = "";
+  }
 }
 function uploadFile(file) {
   if (!file || state.busy) return;
@@ -268,29 +345,28 @@ $("create").addEventListener("drop", event => {
   if (event.dataTransfer.files.length > 1) return status("importStatus", "Import one video at a time.", true);
   uploadFile(event.dataTransfer.files[0]);
 });
-$("saveTranscript").addEventListener("click", async () => {
-  if (!state.jobId || state.busy) return; busy(true);
-  try { await postJSON("/api/analyze", { jobId: state.jobId, transcript: $("transcriptInput").value }); state.notesDirty = false; status("transcriptStatus", "Notes saved locally."); }
-  catch (error) { status("transcriptStatus", error.message, true); } finally { busy(false); }
-});
-$("splitBtn").addEventListener("click", async () => {
-  if (!state.jobId || state.busy || !state.segments.length) return;
-  busy(true); status("splitStatus", `Creating ${state.segments.length} MP4 clip${state.segments.length === 1 ? "" : "s"}…`);
+$("textForm").addEventListener("submit", async event => {
+  event.preventDefault(); if (state.busy || !state.jobId) return;
+  const prompt = $("scriptPrompt").value.trim();
+  if (!prompt) { status("textStatus", "Tell Pixfun what you want to refine.", true); $("scriptPrompt").focus(); return; }
+  const reply = applyDirectionInstruction(prompt), draft = textValues();
+  busy(true); $("textNext").textContent = "Sending…"; status("textStatus", "");
   try {
-    const result = await postJSON("/api/split", { jobId: state.jobId });
-    state.clips = result.clips || [];
-    renderClipOutputs();
-    $("splitBtn").textContent = `Recreate ${state.clips.length} clip${state.clips.length === 1 ? "" : "s"}`;
-    status("splitStatus", `${state.clips.length} clip${state.clips.length === 1 ? " is" : "s are"} ready to download.`);
-    $("clipOutputs").scrollIntoView({ block: "nearest", behavior: "smooth" });
-  } catch (error) { status("splitStatus", error.message, true); }
-  finally { busy(false); }
+    await postJSON("/api/direction", { jobId: state.jobId, prompt, draft });
+    appendDirectionMessage("user", prompt);
+    appendDirectionMessage("assistant", reply);
+    $("scriptPrompt").value = "";
+    resizeChatInput();
+    state.conversationReady = true; state.textConfirmed = false; state.notesDirty = false;
+    state.textDirty = JSON.stringify(draft) !== state.renderedText;
+    $("confirmConversation").disabled = false;
+    status("textStatus", "");
+  } catch (error) { status("textStatus", error.message, true); }
+  finally { busy(false); $("textNext").textContent = "Send"; }
 });
-$("textForm").addEventListener("submit", event => {
-  event.preventDefault(); if (state.busy || !state.jobId || !validateText()) return;
-  state.textConfirmed = true;
-  status("textStatus", "");
-  setStep(3);
+$("confirmConversation").addEventListener("click", () => {
+  if (state.busy || !state.conversationReady) return;
+  state.textConfirmed = true; status("textStatus", ""); setStep(2);
 });
 $("renderForm").addEventListener("submit", async event => {
   event.preventDefault(); if (!state.jobId || state.busy) return;
@@ -306,7 +382,7 @@ $("renderForm").addEventListener("submit", async event => {
     $("outputVideo").src = result.outputUrl; $("downloadLink").href = result.outputUrl; $("outputBox").hidden = false;
     $("resultPreview").disabled = false;
     selectPreview(true);
-    setStep(3, false);
+    setStep(2, false);
     status("renderStatus", "Ready. Select Original or Result to compare.");
     $("downloadLink").focus({ preventScroll: true });
     $("resultPreviewSlot").scrollIntoView({ block: "start", behavior: "instant" });
@@ -314,23 +390,38 @@ $("renderForm").addEventListener("submit", async event => {
 });
 if ($("briefForm")) $("briefForm").addEventListener("submit", async event => {
   event.preventDefault(); if (!state.jobId || state.busy) return;
-  const brief = { material: "", person: "", dialogue: "", language: "keep", instructions: $("extraBrief").value.trim() };
+  const instruction = $("extraBrief").value.trim();
+  if (!instruction) {
+    status("briefStatus", "Describe at least one change, such as the presenter, language, product, setting, or script.", true);
+    $("extraBrief").focus();
+    return;
+  }
+  const brief = { material: "", person: "", dialogue: "", language: "keep", instructions: instruction };
   const form = new FormData(); form.append("jobId", state.jobId); form.append("brief", JSON.stringify(brief));
-  busy(true); status("briefStatus", "Saving your direction…");
+  busy(true); $("saveBrief").textContent = "Preparing…"; status("briefStatus", "");
   try {
     const data = await request("/api/brief", { method: "POST", body: form });
-    state.references = []; state.briefSaved = true; state.briefDirty = false;
-    status("briefStatus", "Direction saved.");
-    setStep(2);
+    state.references = data.references || []; state.briefSaved = true; state.briefDirty = false;
+    renderCreativePlan(data.plan);
+    status("briefStatus", "");
+    resetDirectionConversation();
+    $("briefForm").hidden = true;
+    $("textForm").hidden = false;
+    $("scriptPrompt").focus();
+    syncStepNavigation();
   }
-  catch (error) { status("briefStatus", error.message, true); } finally { busy(false); }
+  catch (error) { status("briefStatus", error.message, true); }
+  finally { busy(false); $("saveBrief").textContent = "Continue"; }
 });
 document.querySelectorAll("[data-studio-step]").forEach(button => button.addEventListener("click", () => { if (!state.busy && Number(button.dataset.studioStep) <= state.furthestStep) setStep(button.dataset.studioStep); }));
-$("editBack").addEventListener("click", () => setStep(1));
-$("exportBack").addEventListener("click", () => setStep(2));
+$("exportBack").addEventListener("click", () => setStep(1));
 $("originalPreview").addEventListener("click", () => selectPreview(false));
 $("resultPreview").addEventListener("click", () => selectPreview(true));
-$("briefForm").addEventListener("input", () => { state.briefDirty = true; status("briefStatus", "Unsaved changes"); });
+$("briefForm").addEventListener("input", () => {
+  resizeDirectionInput();
+  state.briefDirty = true; state.briefSaved = false;
+  status("briefStatus", "");
+});
 $("sourceVideo").addEventListener("loadedmetadata", () => { renderTimelineRuler($("sourceVideo").duration); syncTimelinePosition(); });
 $("sourceVideo").addEventListener("timeupdate", syncTimelinePosition);
 $("sourceVideo").addEventListener("seeked", syncTimelinePosition);
@@ -338,14 +429,13 @@ $("sourceVideo").addEventListener("play", startTimelineMotion);
 $("sourceVideo").addEventListener("pause", stopTimelineMotion);
 $("sourceVideo").addEventListener("ended", stopTimelineMotion);
 $("textForm").addEventListener("input", () => {
-  state.textDirty = JSON.stringify(textValues()) !== state.renderedText;
+  resizeChatInput();
   state.textConfirmed = false;
+  state.notesDirty = Boolean($("scriptPrompt").value.trim());
   status("textStatus", "");
-  ["hookInput", "subjectInput", "ctaInput"].forEach(id => $(id).removeAttribute("aria-invalid"));
-  status("renderStatus", state.outputUrl && state.textDirty ? "Text changed. Update the video to apply your edits." : "");
+  status("renderStatus", state.outputUrl ? "Direction changed. Send and confirm it to update the video." : "");
   syncStepNavigation();
 });
-$("transcriptInput").addEventListener("input", () => { state.notesDirty = true; status("transcriptStatus", "Unsaved notes"); });
 $("backHome").addEventListener("click", () => { if (!state.busy) setStudioMode(false); });
 $("changeVideo").addEventListener("click", () => { if (!state.busy) { setStudioMode(false); $("urlInput").focus(); } });
 $("resumeStudio").addEventListener("click", () => { if (!state.busy) setStudioMode(true); });

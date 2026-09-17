@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+
 class Element {
   constructor(id = '', tag = 'div') {
     this.id = id; this.tagName = tag; this.children = []; this.handlers = {}; this.attrs = {}; this.dataset = {}; this.style = {}; this.value = ''; this.files = []; this.hidden = false; this.disabled = false; this.textContent = '';
@@ -22,137 +23,170 @@ class Element {
   scrollIntoView() {}
   reset() {}
 }
+
 const html = fs.readFileSync(path.resolve(__dirname, '../public/index.html'), 'utf8');
-assert.match(html, /id="textForm"[^>]*novalidate/, 'Use the English inline validation instead of OS-language bubbles');
-assert.doesNotMatch(html, /id="chooseReferences"|id="languageBrief"|<summary>More options<\/summary>/, 'Direction composer only shows the request and action');
-assert.match(html, /id="timelineRuler"/, 'Review includes a timeline ruler');
-assert.match(html, /id="workspacePlayhead"/, 'Review includes a synchronized playhead');
-assert.match(html, /id="timelineEditor"/, 'Timeline can follow the playhead in a narrow viewport');
-assert.match(html, /id="splitBtn"/, 'Review can render detected segments as separate MP4 clips');
-assert.match(html, /class="quick-direction studio-brief-form" id="briefForm"/, 'Review includes the merged direction composer');
-assert.match(html, />Continue to script<\/button>/, 'Direction action clearly names the next step');
-assert.equal((html.match(/data-studio-step=/g) || []).length, 3, 'Studio has three progressive steps');
+const studioFlowCss = fs.readFileSync(path.resolve(__dirname, '../public/studio-flow.css'), 'utf8');
+const controlsCss = fs.readFileSync(path.resolve(__dirname, '../public/controls.css'), 'utf8');
+
+assert.match(html, /class="create-split"/, 'Create uses a split workspace');
+assert.match(html, /class="media-workspace"/, 'Video, timeline, and subtitles share the media pane');
+assert.match(html, /class="chat-workspace"/, 'Natural-language editing stays in a dedicated chat pane');
+assert.match(html, /id="textForm"[^>]*novalidate[^>]*hidden/, 'Chat composer is revealed after the first direction');
+assert.match(html, /id="timelineRuler"/, 'Media pane includes a timeline ruler');
+assert.match(html, /id="workspacePlayhead"/, 'Timeline includes a synchronized playhead');
+assert.match(html, /id="subtitleLane"/, 'Subtitles render in their own list below the timeline');
+assert.match(html, /placeholder="Describe changes…"/, 'The initial direction prompt stays concise');
+assert.match(html, /placeholder="Message Pixfun…"/, 'The chat prompt stays concise');
+assert.doesNotMatch(html, /id="editBack"|STEP 02 \/ REFINE|Shape your version together|Script notes|id="saveTranscript"/, 'The merged workspace removes the redundant refine page and copy');
+assert.equal((html.match(/data-studio-step=/g) || []).length, 2, 'Studio has two progressive steps');
+assert.equal((html.match(/data-studio-panel=/g) || []).length, 2, 'Review and chat are merged into one Create panel');
+assert.match(studioFlowCss, /create-split[^}]*grid-template-columns:\s*minmax\(0,\s*1\.62fr\)\s*minmax\(360px,\s*\.92fr\)/s, 'Desktop layout gives more room to the media pane');
+assert.match(studioFlowCss, /chat-workspace[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto/s, 'Chat input stays at the bottom of its pane');
+assert.match(studioFlowCss, /quick-direction,[\s\S]*conversation-composer[^{]*\{[^}]*position:\s*static/s, 'Composers no longer float over the video workspace');
+assert.match(studioFlowCss, /@media \(max-width:\s*960px\)[\s\S]*create-split[^}]*grid-template-columns:\s*1fr/s, 'The split workspace stacks below the desktop breakpoint');
+assert.match(studioFlowCss, /quick-direction textarea,[\s\S]*conversation-composer textarea[^}]*background:\s*#1c1721/s, 'Inputs use a distinct dark surface');
+assert.match(studioFlowCss, /quick-direction textarea:focus-visible,[\s\S]*conversation-composer textarea:focus-visible[^}]*outline:\s*none[^}]*box-shadow:\s*none/s, 'Inputs keep a quiet focus state');
+assert.match(studioFlowCss, /studio-bottomline[^}]*display:\s*none/, 'The redundant bottom progress label stays hidden');
+assert.match(controlsCss, /button\[aria-busy="true"\]/, 'Import buttons expose a visible loading state');
+
 const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => [id, new Element(id)]));
-const steps = [1, 2, 3].map(n => { const e = new Element(); e.dataset.studioStep = String(n); return e; });
-const panels = [1, 2, 3].map(n => { const e = new Element(); e.dataset.studioPanel = String(n); return e; });
+const steps = [1, 2].map(n => { const e = new Element(); e.dataset.studioStep = String(n); return e; });
+const panels = [1, 2].map(n => { const e = new Element(); e.dataset.studioPanel = String(n); return e; });
 const brand = new Element(), skip = new Element(), body = new Element();
 const eventHandlers = {};
 const document = {
-  body, getElementById: id => elements[id] || null, createElement: tag => new Element('', tag), createTextNode: text => ({ textContent: text }),
+  body,
+  getElementById: id => elements[id] || null,
+  createElement: tag => new Element('', tag),
+  createTextNode: text => ({ textContent: text }),
   querySelector: selector => selector === '.skip' ? skip : selector === '.header .brand' ? brand : null,
   querySelectorAll: selector => selector === '[data-studio-step]' ? steps : selector === '[data-studio-panel]' ? panels : selector.startsWith('[data-studio-step],') ? [...steps, ...Object.values(elements)] : [],
   dispatchEvent() {},
 };
-let failBrief = false, failRender = false, failSplit = false;
+
+let failBrief = false, failRender = false, holdImport = false, releaseImport;
 const calls = [];
-const context = vm.createContext({ document, console, URL, FormData, Event, location: { hash: '' }, matchMedia: () => ({ matches: false }),
+const context = vm.createContext({
+  document, console, URL, FormData, Event, location: { hash: '' }, matchMedia: () => ({ matches: false }),
   history: { pushState(_state, _title, hash) { context.location.hash = hash; } },
   window: { scrollTo() {}, confirm: () => true, addEventListener(name, fn) { eventHandlers[name] = fn; } },
   fetch: async (url, options) => {
     calls.push({ url, options });
     let data = { ok: true };
+    if (url === '/api/import') {
+      if (holdImport) await new Promise(resolve => { releaseImport = resolve; });
+      data = { ok: false, error: 'Import test failure' };
+    }
     if (url === '/api/health') data.tools = { ffmpeg: true, ffprobe: true, 'yt-dlp': true };
-    if (url === '/api/brief') data = failBrief ? { ok: false, error: 'Brief test failure' } : { ok: true, references: [] };
-    if (url === '/api/split') data = failSplit ? { ok: false, error: 'Split test failure' } : { ok: true, clips: [
-      { label: 'Scene 01', start: 0, end: 6, duration: 6, filename: 'clip-01.mp4', url: '/media/output/test/clip-01.mp4' },
-      { label: 'Scene 02', start: 6, end: 12, duration: 6, filename: 'clip-02.mp4', url: '/media/output/test/clip-02.mp4' },
-    ] };
+    if (url === '/api/brief') data = failBrief ? { ok: false, error: 'Brief test failure' } : { ok: true, references: [], plan: { items: [], missing: [], ready: true } };
+    if (url === '/api/direction') data = { ok: true, draft: { hook: 'My hook', subject: 'My text', cta: 'My close' } };
     if (url === '/api/render') data = failRender ? { ok: false, error: 'Render test failure' } : { ok: true, outputUrl: '/media/output/test/result.mp4' };
     return { ok: data.ok, json: async () => data };
   },
 });
+
 vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../public/pixfun.js'), 'utf8'), context);
 const run = code => vm.runInContext(code, context);
+
 (async () => {
-  run(`showAnalysis({jobId:'012345abcdef', sourceUrl:'/media/upload/test/source.mp4', analysis:{sourceName:'sample.mp4', metadata:{duration:12,width:1920,height:1080}, cutCount:1, segments:[{start:0,end:6,duration:6},{start:6,end:12,duration:6}]}})`);
+  elements.urlInput.value = 'https://www.youtube.com/watch?v=test';
+  holdImport = true;
+  const pendingImport = elements.urlForm.emit('submit');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(elements.analyzeBtn.textContent, 'Loading…', 'Analyze shows loading inside the button');
+  assert.equal(elements.analyzeBtn.attrs['aria-busy'], 'true');
+  releaseImport(); await pendingImport; await new Promise(resolve => setImmediate(resolve)); holdImport = false;
+  assert.equal(elements.analyzeBtn.textContent, 'Analyze');
+  assert.equal(elements.importStatus.textContent, 'Import test failure');
+
+  run(`showAnalysis({jobId:'012345abcdef', sourceUrl:'/media/upload/test/source.mp4', analysis:{sourceName:'sample.mp4', metadata:{duration:12,width:1920,height:1080}, cutCount:1, subtitleState:'embedded', subtitleCues:[{start:.5,end:2.5,text:'First subtitle'},{start:6.5,end:9,text:'Second subtitle'}], segments:[{start:0,end:6,duration:6,thumbnailUrl:'/media/output/test/timeline-01.jpg'},{start:6,end:12,duration:6,thumbnailUrl:'/media/output/test/timeline-02.jpg'}]}})`);
   assert.ok(body.classList.contains('studio-mode'));
   assert.equal(context.location.hash, '#studio');
-  assert.deepEqual(panels.map(p => p.hidden), [false, true, true]);
-  assert.deepEqual(steps.map(p => p.disabled), [false, true, true]);
-  assert.equal(elements.previewSwitch.hidden, true);
+  assert.deepEqual(panels.map(p => p.hidden), [false, true]);
+  assert.deepEqual(steps.map(p => p.disabled), [false, true]);
   assert.equal(elements.previewCard.parentElement, elements.reviewPreviewSlot);
-  assert.equal(elements.resultPreview.disabled, true);
   assert.equal(elements.timeline.children.length, 2);
-  assert.equal(elements.timeline.children[0].children[0].children[0].tagName, 'img', 'Each timeline clip has a video thumbnail image');
-  assert.equal(elements.splitBtn.textContent, 'Create 2 clips');
-  failSplit = true; await elements.splitBtn.emit('click'); assert.equal(elements.splitStatus.textContent, 'Split test failure');
-  failSplit = false; await elements.splitBtn.emit('click');
-  assert.equal(elements.clipOutputs.hidden, false); assert.equal(elements.clipOutputList.children.length, 2);
-  assert.equal(elements.clipOutputList.children[0].children[1].href, '/media/output/test/clip-01.mp4');
-  await steps[2].emit('click'); assert.equal(run('state.step'), 1, 'Future step cannot be opened');
+  assert.equal(elements.subtitleLane.children.length, 2);
+  assert.equal(elements.subtitleLane.children[0].children[1].textContent, 'First subtitle');
+  assert.equal(elements.directionConversation.children.length, 1, 'Create starts with one short Pixfun prompt');
+  assert.equal(elements.briefForm.hidden, false);
+  assert.equal(elements.textForm.hidden, true);
+  await steps[1].emit('click');
+  assert.equal(run('state.step'), 1, 'Export cannot open before direction is confirmed');
+
   elements.extraBrief.value = 'Use a confident presenter and Spanish narration';
   await elements.briefForm.emit('input');
   failBrief = true;
   await elements.briefForm.emit('submit');
-  assert.equal(run('state.step'), 1); assert.equal(elements.briefStatus.textContent, 'Brief test failure');
-  assert.equal(elements.extraBrief.value, 'Use a confident presenter and Spanish narration');
-  assert.equal(elements.saveBrief.disabled, false);
+  assert.equal(run('state.step'), 1);
+  assert.equal(elements.briefStatus.textContent, 'Brief test failure');
   failBrief = false;
   await elements.briefForm.emit('submit');
-  assert.equal(run('state.step'), 2); assert.equal(run('state.briefSaved'), true);
-  assert.deepEqual(panels.map(p => p.hidden), [true, false, true]);
-  assert.deepEqual(steps.map(p => p.disabled), [false, false, true]);
-  assert.equal(elements.briefSummary.hidden, false);
-  await elements.textForm.emit('submit');
-  assert.equal(run('state.step'), 2, 'Empty text cannot advance');
-  assert.equal(elements.hookInput.attrs['aria-invalid'], 'true');
-  assert.equal(steps[2].disabled, true);
-  for (const id of ['hookInput', 'subjectInput', 'ctaInput']) elements[id].value = 'My text';
+  assert.equal(run('state.step'), 1, 'First direction continues in the same Create workspace');
+  assert.equal(run('state.briefSaved'), true);
+  assert.deepEqual(panels.map(p => p.hidden), [false, true]);
+  assert.deepEqual(steps.map(p => p.disabled), [false, true]);
+  assert.equal(elements.briefForm.hidden, true);
+  assert.equal(elements.textForm.hidden, false);
+  assert.equal(elements.directionConversation.children.length, 2, 'Initial request becomes a user turn followed by a concise Pixfun reply');
+  assert.equal(elements.confirmConversation.disabled, false);
+
+  elements.scriptPrompt.value = 'Opening: My hook; Main: My text; Closing: My close';
   await elements.textForm.emit('input');
   await elements.textForm.emit('submit');
-  assert.equal(run('state.step'), 3);
-  assert.deepEqual(panels.map(p => p.hidden), [true, true, false]);
-  assert.equal(elements.summaryHook.textContent, 'My text');
-  assert.equal(elements.previewSwitch.hidden, true, 'Result selector is absent before generation');
+  assert.equal(elements.directionConversation.children.length, 4);
+  await elements.confirmConversation.emit('click');
+  assert.equal(run('state.step'), 2);
+  assert.deepEqual(panels.map(p => p.hidden), [true, false]);
+  assert.deepEqual(steps.map(p => p.disabled), [false, false]);
+  assert.equal(elements.summaryHook.textContent, 'My hook');
   assert.equal(elements.previewCard.parentElement, elements.resultPreviewSlot);
-  assert.equal(elements.renderForm.hidden, false);
-  assert.equal(elements.outputBox.hidden, true);
+
   await elements.renderForm.emit('submit');
-  assert.equal(elements.outputBox.hidden, false); assert.equal(elements.sourceVideo.hidden, true); assert.equal(elements.outputVideo.hidden, false);
+  assert.equal(elements.outputBox.hidden, false);
+  assert.equal(elements.sourceVideo.hidden, true);
+  assert.equal(elements.outputVideo.hidden, false);
   assert.equal(elements.downloadLink.href, '/media/output/test/result.mp4');
-  assert.equal(elements.previewSwitch.hidden, false);
-  assert.equal(elements.renderForm.hidden, true, 'Successful export has one primary download action');
+  assert.equal(elements.renderForm.hidden, true);
   await elements.originalPreview.emit('click'); assert.equal(elements.sourceVideo.hidden, false);
   await elements.resultPreview.emit('click'); assert.equal(elements.outputVideo.hidden, false);
-  await steps[0].emit('click');
-  assert.equal(elements.previewSwitch.hidden, true);
+
+  await elements.exportBack.emit('click');
+  assert.equal(run('state.step'), 1);
   assert.equal(elements.previewCard.parentElement, elements.reviewPreviewSlot);
-  await elements.timeline.children[1].emit('click'); assert.equal(elements.sourceVideo.currentTime, 6); assert.equal(elements.sourceVideo.hidden, false); assert.equal(elements.timeline.children[1].attrs['aria-pressed'], 'true');
+  await elements.timeline.children[1].emit('click');
+  assert.equal(elements.sourceVideo.currentTime, 6);
   assert.equal(elements.timelineNow.textContent, 'Now · 0:06');
-  assert.equal(elements.sourceVideo.handlers.play.length, 1, 'Playback starts the smooth playhead loop');
-  await steps[1].emit('click');
-  elements.hookInput.value = 'Updated text';
+
+  elements.scriptPrompt.value = 'Opening: Updated text';
   await elements.textForm.emit('input');
+  await steps[1].emit('click');
+  assert.equal(run('state.step'), 1, 'Edited direction must be sent and confirmed before export');
   await elements.textForm.emit('submit');
+  await elements.confirmConversation.emit('click');
   assert.equal(elements.outputTitle.textContent, 'Previous version');
-  assert.equal(elements.downloadLink.textContent, 'Download previous version');
   assert.equal(elements.renderForm.hidden, false);
   failRender = true;
   await elements.renderForm.emit('submit');
-  assert.equal(elements.outputBox.hidden, false, 'Preserve previous result on failure');
-  assert.equal(elements.renderBtn.disabled, false); assert.equal(elements.hookInput.value, 'Updated text');
-  assert.equal(run('state.step'), 3);
+  assert.equal(elements.outputBox.hidden, false, 'Previous result survives a failed update');
+  assert.equal(run('state.step'), 2);
   failRender = false;
   await elements.renderForm.emit('submit');
   assert.equal(elements.renderForm.hidden, true);
   assert.equal(elements.downloadLink.textContent, 'Download MP4');
-  assert.equal(run('state.textDirty'), false);
+
   await elements.backHome.emit('click'); assert.equal(body.classList.contains('studio-mode'), false);
-  await elements.resumeStudio.emit('click'); assert.equal(body.classList.contains('studio-mode'), true); assert.equal(elements.hookInput.value, 'Updated text');
+  await elements.resumeStudio.emit('click'); assert.equal(body.classList.contains('studio-mode'), true);
   await elements.exportBack.emit('click');
-  elements.hookInput.value = ' ';
+  elements.scriptPrompt.value = 'An unsent direction';
   await elements.textForm.emit('input');
-  await steps[2].emit('click');
-  assert.equal(run('state.step'), 2, 'Revisiting export still validates edited text');
-  await elements.editBack.emit('click');
-  elements.extraBrief.value = 'Unsaved direction';
-  await elements.briefForm.emit('input');
-  await steps[1].emit('click');
-  assert.match(elements.briefSummary.textContent, /unsaved/i);
   let warned = false; eventHandlers.beforeunload({ preventDefault() { warned = true; } }); assert.equal(warned, true);
+
   run(`showAnalysis({jobId:'fedcba654321', sourceUrl:'/media/upload/new.mp4', analysis:{sourceName:'new.mp4', metadata:{duration:10}, segments:[]}})`);
-  assert.deepEqual(steps.map(p => p.disabled), [false, true, true]);
+  assert.deepEqual(steps.map(p => p.disabled), [false, true]);
   assert.equal(elements.previewCard.parentElement, elements.reviewPreviewSlot);
-  assert.equal(elements.outputBox.hidden, true);
-  console.log('PASS: Three progressive steps, merged direction input, validation, preview placement, preserved drafts, stale-result labeling, render retry, scene seeking, home/resume, and new-project reset.');
+  assert.equal(elements.briefForm.hidden, false);
+  assert.equal(elements.textForm.hidden, true);
+  assert.equal(elements.subtitleLane.children[0].textContent, 'No editable subtitle track detected');
+  console.log('PASS: Split Create workspace, inline conversation, two-step navigation, timeline, subtitles, export validation, render retry, and project reset.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

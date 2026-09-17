@@ -40,6 +40,7 @@
 .button.primary:active, .hero-remix .url-form .button.primary:active { background: #5d38da; border-color: #5d38da; box-shadow: none; }
 .button:focus-visible, .hero-remix .upload-row button:focus-visible, .text-button:focus-visible { outline: 2px solid #c9b7ff; outline-offset: 4px; }
 .button:disabled, .button:disabled:hover, .hero-remix .upload-row button:disabled:hover { opacity: .5; box-shadow: none; transform: none; cursor: wait; }
+.hero-remix .url-form button[aria-busy="true"], .hero-remix .upload-row button[aria-busy="true"] { opacity: .78; cursor: wait; }
 .button.primary:disabled:hover, .hero-remix .url-form .button.primary:disabled:hover { background: var(--purple); border-color: var(--purple); box-shadow: none; }
 .header .button, .studio-heading .button, .workspace .notes .button { min-height: 44px; padding: 10px 20px; font-size: .875rem; }
 .hero-remix .url-form { border-radius: 18px; }

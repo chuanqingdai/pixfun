@@ -1,55 +1,62 @@
-# Timeline playhead motion — Design QA
+# Pixfun split creation workspace — Design QA
 
-- Source visual truth: `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-5eefd049-2264-474b-81e1-53fa45cc71d5.png`
-- Browser-rendered implementation: `/Users/daichuanqing/Documents/ChatGPT/爆款神器/爆款神器-app/qa/timeline-playhead-multiclip-final.jpg`
-- Focused implementation crop: `/Users/daichuanqing/Documents/ChatGPT/爆款神器/爆款神器-app/qa/timeline-playhead-final-crop.png`
-- Combined comparison input: `/Users/daichuanqing/Documents/ChatGPT/爆款神器/爆款神器-app/qa/timeline-playhead-comparison.png`
-- Responsive motion evidence: `/Users/daichuanqing/Documents/ChatGPT/爆款神器/爆款神器-app/qa/timeline-playhead-mobile-follow.jpg`
-- Source pixels: 852 × 230. Implementation full screenshot: 1071 × 951 at 1× density. Focused crop: 880 × 185. Mobile screenshot: 375 × 812 after browser chrome.
-- State: dark Studio Review screen, four detected clips, video playing in Scene 02 at approximately 00:04.
+- Latest scoped reference: `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-185f5d40-702d-4344-ab93-eb97879b097d.png`
+- Step-two redesign reference: `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-aee620e0-5138-4e1e-a95d-c498b1112709.png`
+- Primary visual reference: `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-79a64b88-427d-40e9-8b9c-903b2fb9ddda.png`
+- Supporting layout references: `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-e6bce1b5-9886-4ae2-966d-40fe8bea5bc3.png`, `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-9319f66f-2bd1-40b7-9743-23c9f7cfb8eb.png`, `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-c87687df-111a-4db9-a486-f3628eae3ad6.png`
+- Source visual truth: the existing Pixfun dark UI system plus the user-approved direction to keep the video visible beside a GPT-like conversation. Earlier studio captures document the original video/timeline state and the separate chat state.
+- Browser-rendered implementation: `http://127.0.0.1:8765/?v=split-workspace-1#studio`, captured and reviewed inline from the Codex in-app browser after a real YouTube import.
+- Viewport: 1071 × 951 CSS pixels at 1× density; implementation capture was 1071 × 951 pixels.
+- State: imported 19-second horizontal video, four detected storyboard segments, four extracted subtitle cues, playhead at 00:00, followed by a submitted presenter/language request.
 
 ## Full-view comparison evidence
 
-The implementation keeps the existing single-column Studio layout and places the active playhead inside the real imported-video timeline. The four clips retain their extracted frames and timestamps while the active clip receives the Pixfun violet outline.
+The former design separated Review and the Pixfun conversation into different screens. The revised full view keeps the player, continuous storyboard timeline, extracted subtitles, and subdued source metadata in the wider left pane. The narrower right pane contains only Pixfun, the message history, a bottom composer, and Export. This matches the approved product behavior: users can inspect the source while directing changes.
 
-## Focused comparison evidence
+The live import demonstrated four real scene thumbnails and four extracted subtitle cues. The initial request changed from the one-line composer into a user message without navigating away, and the next composer remained anchored inside the right pane. Export opened only after confirmation and showed the existing render summary.
 
-The combined comparison places the supplied reference and the live implementation in one image. Both show a vertical violet playhead crossing the active clip, a time label above the track, a `Now · time` badge next to the cursor, subdued inactive clips, and a highlighted current scene. The implementation intentionally omits the decorative audio waveform because this request concerns cursor motion and the local editor has no decoded waveform data.
+## Focused region comparison evidence
+
+The media pane, timeline, subtitle list, chat header, conversation turns, and composer were large enough to inspect in the 1071 × 951 capture, so separate crops were not needed. The focused post-submit state confirmed that the composer did not overlap the timeline or subtitle rows and that the video remained visible beside the conversation.
 
 ## Findings
 
-- No remaining P0/P1/P2 issue for the requested playhead behavior.
-- Fonts and typography: compact numeric labels use the existing UI font and tabular numerals; the time and `Now` labels remain readable while moving.
-- Spacing and layout rhythm: the label sits above the track and the contextual badge sits inside it, following the reference hierarchy without increasing timeline height.
-- Colors and visual tokens: playhead, labels, active border, and glow use the existing Pixfun violet family; inactive clips keep the dark neutral treatment.
-- Image quality and asset fidelity: timeline thumbnails continue to come from actual browser-extracted video frames rather than placeholders.
-- Copy and content: `Now · 0:04`, scene names, and clip time ranges are concise and synchronized with the preview.
-- Motion: `requestAnimationFrame` updates the playhead continuously during playback; pause, seek, and video end snap to the exact media time. On narrow screens, the horizontal timeline follows the cursor so the active clip stays visible.
-- Accessibility: clips remain keyboard-operable buttons with `aria-pressed`; the decorative moving playhead stays out of the accessibility tree, avoiding noisy per-frame announcements.
+- GPT-style direction flow: the first request composer now lives at the bottom of the right pane with the concise `Describe changes…` prompt. After submission, the request appears as the first user turn in the same pane. The chat keeps only Pixfun, Export, messages, and the `Message Pixfun…` composer; the long context explanation, structured draft cards, visible success copy, bottom progress label, and Script notes remain removed.
+- Direction composer display: fixed the Mac textarea chrome shown in `/var/folders/q0/9fgxy0s17b51hyks3h_1806w0000gn/T/codex-clipboard-c92b4a38-b1ae-4c62-a657-341dd8fd37eb.png`. The one-line state no longer shows a scrollbar or resize handle, the textarea and action button share a precise 50px control height, and scrolling appears only after the auto-growing field reaches its 120px cap. The redundant divider above the subdued step label is also removed.
+- Landing-page import feedback: link analysis and local upload now place the active `Loading…` state inside the initiating button. The duplicate progress sentence below the controls is removed; validation and failure messages still appear there, and the original button label returns after an error.
+- Direction input focus: the stable neutral focus treatment is retained. The input uses a distinct `#1c1721` surface inside a `#151219` composer without competing with the violet action button.
+- Create to Export: Review and direction are merged into one Create panel. Pixfun parses the request in the background and converts it into a conversation turn in place; export stays disabled until the direction is confirmed.
+- Subtitle presentation: extracted lines now live in a dedicated scrollable panel below the timeline. They no longer share the segment track or playhead geometry; every line keeps its own timestamp and seek action.
+- No remaining P0, P1, or P2 issues for the requested split workspace.
+- Fonts and typography: existing Pixfun type tokens, optical weights, compact labels, and hierarchy remain consistent; chat copy is readable at the narrower pane width.
+- Spacing and layout rhythm: the 1.62/.92 desktop grid gives the player visual priority, while 24px pane spacing and 16px card radii match the product system. The layout stacks at 960px.
+- Colors and visual tokens: violet focus, dark neutral surfaces, borders, and muted secondary text remain within the Pixfun palette with sufficient foreground contrast.
+- Image quality and asset fidelity: the live player and server-extracted scene frames are used directly; no placeholder or recreated imagery replaces video content.
+- Copy and content: labels are reduced to Create, Export, Video, Pixfun, Timeline, and Subtitles. No process explanation competes with the task.
+- Hierarchy: video, storyboard, subtitle list, secondary metadata, and conversation read in task order.
+- Alignment: storyboard clips remain contiguous and the playback cursor stays synchronized with the player.
+- Visual tokens: violet focus, dark surfaces, borders, and typography stay within the Pixfun system.
+- Responsiveness: the two panes become one column below 960px; the timeline remains horizontally scrollable when scenes exceed the available width.
+- Accessibility: scenes and subtitle cues are keyboard-operable buttons with descriptive labels; the moving playhead remains decorative.
+- Removed scope: per-scene clip downloads, download readiness copy, and the clip output list are absent from both UI and server routes.
 
 ## Comparison history
 
-1. First pass P2: at 00:00 the `Now` badge overlapped the scene label because both occupied the upper-left corner of the active clip.
-2. Fix: moved scene labels to the lower image edge above the timestamp row, leaving the upper area for the cursor badge.
-3. Post-fix evidence: `qa/timeline-playhead-multiclip-final.jpg` shows Scene 02 highlighted with the playhead and both labels readable; `qa/timeline-playhead-mobile-follow.jpg` shows the narrow timeline automatically scrolled to Scene 03 at 00:07.
-
-## Primary interactions tested
-
-- Imported the 12-second four-scene test video and confirmed four detected timeline clips.
-- Started native video playback and visually confirmed continuous playhead movement from Scene 01 into Scene 02.
-- Confirmed active-scene border, top timestamp, and `Now` badge update together.
-- Confirmed mobile horizontal follow at 00:07 keeps Scene 03 and the cursor in view.
-- Confirmed pause/end synchronization through the registered playback lifecycle and controller regression tests.
-- Browser console: no errors.
+- Earlier P2: the fixed viewport composer covered lower subtitle content and separated video review from conversation. Fix: moved both composers into the right-pane grid and merged the first two steps. Post-fix evidence: the live post-submit capture shows the full video/timeline/subtitle stack beside the complete chat pane with no overlap.
+- Earlier P2: three prominent steps overstated the workflow. Fix: reduced navigation to Create → Export and kept Export disabled until confirmation. Post-fix evidence: live interaction successfully submitted a request in Create and opened Export only through the right-pane action.
 
 ## Verification
 
-- `node --check public/pixfun.js`: passed.
+- Real YouTube import produced four contiguous storyboard segments, four server-extracted thumbnails, and four subtitle cues.
+- Initial direction and follow-up composer transitions were tested in the live browser.
+- Export gating and the Back to create path were tested.
+- Browser console errors checked: none.
+- Embedded subtitle timestamp parsing is covered by regression tests.
+- `python3 tests/analysis.test.py`: passed.
 - `node tests/studio.test.cjs`: passed.
 - `node tests/motion.test.cjs`: passed.
-
-## Follow-up polish
-
-The audio waveform shown in the reference remains intentionally absent. It can be added later when the editor exposes real waveform samples instead of a decorative approximation.
+- `node tests/smoke.cjs <video>`: passed.
+- `node --check public/pixfun.js`: passed.
+- `git diff --check`: passed.
 
 final result: passed
