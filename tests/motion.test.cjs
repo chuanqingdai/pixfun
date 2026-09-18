@@ -26,6 +26,8 @@ const motionSource = fs.readFileSync(path.join(root, 'motion.js'), 'utf8');
 const storyStyles = fs.readFileSync(path.join(root, 'story-layout.css'), 'utf8');
 assert.match(html, /AI VIDEO CREATION/, 'Landing page leads with clear AI video creation positioning');
 assert.match(html, /Turn viral video formats into your next original\./, 'Hero explains the reference-to-original value proposition');
+assert.match(html, /rel="icon" type="image\/png" sizes="32x32" href="\/assets\/images\/favicon-32\.png"/, 'Browser tab uses the standalone Pixfun mark');
+assert.match(html, /rel="apple-touch-icon" sizes="180x180" href="\/assets\/images\/apple-touch-icon\.png"/, 'Apple touch icon uses the standalone Pixfun mark');
 assert.match(html, /Does Pixfun copy the original video\?/, 'FAQ clearly distinguishes strategy reuse from copying');
 assert.match(html, /id="useCases"/, 'Landing page includes a dedicated use-case section');
 assert.match(html, /FITNESS CREATOR/, 'Use cases include presenter-led content');

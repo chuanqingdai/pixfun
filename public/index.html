@@ -4,13 +4,13 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#111115"><meta name="description" content="Analyze the creative structure behind a reference video, then create a fresh version with your own footage, message, and brand in Pixfun.">
 <title>Pixfun — Turn viral formats into original videos.</title>
-<link rel="icon" href="/assets/images/pixfun-logo.png"><link rel="stylesheet" href="/assets/pixfun.css"><link rel="stylesheet" href="/assets/studio.css"><link rel="stylesheet" href="/assets/hero.css"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/typography.css"><link rel="stylesheet" href="/assets/sections.css"><link rel="stylesheet" href="/assets/story-layout.css"><link rel="stylesheet" href="/assets/controls.css">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/images/favicon-32.png"><link rel="icon" type="image/png" sizes="512x512" href="/assets/images/pixfun-icon.png"><link rel="apple-touch-icon" sizes="180x180" href="/assets/images/apple-touch-icon.png"><link rel="stylesheet" href="/assets/pixfun.css"><link rel="stylesheet" href="/assets/studio.css"><link rel="stylesheet" href="/assets/hero.css"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/typography.css"><link rel="stylesheet" href="/assets/sections.css"><link rel="stylesheet" href="/assets/story-layout.css"><link rel="stylesheet" href="/assets/controls.css">
 <link rel="stylesheet" href="/assets/studio-flow.css">
 <script src="/assets/motion.js" defer></script><script src="/assets/pixfun.js" defer></script>
 </head>
 <body>
 <a href="#create" class="skip">Skip to video upload</a>
-<header class="header wrap"><a class="brand" href="#" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span class="studio-context">Studio</span><nav aria-label="Main navigation"><a href="#features">Features</a><a href="#useCases">Use cases</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav><div class="home-header-actions"><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><a class="button small primary" href="#create">Try Pixfun</a></div><div class="studio-header-actions"><button id="backHome" class="text-button" type="button">Back to home</button></div></header>
+<header class="header wrap"><a class="brand" href="#" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span class="studio-context">Studio</span><nav aria-label="Main navigation"><a href="#features">Features</a><a href="#useCases">Use cases</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav><div class="home-header-actions"><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><a class="button small primary" href="#create">Try Pixfun</a></div><div class="studio-header-actions"><button id="backHome" class="text-button" type="button">Back to home</button><button id="changeVideo" class="button secondary" type="button">New video</button><button class="button primary" id="confirmConversation" type="button" disabled>Export</button></div></header>
 <main>
 <section class="hero hero-remix" aria-labelledby="heroTitle">
 <p class="eyebrow hero-label">AI VIDEO CREATION</p>
@@ -24,17 +24,13 @@
 </section>
 
 <section class="workspace wrap" id="results" hidden aria-labelledby="studioTitle">
-<div class="studio-heading"><div><p class="eyebrow purple">PIXFUN STUDIO</p><h1 id="studioTitle" tabindex="-1">Make this video yours.</h1></div><button class="button secondary" id="changeVideo" type="button">New video</button></div>
-<nav class="studio-steps" aria-label="Creation steps">
-<button type="button" data-studio-step="1" aria-current="step"><span class="step-number">1</span><span><b>Create</b></span></button>
-<button type="button" data-studio-step="2" disabled><span class="step-number">2</span><span><b>Export</b></span></button>
-</nav>
+<h1 id="studioTitle" class="sr-only" tabindex="-1">Pixfun Studio</h1>
 <div class="studio-canvas">
 <div class="studio-controls">
 <section class="studio-panel create-panel" data-studio-panel="1" aria-labelledby="reviewTitle">
 <div class="create-split">
 <section class="media-workspace" aria-labelledby="reviewTitle">
-<div class="workspace-section-heading"><div><span class="section-number">01</span><h2 id="reviewTitle" tabindex="-1">Video</h2></div><span id="segmentCount"></span></div>
+<h2 id="reviewTitle" class="sr-only" tabindex="-1">Video</h2><span id="segmentCount" class="sr-only"></span>
 <div id="reviewPreviewSlot">
 <div class="preview-card" id="previewCard">
 <div class="preview-bar"><span id="previewLabel">Source video</span><div class="preview-switch" id="previewSwitch" aria-label="Preview selection" hidden><button id="originalPreview" type="button" aria-pressed="true">Original</button><button id="resultPreview" type="button" aria-pressed="false" disabled>Result</button></div></div>
@@ -44,7 +40,7 @@
 <div class="timeline-panel"><div class="timeline-heading"><h3>Timeline</h3></div><div class="timeline-editor" id="timelineEditor"><div class="timeline-ruler" id="timelineRuler" aria-hidden="true"></div><div class="timeline-track" id="timelineTrack"><div id="timeline" class="timeline"></div><div class="workspace-playhead" id="workspacePlayhead" aria-hidden="true"><span id="timelineCurrentTime">0:00</span><em id="timelineNow">Now · 0:00</em></div></div></div><section class="subtitle-panel" aria-labelledby="subtitlePanelTitle"><div class="subtitle-panel-head"><h3 id="subtitlePanelTitle">Subtitles</h3><span id="subtitleCount"></span></div><div class="subtitle-list" id="subtitleLane"></div></section><div class="source-info" id="sourceInfo"><p id="fileName"></p><div id="metrics" class="metrics"></div></div></div>
 </section>
 <section class="chat-workspace" aria-labelledby="editTitle">
-<header class="chat-toolbar"><div><span class="section-number">02</span><h2 id="editTitle" tabindex="-1">Pixfun</h2></div><button class="button secondary" id="confirmConversation" type="button" disabled>Export</button></header>
+<h2 id="editTitle" class="sr-only" tabindex="-1">Pixfun</h2>
 <div class="direction-conversation" id="directionConversation" aria-live="polite"></div>
 <form class="quick-direction studio-brief-form" id="briefForm">
 <div class="quick-direction-row"><textarea id="extraBrief" aria-label="Describe your version" maxlength="5000" rows="1" placeholder="Describe changes…"></textarea><button id="saveBrief" type="submit" class="button primary">Continue</button></div>

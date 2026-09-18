@@ -11,7 +11,7 @@ function busy(value) {
   syncStepNavigation();
   $("create").setAttribute("aria-busy", String(value));
   $("results").setAttribute("aria-busy", String(value));
-  if (!value && $("confirmConversation")) $("confirmConversation").disabled = !state.conversationReady;
+  if (!value) syncStepNavigation();
 }
 function setStudioMode(active, updateHistory = true) {
   active = Boolean(active && state.jobId);
@@ -33,6 +33,7 @@ function syncStepNavigation() {
     if (number === state.step) button.setAttribute("aria-current", "step"); else button.removeAttribute("aria-current");
     button.classList.toggle("completed", number === 1 ? state.textConfirmed : Boolean(state.outputUrl && !state.textDirty));
   });
+  if ($("confirmConversation")) $("confirmConversation").disabled = state.busy || !state.conversationReady || state.notesDirty || state.step === 2;
 }
 function setStep(step, focus = true) {
   const next = Math.max(1, Math.min(2, Number(step)));
@@ -365,7 +366,7 @@ $("textForm").addEventListener("submit", async event => {
   finally { busy(false); $("textNext").textContent = "Send"; }
 });
 $("confirmConversation").addEventListener("click", () => {
-  if (state.busy || !state.conversationReady) return;
+  if (state.busy || !state.conversationReady || state.notesDirty) return;
   state.textConfirmed = true; status("textStatus", ""); setStep(2);
 });
 $("renderForm").addEventListener("submit", async event => {
