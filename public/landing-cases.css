@@ -1,0 +1,12 @@
+/* Five linked examples keep the existing full-bleed hero and its 10× heading. */
+.film-selector a{position:relative;display:flex;align-items:center;gap:12px;min-width:0;min-height:64px;padding:0 0 14px;text-align:left;color:#f1f2ec;border-bottom:1px solid #e1e4d65c;text-decoration:none}
+.film-selector a img{width:66px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0}
+.film-selector a span{font-size:12px;line-height:1.4}.film-selector a small{display:block;color:#d0d6c7;font-size:10px;margin-top:4px}
+.film-selector a::before{content:'↗';margin-left:auto;order:2;color:#e8c998;font-size:16px}.film-selector a:hover{border-color:#e8c998}.film-selector a:hover img{filter:brightness(1.12)}
+.film-selector a[aria-current=true]::after{content:'';position:absolute;bottom:-1px;left:0;width:var(--clip-progress,0%);height:2px;background:#e8c998}
+.hero-playback{gap:16px}.hero-playback>span{color:#e1e5de}.hero-playback button{min-width:90px}
+@media(max-width:960px){.film-selector{gap:14px}.film-selector a{gap:8px}.film-selector a img{width:48px;height:38px}.film-selector a span{font-size:11px}.film-selector a small{font-size:9px}}
+@media(max-width:600px){.hero-bottom .film-selector{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;gap:16px 20px;padding:0}.hero-bottom .film-selector a{min-width:0;padding-bottom:9px;min-height:48px}.hero-bottom .film-selector a:last-child{grid-column:1/-1;max-width:calc(50% - 10px);width:100%}.film-selector a span{font-size:11px}.hero-intro{padding-bottom:60px}.hero-playback>span{letter-spacing:0;font-size:10px}.hero-playback button{font-size:10px}.travel-hero{min-height:100svh}}
+@media(min-width:961px) and (max-height:800px){.hero-intro{padding-top:110px;padding-bottom:58px}.travel-hero{padding-bottom:24px}.hero-intro h1{margin-top:16px;margin-bottom:18px}.hero-bottom .hero-playback{margin-bottom:12px}}
+@media(prefers-reduced-motion:reduce){.film-selector a{transition:none}}
+@media(max-width:600px){.travel-hero .hero-intro{padding-top:112px;padding-bottom:36px}.hero-playback button{white-space:nowrap;min-width:90px;padding-inline:9px}.hero-bottom{padding-inline:18px}.hero-playback>span{text-align:left}}

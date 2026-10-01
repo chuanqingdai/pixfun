@@ -1,0 +1,51 @@
+{
+  "name": "pixfun-desktop",
+  "productName": "Pixfun",
+  "version": "0.1.4",
+  "description": "Local travel footage workspace for macOS",
+  "author": "Pixfun",
+  "private": true,
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "desktop": "npm run desktop:pack && open dist-native/Pixfun.app",
+    "desktop:legacy": "npm run desktop:icon && electron .",
+    "desktop:icon": "node scripts/build-desktop-icon.cjs",
+    "desktop:backend": "node scripts/build-desktop-backend.cjs",
+    "desktop:media": "node scripts/build-desktop-media.cjs",
+    "desktop:pack": "node scripts/build-desktop-backend.cjs --skip-icon && node scripts/build-native.cjs",
+    "desktop:dist": "npm run desktop:pack && node scripts/package-native-dmg.cjs",
+    "desktop:legacy:pack": "npm run desktop:backend && electron-builder --mac --dir",
+    "desktop:legacy:dist": "npm run desktop:backend && electron-builder --mac --dir && node scripts/package-desktop-dmg.cjs",
+    "test:desktop": "node scripts/test-native.cjs && node --test tests/native-desktop.test.cjs tests/desktop.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "@resvg/resvg-js": "2.6.2"
+  },
+  "build": {
+    "appId": "com.pixfun.desktop",
+    "electronDist": "node_modules/electron/dist",
+    "productName": "Pixfun",
+    "directories": { "output": "dist-desktop" },
+    "files": ["desktop/**/*.cjs", "desktop/*.html", "desktop/*.svg", "desktop/*.png", "desktop/loading.js", "package.json"],
+    "extraResources": [
+      { "from": "build-desktop/backend", "to": "backend" },
+      { "from": "public", "to": "public" },
+      { "from": "build-desktop/media/bin", "to": "bin" },
+      { "from": "build-desktop/media/licenses", "to": "licenses/ffmpeg" },
+      { "from": "build-desktop/ffmpeg-source.tar.xz", "to": "licenses/ffmpeg/ffmpeg-source.tar.xz" },
+      { "from": "scripts/build-desktop-media.cjs", "to": "licenses/ffmpeg/build-desktop-media.cjs" },
+      { "from": "desktop/THIRD-PARTY-NOTICES.md", "to": "THIRD-PARTY-NOTICES.md" }
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "icon": "build-desktop/Pixfun.icns",
+      "identity": null,
+      "minimumSystemVersion": "12.0"
+    },
+    "dmg": { "title": "Pixfun", "contents": [{ "x": 140, "y": 180 }, { "x": 420, "y": 180, "type": "link", "path": "/Applications" }] },
+    "artifactName": "Pixfun-${version}-${arch}.${ext}"
+  }
+}

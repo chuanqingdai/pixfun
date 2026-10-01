@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const root=path.join(__dirname,'..');
+const js=fs.readFileSync(path.join(root,'public/mac-applications-admin.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'public/mac-applications-admin.html'),'utf8');
+const landing=fs.readFileSync(path.join(root,'public/index.html'),'utf8');
+assert(!landing.includes('/admin/mac-applications'),'Operator page is never in public navigation');
+for(const id of ['applicationSearch','backgroundFilter','budgetFilter','exportApplications','applicationRows'])assert(html.includes(`id="${id}"`));
+assert(!js.includes('innerHTML'),'Untrusted applications render as text');
+assert(js.includes("fetch('/api/admin/mac-applications'"));
+assert(js.includes("cache:'no-store'"));assert(!js.includes('localStorage'));
+const fn=js.slice(js.indexOf('function csvCell('),js.indexOf("$('exportApplications').addEventListener"));
+const csv=vm.runInNewContext(fn+';csvCell');
+for(const value of ['=HYPERLINK("https://example.com")','+1','@SUM(1)','-4','\t=1','  =2','\n=3'])assert(csv(value).startsWith('"\''),'CSV neutralizes formulas');
+assert.equal(csv('a,"b"\nc'),'"a,""b""\nc"');
+console.log('PASS: Private application viewer and safe CSV export.');

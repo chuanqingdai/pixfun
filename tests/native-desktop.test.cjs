@@ -1,0 +1,278 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const read = p => fs.readFileSync(path.join(root,p),'utf8');
+test('starter requests explain outcomes and fill the composer without sending', () => {
+  const home = read('native/Sources/Pixfun/HomeView.swift');
+  const examples = home.split('ForEach(AgentExample.starters)')[1].split('/// Identical icon')[0];
+  assert.match(examples, /example.applying\(to: store.composerDraft.prompt\)/);
+  assert.match(examples, /writing = true/);
+  assert.match(examples, /Text\(example.outcome\)/);
+  assert.doesNotMatch(examples, /submitAgent/);
+  const view = read('native/Sources/Pixfun/AgentView.swift');
+  assert.equal((view.match(/AgentEvidenceResults\(run: run\)/g) || []).length, 2);
+  assert.match(view, /run.directEvidence.prefix\(8\)/);
+  assert.match(view, /No matching moments found/);
+  assert.match(view, /No usable speech was found/);
+});
+test('analysis answers are visible in both latest and earlier turns; evidence stays folded', () => {
+  const view = read('native/Sources/Pixfun/AgentView.swift');
+  assert.equal((view.match(/AgentAnalysisResults\(run: run, report: report\)/g) || []).length, 2);
+  const report = view.split('struct AgentAnalysisResults: View')[1].split('struct AgentSettingsView')[0];
+  assert.ok(report.indexOf('Text(report.overview)') < report.indexOf('DisclosureGroup'));
+  assert.ok(report.indexOf('Text(material.content)') < report.indexOf('DisclosureGroup'));
+  assert.ok(report.indexOf('Text(material.suggestion)') < report.indexOf('DisclosureGroup'));
+  assert.match(report, /store.openMedia\(item, at: start\)/);
+  assert.match(report, /Download reports/);
+});
+test('composer contains model settings and uses consistent attachment toolbar labels', () => {
+  const home = read('native/Sources/Pixfun/HomeView.swift');
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  for (const title of ['Folder', 'Files & audio', 'From Media', 'Models']) {
+    assert.ok(home.includes(`ComposerToolLabel(title: "${title}"`));
+  }
+  assert.ok(home.indexOf('ComposerToolLabel(title: "Models"') < home.indexOf('ComposerNotice()'));
+  assert.doesNotMatch(home, /Button\("Models"\)/);
+  assert.doesNotMatch(agent, /Button\("Models"\)/);
+  const composer = agent.split('var composer: some View')[1].split('func send()')[0];
+  assert.match(composer, /ComposerToolLabel\(title: "Models"/);
+  assert.match(home, /frame\(width: 16, height: 16\)/);
+  assert.match(home, /\.sheet\(isPresented: \$modelSettings\)/);
+  assert.match(agent, /\.sheet\(isPresented: \$modelSettings\)/);
+});
+test('editor keeps scoped chat, recoverable drafts, linked original audio and validated saves', () => {
+  const view = read('native/Sources/Pixfun/EditorView.swift');
+  const store = read('native/Sources/Pixfun/WorkspaceStore.swift');
+  const engine = read('agent_engine.py');
+  assert.match(view, /HSplitView/);
+  assert.match(view, /AgentWorkspaceView\(run: active, compact: true\)/);
+  assert.match(view, /track\(audio: false\)/);
+  assert.match(view, /track\(audio: true\)/);
+  assert.match(view, /Source in seconds/);
+  assert.match(view, /Previous render · rebuild after saving/);
+  assert.match(view, /validation == nil, !conflict/);
+  assert.match(view, /sourcePlayer.stop\(\)/);
+  assert.match(store, /native-editor-drafts.json/);
+  assert.match(store, /payload\["editScope"\]/);
+  assert.match(engine, /validate_edit_scope\(shots,run\['previousTimeline'\],run.get\('editScope'\)\)/);
+  assert.match(engine, /artifact\['type'\] = 'previous_preview'/);
+});
+test('Agent is one conversation with inline videos, actual activity and a persistent composer', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  assert.doesNotMatch(agent, /HSplitView/);
+  assert.match(agent, /AgentPreviousResults\(run: entry\)/);
+  assert.match(agent, /AgentActivityView\(run: entry\)/);
+  assert.match(agent, /AgentVideoMessage\(artifact: preview, aspect: run.aspect\)/);
+  assert.doesNotMatch(agent, /Work log/);
+  assert.match(agent, /Text\(run.stageLabel\)/);
+  assert.doesNotMatch(agent, /Text\(run.message\)/);
+  assert.match(agent, /followingLatest/);
+  assert.match(agent, /Latest ↓/);
+  assert.match(agent, /createdAt \?\?/);
+  assert.match(agent, /onDisappear \{ playback.player\?\.pause\(\) \}/);
+  assert.match(agent, /item.status == \.failed/);
+  assert.match(agent, /Export report/);
+  assert.match(read('scripts/build-desktop-backend.cjs'), /--add-data.*creator-skills/);
+});
+test('default desktop is native; Electron remains an explicit legacy fallback', () => {
+  const pkg = JSON.parse(read('package.json'));
+  assert.match(pkg.scripts.desktop,/dist-native/);
+  assert.doesNotMatch(pkg.scripts['desktop:pack'],/electron/);
+  assert.match(pkg.scripts['desktop:legacy'],/electron/);
+});
+test('native UI contains real SwiftUI, AppKit and AVKit without a web view', () => {
+  const dir = 'native/Sources/Pixfun';
+  const code = fs.readdirSync(path.join(root,dir)).map(f => read(`${dir}/${f}`)).join('\n');
+  assert.match(code,/NavigationSplitView/); assert.match(code,/NSOpenPanel/); assert.match(code,/AVPlayerView/);
+  assert.doesNotMatch(code,/WKWebView|WebView\(|import WebKit|import Electron/);
+  assert.match(code,/Send to Agent/);
+  assert.match(code,/AgentWorkspaceView/);
+  assert.match(code,/exportArtifact/);
+});
+test('build preserves relative framework links, signs the bundle and excludes public website', () => {
+  const code = read('scripts/build-native.cjs');
+  assert.match(code,/verbatimSymlinks:true/); assert.match(code,/codesign/);
+  assert.doesNotMatch(code, /\['public',/);
+  assert.match(code,/Previous-Pixfun\.app/);
+});
+test('native service uses ephemeral authentication and protects the existing library', () => {
+  const code = read('native/Sources/Pixfun/LocalService.swift');
+  assert.match(code,/SecRandomCopyBytes/); assert.match(code,/URLSessionConfiguration.ephemeral/);
+  assert.match(code,/X-Pixfun-Native/); assert.match(code,/Pixfun\/Library/);
+  assert.match(read('desktop_service.py'),/fcntl.LOCK_EX \| fcntl.LOCK_NB/);
+  assert.match(read('desktop_service.py'),/watch_parent/);
+});
+test('media detail is an in-window child page, with a copyable original path', () => {
+  const workspace = read('native/Sources/Pixfun/PixfunApp.swift');
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  assert.doesNotMatch(workspace,/\.sheet\(/);
+  assert.match(workspace,/if let item = store.detail/);
+  assert.match(media,/Back to Media/);
+  assert.match(media,/source\?\.path/);
+  assert.match(media,/Copy path/);
+  assert.match(media,/textSelection\(\.enabled\)/);
+  assert.match(media,/without copying or uploading originals/);
+  assert.match(media,/Filter by folder/);
+  assert.match(media,/Search by name/);
+});
+test('source folder is a quiet metadata link rather than a banner above the player', () => {
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  const store = read('native/Sources/Pixfun/WorkspaceStore.swift');
+  assert.doesNotMatch(media,/Label\("Local file"/);
+  assert.match(media,/info\("Audio"[\s\S]*?sourceFolderLink/);
+  assert.match(media,/store\.openSourceFolder\(item\)/);
+  assert.match(media,/\.truncationMode\(\.middle\)/);
+  assert.match(media,/\.accessibilityLabel\("Open source folder"\)/);
+  assert.match(media,/\.contextMenu\s*\{\s*Button\("Copy path"\)/);
+  assert.match(store,/URL\(fileURLWithPath: location\.folder, isDirectory: true\)/);
+  assert.match(store,/NSWorkspace\.shared\.open\(folder\)/);
+  assert.match(store,/isDirectory\.boolValue/);
+});
+test('shot browser sits below the player and before descriptive metadata, with accessible quality badges', () => {
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  const browser = media.indexOf('if item.kind == "video" { shotBrowser }');
+  const description = media.indexOf('editorialDescription', browser);
+  assert.ok(browser > 0 && description > browser);
+  assert.match(media, /segment\.editorial\?\.isHighlight == true/);
+  assert.match(media, /Label\("Highlight", systemImage: "sparkles"\)/);
+  assert.match(media, /Highlight · /);
+  assert.match(media, /\.help\(segment\.hoverHelp\(analysisStatus: item\.shotAnalysis\?\.status\)\)/);
+  assert.match(media, /\.accessibilityHint\(segment\.hoverDescription/);
+});
+test('circular place shortcuts and their hidden filter state are removed', () => {
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  assert.equal(fs.existsSync(path.join(root, 'native/Sources/Pixfun/PlaceViews.swift')), false);
+  assert.doesNotMatch(media, /MediaQuickFilters|showPlace|Try another place/);
+  assert.doesNotMatch(read('native/Sources/Pixfun/WorkspaceStore.swift'), /mediaFocus|placeFacets|toggleFocus|showPlace/);
+  assert.doesNotMatch(read('native/Sources/Pixfun/Models.swift'), /MediaFocus|PlaceFacet|placeKey/);
+  assert.match(media, /Filter by folder/);
+  assert.match(media, /Search by name/);
+  assert.match(media, /Text\(location\)/);
+  assert.doesNotMatch(media, /MediaPeopleSection|scanPeople|peopleScan/);
+  assert.doesNotMatch(read('native/Sources/Pixfun/WorkspaceStore.swift'), /peopleScan|scanPeople|peopleIndex|mergePerson/);
+  assert.doesNotMatch(read('desktop_service.py'), /PeopleEngine|server.people|\/api\/desktop\/people/);
+  assert.doesNotMatch(read('scripts/build-native.cjs'), /prepare-people-models|PeopleModels/);
+});
+test('native controls share the web palette and bundle the same licensed fonts', () => {
+  const theme = read('native/Sources/Pixfun/Theme.swift');
+  const palette = read('public/palette.css');
+  for (const [token, hex] of [['canvas','151819'],['surface','1d2123'],['raised','272c2f'],['line','363e42'],['ink','e9ebe8'],['muted','b1b9bc'],['accent','d7b581'],['brand-soft','343027']]) {
+    assert.ok(palette.includes(`--${token}: #${hex}`));
+    assert.ok(theme.includes(`0x${hex}`), `${token} must match the website`);
+  }
+  assert.match(theme,/CTFontManagerRegisterFontsForURL/);
+  assert.match(theme,/isEnabled/); assert.match(theme,/isFocused/); assert.match(theme,/onHover/);
+  const build = read('scripts/build-native.cjs');
+  for (const name of ['dm-sans-regular.ttf','dm-sans-semibold.ttf','DM-Sans-OFL.txt']) assert.ok(build.includes(name));
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  assert.doesNotMatch(media,/pickerStyle\(\.segmented\)|buttonStyle\(\.borderedProminent\)|textFieldStyle\(\.roundedBorder\)/);
+  assert.match(media,/PixfunSearchField/);
+  assert.match(read('native/Sources/Pixfun/PixfunApp.swift'),/PixfunNavigationButton/);
+});
+test('media detail only shows transcript when content exists, not based on search results', () => {
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  assert.match(media, /if !item.transcriptCues.isEmpty \{\s*Divider\(\)\s*VStack/);
+  assert.doesNotMatch(media, /No subtitle track available|Local speech recognition is not installed/);
+  assert.match(media, /if matchingCues.isEmpty/);
+  assert.match(media, /No matching subtitles/);
+  assert.doesNotMatch(media, /MediaPeopleSection/);
+});
+test('both composers validate input and model settings only commit on successful save', () => {
+  const home = read('native/Sources/Pixfun/HomeView.swift');
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  assert.match(home, /disabled\(!store.canSubmitAgent\)/);
+  assert.match(agent, /disabled\(!store.canSubmitAgent\)/);
+  assert.match(agent, /"Continue" : "Send"/);
+  assert.match(agent, /settingsMenu\("Processing", selection: \$mode/);
+  assert.doesNotMatch(agent, /selection: \$store.agentMode/);
+  assert.match(agent, /try await store.saveCloudSettings\(config, mode: mode\); dismiss\(\)/);
+});
+test('Home stays a composer, projects have child pages and cover cards with precise edit times', () => {
+  const home = read('native/Sources/Pixfun/HomeView.swift').split('struct BriefComposer')[0];
+  const projects = read('native/Sources/Pixfun/ProjectsView.swift');
+  assert.match(home, /BriefComposer\(\)/);
+  assert.doesNotMatch(home, /activeAgentRun|AgentWorkspaceView|project.messages|currentProject/);
+  assert.match(read('native/Sources/Pixfun/PixfunApp.swift'), /ProjectDetailView\(projectID: id\)/);
+  assert.match(projects, /Back to Project/);
+  assert.match(projects, /LazyVGrid/);
+  assert.match(projects, /store.projectCover\(project\)/);
+  assert.match(projects, /time: \.shortened/);
+  assert.match(projects, /Text\(project.title\)/);
+  assert.match(read('native/Sources/Pixfun/AgentView.swift'), /\$store.composerDraft.prompt/);
+});
+test('model settings use roomy labeled fields, a scrollable form and fixed actions', () => {
+  const settings = read('native/Sources/Pixfun/AgentView.swift').split('struct AgentSettingsView: View')[1];
+  assert.match(settings, /ScrollView/);
+  assert.match(settings, /frame\(height: 46\)/);
+  assert.match(settings, /frame\(width: 600/);
+  assert.match(settings, /textFieldStyle\(\.plain\)/);
+  assert.match(settings, /settingsField\("Text model"/);
+  assert.match(settings, /settingsField\("Vision model"/);
+  assert.match(settings, /settingsField\("API key"/);
+  assert.match(settings, /SecureField\("Paste your API key"/);
+  assert.match(settings, /DisclosureGroup\("Local models"\)/);
+  assert.match(settings, /keyboardShortcut\(\.cancelAction\)/);
+  assert.match(settings, /interactiveDismissDisabled\(savingSettings\)/);
+  assert.ok(settings.indexOf('Rectangle().fill(Color.pixfunLine).frame(height: 1)') < settings.indexOf('Button("Save")'));
+});
+test('conversation composer has one mutually exclusive stop or send action', () => {
+  const composer = read('native/Sources/Pixfun/AgentView.swift').split('var composer: some View')[1].split('func send()')[0];
+  assert.match(composer, /if run.busy \{\s*Button \{ store.agentAction\("stop", run: run\)/);
+  assert.match(composer, /\.disabled\(store.agentActionPending \|\| store.saving\)\s*\} else \{\s*Button\(action: send\)/);
+  assert.equal((composer.match(/accessibilityLabel\("Stop task"\)/g) || []).length, 1);
+  assert.equal((composer.match(/Button\(action: send\)/g) || []).length, 1);
+  assert.doesNotMatch(composer, /if store.importing \|\| store.saving \{ ProgressView\(\).controlSize\(\.small\) \}/);
+  assert.match(composer, /if store.agentActionPending \|\| store.saving \{ ProgressView\(\).controlSize\(\.mini\)/);
+});
+test('composer uses the approved logo and an inset-aligned native plain-text editor', () => {
+  const theme = read('native/Sources/Pixfun/Theme.swift');
+  const home = read('native/Sources/Pixfun/HomeView.swift');
+  const editor = read('native/Sources/Pixfun/PromptEditor.swift');
+  assert.match(theme,/pixfun-lockup-v2/);
+  assert.match(read('scripts/build-native.cjs'),/Brand\/pixfun-lockup-v2\.png/);
+  assert.match(read('native/Sources/Pixfun/PixfunApp.swift'),/PixfunLogo\(\)/);
+  assert.doesNotMatch(home,/TextEditor\(|Image\(systemName: "sparkles"\)/);
+  assert.match(editor,/scrollerStyle = \.overlay/);
+  assert.match(editor,/autohidesScrollers = true/);
+  assert.match(editor,/isRichText = false/);
+  assert.match(editor,/focusRingType = \.none/);
+  assert.match(editor,/hasMarkedText\(\)/);
+  assert.match(editor,/textContainerOrigin/);
+  assert.match(editor,/minimumHeight: CGFloat = 120/);
+  assert.match(editor,/maximumHeight: CGFloat = 220/);
+  assert.match(editor,/min\(parent.maximumHeight, max\(parent.minimumHeight/);
+});
+test('conversation has a compact centered composer and guarded task actions', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  const editor = read('native/Sources/Pixfun/PromptEditor.swift');
+  const store = read('native/Sources/Pixfun/WorkspaceStore.swift');
+  assert.match(agent, /composer.frame\(maxWidth: 800\)/);
+  assert.match(agent, /minimumHeight: 36, maximumHeight: 128/);
+  assert.match(agent, /onSubmit: send/);
+  assert.match(editor, /modifierFlags.contains\(\.shift\)/);
+  assert.match(agent, /confirmationDialog\("Stop the current task/);
+  assert.match(agent, /if run.busy \{ confirmReplacement = true \}/);
+  assert.match(store, /guard !agentActionPending/);
+  const timeline = read('native/Sources/Pixfun/EditorView.swift');
+  assert.match(timeline, /try await store.saveAgentTimeline/);
+  assert.match(timeline, /catch \{ issue = error.localizedDescription \}/);
+  assert.doesNotMatch(agent, /var timelineEditor/);
+  assert.doesNotMatch(agent, /Text\(entry.summary\)/);
+  assert.doesNotMatch(agent, /entry.taskDescription/);
+  assert.match(agent, /For your next message/);
+  assert.doesNotMatch(agent, /run.events.enumerated|ProgressView\(value: Double\(min\(run.completed/);
+  assert.match(agent, /else if let notice = run.activityNotice/);
+  assert.match(agent, /What would you like to change\?/);
+  assert.match(agent, /else \{ store.composerDraft.prompt \+= "\\n" \+ value \}/);
+});
+test('media selection is legible over bright and dark covers with non-color selection cues',()=>{
+ const media=fs.readFileSync('native/Sources/Pixfun/MediaView.swift','utf8');
+ assert(media.includes('MediaSelectionBadge(selected: isSelected)'));
+ assert(media.includes('Color.pixfunGold : Color.pixfunBackground'));
+ assert(media.includes('Color.pixfunGold : Color.white, lineWidth: 2'));
+ assert(media.includes('.frame(width: 30, height: 30)'));
+ assert(media.includes('Image(systemName: "checkmark")'));
+ assert(media.includes('.accessibilityAddTraits(isSelected ? [.isSelected] : [])'));
+});

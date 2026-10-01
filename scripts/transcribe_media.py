@@ -10,6 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from transcript_quality import checked_cues
 os.environ.setdefault("HF_HOME", str(ROOT / "data" / "models" / "huggingface"))
 MODEL = os.environ.get("PIXFUN_WHISPER_MODEL", "mlx-community/whisper-small-mlx")
 
@@ -31,6 +33,7 @@ def main() -> int:
         path_or_hf_repo=MODEL,
         verbose=False,
         word_timestamps=False,
+        condition_on_previous_text=False,
     )
     cues = []
     for segment in result.get("segments", []):
@@ -39,10 +42,12 @@ def main() -> int:
         text = " ".join(str(segment.get("text") or "").split())
         if text and end > start:
             cues.append({"start": round(start, 2), "end": round(end, 2), "text": text[:500]})
+    cues, rejected = checked_cues(cues)
     payload = {
         "model": MODEL,
         "language": result.get("language"),
-        "text": " ".join(str(result.get("text") or "").split()),
+        "text": " ".join(cue["text"] for cue in cues),
+        "rejectedCount": rejected,
         "cues": cues[:300],
     }
     output.parent.mkdir(parents=True, exist_ok=True)

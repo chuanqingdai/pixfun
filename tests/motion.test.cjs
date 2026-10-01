@@ -21,52 +21,8 @@ const root = path.resolve(__dirname, '../public');
 assert.equal(sceneState(.5).person, 0, 'Original remains during customization');
 assert.equal(sceneState(.75).person, 1, 'Male presenter appears during editing');
 assert.equal(sceneState(1).person, 1, 'Male presenter persists through export');
-const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const motionSource = fs.readFileSync(path.join(root, 'motion.js'), 'utf8');
-const storyStyles = fs.readFileSync(path.join(root, 'story-layout.css'), 'utf8');
-assert.match(html, /AI VIDEO CREATION/, 'Landing page leads with clear AI video creation positioning');
-assert.match(html, /Turn viral video formats into your next original\./, 'Hero explains the reference-to-original value proposition');
-assert.match(html, /rel="icon" type="image\/png" sizes="32x32" href="\/assets\/images\/favicon-32\.png"/, 'Browser tab uses the standalone Pixfun mark');
-assert.match(html, /rel="apple-touch-icon" sizes="180x180" href="\/assets\/images\/apple-touch-icon\.png"/, 'Apple touch icon uses the standalone Pixfun mark');
-assert.match(html, /Does Pixfun copy the original video\?/, 'FAQ clearly distinguishes strategy reuse from copying');
-assert.match(html, /id="useCases"/, 'Landing page includes a dedicated use-case section');
-assert.match(html, /FITNESS CREATOR/, 'Use cases include presenter-led content');
-assert.match(html, /LOCALIZED VERSIONS/, 'Use cases include video localization');
-assert.match(html, /PERFORMANCE ADS/, 'Use cases include performance advertising');
-assert.match(html, /AI CHARACTER SERIES/, 'Use cases include AI character variations');
-for (const asset of ['case-talking-head-v1.png', 'case-localized-v1.png', 'case-performance-ad-v1.png', 'case-ai-character-v1.png']) assert.match(html, new RegExp(asset.replace('.', '\\.')), `Use-case section includes new asset ${asset}`);
-assert.ok(html.indexOf('id="useCases"') > html.indexOf('id="story"') && html.indexOf('id="useCases"') < html.indexOf('id="how"'), 'Use cases sit between the blueprint and workflow sections');
-const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
-assert.match(html, /id="originalScene" src="\/assets\/images\/speaker-medium.png"/);
-assert.match(html, /id="replacementScene" src="\/assets\/images\/speaker-male-suit.png"/);
-assert.equal(ids.length, new Set(ids).size, 'Duplicate IDs');
-for (const file of ['index.html', 'pixfun.js', 'motion.js']) {
-  const source = fs.readFileSync(path.join(root, file), 'utf8');
-  assert.ok(!/[\u3400-\u9fff]/.test(source), `Non-English UI copy in ${file}`);
-  if (file.endsWith('.js')) for (const [, id] of source.matchAll(/(?:\$|getElementById)\("([^"]+)"\)/g)) assert.ok(ids.includes(id), `Missing #${id}`);
-}
-for (const file of ['index.html', 'pixfun.css', 'studio.css', 'studio-flow.css', 'hero.css', 'theme.css', 'typography.css', 'sections.css', 'story-layout.css', 'controls.css']) {
-  for (const [, asset] of fs.readFileSync(path.join(root, file), 'utf8').matchAll(/\/assets\/([^'"\s)]+)/g)) assert.ok(fs.existsSync(path.join(root, asset)), `Missing asset ${asset}`);
-}
-for (const [, id] of html.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.includes(id), `Missing anchor ${id}`);
-const filmstrip = html.match(/<div class="filmstrip">([\s\S]*?)<div class="audio-track"/)[1];
-const trackImages = [...filmstrip.matchAll(/src="([^"]+)"/g)].map(match => match[1]);
-assert.equal(trackImages.length, 4, 'Four timeline shots');
-assert.equal(new Set(trackImages).size, 4, 'Each shot needs its own image');
-assert.match(filmstrip, /class="is-current" aria-current="true"[\s\S]*?src="\/assets\/images\/speaker-medium\.png"/, 'Scene 02 is the current timeline shot');
-assert.match(html, /id="originalScene" src="\/assets\/images\/speaker-medium\.png"/, 'Preview and current timeline shot use the same image');
-assert.match(motionSource, /playhead\.style\.left = "25%"/, '00:08 playhead sits at 25% of a 32-second track');
-assert.match(motionSource, /min-width: 900px\) and \(min-height: 650px/, 'Pinned story supports common MacBook browser heights');
-assert.match(motionSource, /render\(staticChapter \/ 4\)/, 'Static fallback renders one selected chapter');
-assert.match(storyStyles, /chapter\.active \{ display: block !important; \}/, 'Static fallback shows only the active chapter');
-assert.doesNotMatch(storyStyles, /grid-template-columns:\s*repeat\(2/, 'Static fallback does not stack all chapters above the preview');
-assert.match(storyStyles, /motion-enabled \.capability-note \{ display: none; \}/, 'Pinned story removes the long prototype note from the compact stage');
-assert.doesNotMatch(html, /id="storyProgress"/, 'Story does not duplicate the chapter rail with a second progress bar');
-const hashes = trackImages.map(url => require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root, url.replace('/assets/', '')))).digest('hex'));
-assert.equal(new Set(hashes).size, 4, 'Timeline images must have different contents');
-assert.ok(html.indexOf('<nav class="chapter-nav"') < html.indexOf('<div class="story-copy"'), 'Separate vertical chapter rail');
-console.log('PASS: 5 scenes, 1,001 reversible scroll states, English UI, DOM IDs, local assets, and anchors.');
-console.log('PASS: Four distinct speaker-scene images and a separate vertical chapter rail.');
+// Retain legacy motion geometry; current landing checks follow the travel design.
+require('./travel.test.cjs');
 for (const [width, height] of [[700,400],[850,450],[1050,550]]) {
   for (let n = 0; n <= 1000; n++) {
     const g = sceneGeometry(n / 1000, width, height);

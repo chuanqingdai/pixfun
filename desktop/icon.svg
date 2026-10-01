@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="200" y1="84" x2="820" y2="924" gradientUnits="userSpaceOnUse"><stop stop-color="#39433F"/><stop offset=".55" stop-color="#202B29"/><stop offset="1" stop-color="#111B1A"/></linearGradient>
+    <radialGradient id="light" cx=".25" cy=".1" r=".85"><stop stop-color="#DEC99A" stop-opacity=".14"/><stop offset="1" stop-color="#DEC99A" stop-opacity="0"/></radialGradient>
+    <linearGradient id="gold" x1="270" y1="295" x2="500" y2="591" gradientUnits="userSpaceOnUse"><stop stop-color="#FFE2AD"/><stop offset="1" stop-color="#D6A85F"/></linearGradient>
+    <linearGradient id="ivory" x1="580" y1="433" x2="760" y2="729" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFF7"/><stop offset="1" stop-color="#E2E9E2"/></linearGradient>
+    <linearGradient id="rim" x1="512" y1="84" x2="512" y2="924" gradientUnits="userSpaceOnUse"><stop stop-color="#F7E8CB" stop-opacity=".30"/><stop offset="1" stop-color="#F7E8CB" stop-opacity=".04"/></linearGradient>
+    <filter id="shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse"><feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000" flood-opacity=".26"/></filter>
+  </defs>
+  <rect x="92" y="84" width="840" height="840" rx="186" fill="url(#surface)" filter="url(#shadow)"/>
+  <rect x="92" y="84" width="840" height="840" rx="186" fill="url(#light)"/>
+  <rect x="94" y="86" width="836" height="836" rx="184" stroke="url(#rim)" stroke-width="3"/>
+  <g transform="translate(512 504) scale(1.10) translate(-512 -512)">
+  <path d="M270 295H409C420 295 431 300 439 308L577 446L432 591H270C250 591 234 575 234 555V331C234 311 250 295 270 295Z" fill="url(#gold)"/>
+  <path d="M754 433H594L449 578L587 716C595 724 606 729 617 729H754C774 729 790 713 790 693V469C790 449 774 433 754 433Z" fill="url(#ivory)"/>
+  <g fill="#182421">
+    <rect x="260" y="329" width="40" height="44" rx="8"/><rect x="260" y="421" width="40" height="44" rx="8"/><rect x="260" y="513" width="40" height="44" rx="8"/>
+    <rect x="724" y="467" width="40" height="44" rx="8"/><rect x="724" y="559" width="40" height="44" rx="8"/><rect x="724" y="651" width="40" height="44" rx="8"/>
+  </g>
+  </g>
+</svg>

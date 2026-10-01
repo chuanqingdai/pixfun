@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const html=fs.readFileSync(require('node:path').join(__dirname,'../public/index.html'),'utf8');
+const section=html.split('<section class="creator-voices')[1].split('</section>')[0];
+assert.equal(section.split('class="voice-card"').length-1,3);
+for(const markup of ['<blockquote','<figcaption','reviewRating','Verified'])assert(!section.includes(markup));
+for(const copy of ['Who is Pixfun for?','TRAVEL ENTHUSIASTS','PLATFORM CREATORS','STUDIOS &amp; EDITORS','YouTube, TikTok, and Instagram','Mac app in development'])assert(section.includes(copy));
+assert(!section.includes('not customer reviews'));assert(!section.includes('Share your needs'));
+assert(section.includes('href="/mac-early-access"'));
+assert(html.indexOf('id="creators"')<html.indexOf('id="creatorVoices"'));
+assert(html.indexOf('id="creatorVoices"')<html.indexOf('id="faq"'));
+console.log('PASS: Audience section describes travelers, platform creators and studios without invented testimonials.');

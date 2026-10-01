@@ -1,0 +1,1341 @@
+[
+  {
+    "id": "islands",
+    "label": "Island escape",
+    "title": "Island escape",
+    "description": "A seaplane beside a jetty, a paddleboarder on turquoise water, and a palm-lined beach suggest arrival, exploration and rest. Keep the clear water and human scale; trim repeated drifting.",
+    "full_description": "浅蓝海水中的码头与水上飞机先交代抵达海岛的场景，镜头随后转向独自划桨的人，他在清澈水面上朝白沙小岛前进；最后从岸边观看海浪轻拍沙滩，镜头沿棕榈树与海岸移动。三个独立来源片段以抵达、活动和停留组成旅行片段，清晰的水纹和人物在海面上的比例最有表现力。可保留划桨动作和明亮海岸作为高光，压缩重复漂移；不能据此认定是同一岛屿或同一趟行程，素材无音轨。",
+    "subjects": [
+      "Paddleboarder"
+    ],
+    "tags": [
+      "Island travel",
+      "Turquoise water",
+      "Paddleboarding",
+      "Beach"
+    ],
+    "context": "Three separately sourced island scenes, arranged for the demo. Not one documented destination or continuous journey. No added sound or text.",
+    "duration": 24.0,
+    "width": 1920,
+    "height": 1080,
+    "audio": false,
+    "full": "/assets/media/cases/v3/islands.mp4",
+    "preview": "/assets/media/cases/v3/islands-preview.mp4",
+    "poster": "/assets/media/cases/v3/islands.jpg",
+    "highlight": {
+      "start": 10,
+      "reason": "A single paddleboarder against clear turquoise water gives the view scale and movement without clutter or added graphics."
+    },
+    "sources": [
+      {
+        "start": 2,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/paradise-port-on-an-island-2883/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      },
+      {
+        "start": 2,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/a-man-paddling-on-a-board-to-get-to-a-1579/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      },
+      {
+        "start": 2,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/white-sand-beach-background-1564/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      }
+    ],
+    "sourcePage": "https://mixkit.co/free-stock-video/paradise-port-on-an-island-2883/",
+    "license": "Mixkit Stock Video Free License",
+    "licenseURL": "https://mixkit.co/free-stock-video/paradise-port-on-an-island-2883/",
+    "analysisModel": "Qwen3-VL visual draft + editorial shot review",
+    "transcript": [],
+    "captionFile": null,
+    "shots": [
+      {
+        "end": 8,
+        "title": "Arrive by the water",
+        "description": "A red-and-white seaplane sits beside a long jetty in pale turquoise water. Boats, roofed platforms and a low island create depth behind it.",
+        "size": "Wide",
+        "capture": "Elevated / aerial view",
+        "motion": "Slow lateral drift",
+        "role": "Arrival / establishing",
+        "recommendation": "Recommended",
+        "useDuration": 4,
+        "reason": "Keep the plane, pier and island in one readable composition.",
+        "connect": "Move from arrival infrastructure to a person on the water.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 87,
+        "start": 0,
+        "thumbnail": "/assets/media/cases/v3/islands-shot-0.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_001",
+          "start_time": "00:00:00.000",
+          "end_time": "00:00:08.000",
+          "description": "A red-and-white seaplane sits beside a long jetty in pale turquoise water. Boats, roofed platforms and a low island create depth behind it.",
+          "shot_size": "Wide",
+          "capture_type": "Elevated / aerial view",
+          "camera_motion": "Slow lateral drift",
+          "story_role": [
+            "Arrival",
+            "establishing"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 87,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 4,
+            "reason": "Keep the plane, pier and island in one readable composition."
+          }
+        }
+      },
+      {
+        "end": 16,
+        "title": "Paddle toward the island",
+        "description": "A person stands on a board and paddles over clear shallow water toward a small white-sand island. Ripples and seabed texture remain visible.",
+        "size": "Extreme wide",
+        "capture": "Aerial view",
+        "motion": "Gentle moving viewpoint",
+        "role": "Action / exploration",
+        "recommendation": "Keep",
+        "useDuration": 6,
+        "reason": "Retain a complete paddle stroke with both person and island visible.",
+        "connect": "Move down to a beach-level view.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 96,
+        "start": 8,
+        "thumbnail": "/assets/media/cases/v3/islands-shot-1.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_002",
+          "start_time": "00:00:08.000",
+          "end_time": "00:00:16.000",
+          "description": "A person stands on a board and paddles over clear shallow water toward a small white-sand island. Ripples and seabed texture remain visible.",
+          "shot_size": "Extreme wide",
+          "capture_type": "Aerial view",
+          "camera_motion": "Gentle moving viewpoint",
+          "story_role": [
+            "Action",
+            "exploration"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 96,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 6,
+            "reason": "Retain a complete paddle stroke with both person and island visible."
+          }
+        }
+      },
+      {
+        "end": 24.0,
+        "title": "Pause on the shore",
+        "description": "Small waves roll onto a white beach beside tall green palms. The view moves along the shoreline under a bright sky.",
+        "size": "Wide",
+        "capture": "Beach-level view",
+        "motion": "Lateral pan",
+        "role": "Rest / ending",
+        "recommendation": "Recommended",
+        "useDuration": 5,
+        "reason": "Let the final wave and palm-lined composition breathe, then end.",
+        "connect": "Close the beach chapter or introduce the next activity.",
+        "caution": "No destination name or continuous travel connection is established.",
+        "reaction": "",
+        "importance_score": 90,
+        "start": 16,
+        "thumbnail": "/assets/media/cases/v3/islands-shot-2.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_003",
+          "start_time": "00:00:16.000",
+          "end_time": "00:00:24.000",
+          "description": "Small waves roll onto a white beach beside tall green palms. The view moves along the shoreline under a bright sky.",
+          "shot_size": "Wide",
+          "capture_type": "Beach-level view",
+          "camera_motion": "Lateral pan",
+          "story_role": [
+            "Rest",
+            "ending"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 90,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 5,
+            "reason": "Let the final wave and palm-lined composition breathe, then end."
+          }
+        }
+      }
+    ],
+    "video_summary": "Island escape",
+    "schemaVersion": 2
+  },
+  {
+    "id": "citywalk",
+    "label": "Tokyo after dark",
+    "title": "Tokyo after dark",
+    "description": "Tokyo lights up at dusk, pedestrians cross a warm-lit street, and neon fills the frame. Keep the shift from skyline to street life; use the sign detail as a short closing beat.",
+    "full_description": "城市在暮色中逐渐亮灯，高处视角展示东京塔与密集楼群；随后降到暖黄色灯光的街头，行人穿过斑马线，有人停留交谈；最后靠近红、蓝、绿交织的霓虹招牌，以颜色和建筑细节收尾。三个独立来源镜头形成由城市全貌到街头活动再到局部细节的结构，适合旅行夜游段落。保留入夜的光线变化和清楚的人物经过，压缩重复步行与招牌停留；店招是实景而非添加字幕，素材无音轨。",
+    "subjects": [
+      "Pedestrians"
+    ],
+    "tags": [
+      "Tokyo",
+      "Dusk",
+      "Street life",
+      "Neon"
+    ],
+    "context": "Three separately sourced Tokyo scenes, arranged for the demo. Real shop signs remain visible; no added video text or sound.",
+    "duration": 24.0,
+    "width": 1920,
+    "height": 1080,
+    "audio": false,
+    "full": "/assets/media/cases/v3/citywalk.mp4",
+    "preview": "/assets/media/cases/v3/citywalk-preview.mp4",
+    "poster": "/assets/media/cases/v3/citywalk.jpg",
+    "highlight": {
+      "start": 9,
+      "reason": "Layered pedestrians and warm storefront light give the street scene depth, a clear subject and a lively sense of place."
+    },
+    "sources": [
+      {
+        "start": 2,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/aerial-view-of-a-city-during-the-night-4308/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      },
+      {
+        "start": 4,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/quiet-tokyo-street-at-night-4451/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      },
+      {
+        "start": 8,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/neon-signs-with-japanese-letters-4447/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      }
+    ],
+    "sourcePage": "https://mixkit.co/free-stock-video/aerial-view-of-a-city-during-the-night-4308/",
+    "license": "Mixkit Stock Video Free License",
+    "licenseURL": "https://mixkit.co/free-stock-video/aerial-view-of-a-city-during-the-night-4308/",
+    "analysisModel": "Qwen3-VL visual draft + editorial shot review",
+    "transcript": [],
+    "captionFile": null,
+    "shots": [
+      {
+        "end": 8,
+        "title": "The city lights up",
+        "description": "A high view shows Tokyo Tower and dense buildings as dusk deepens and city lights become more prominent.",
+        "size": "Extreme wide",
+        "capture": "Elevated city view",
+        "motion": "Time-lapse from a fixed viewpoint",
+        "role": "Environment / opening",
+        "recommendation": "Recommended",
+        "useDuration": 5,
+        "reason": "Keep the visible shift from evening sky to city lights.",
+        "connect": "Move down to people crossing a street.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 89,
+        "start": 0,
+        "thumbnail": "/assets/media/cases/v3/citywalk-shot-0.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_001",
+          "start_time": "00:00:00.000",
+          "end_time": "00:00:08.000",
+          "description": "A high view shows Tokyo Tower and dense buildings as dusk deepens and city lights become more prominent.",
+          "shot_size": "Extreme wide",
+          "capture_type": "Elevated city view",
+          "camera_motion": "Time-lapse from a fixed viewpoint",
+          "story_role": [
+            "Environment",
+            "opening"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 89,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 5,
+            "reason": "Keep the visible shift from evening sky to city lights."
+          }
+        }
+      },
+      {
+        "end": 16,
+        "title": "Street life",
+        "description": "Pedestrians cross in front of closely packed, warmly lit restaurants. People enter the foreground while others pause near storefronts.",
+        "size": "Wide",
+        "capture": "Street-level view",
+        "motion": "Fixed viewpoint",
+        "role": "Action / place",
+        "recommendation": "Keep",
+        "useDuration": 5,
+        "reason": "Choose a clear crossing with foreground and background activity.",
+        "connect": "Cut into the nearby-feeling neon detail without claiming an exact location match.",
+        "caution": "Passersby are not established recurring characters.",
+        "reaction": "",
+        "importance_score": 93,
+        "start": 8,
+        "thumbnail": "/assets/media/cases/v3/citywalk-shot-1.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_002",
+          "start_time": "00:00:08.000",
+          "end_time": "00:00:16.000",
+          "description": "Pedestrians cross in front of closely packed, warmly lit restaurants. People enter the foreground while others pause near storefronts.",
+          "shot_size": "Wide",
+          "capture_type": "Street-level view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Action",
+            "place"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 93,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 5,
+            "reason": "Choose a clear crossing with foreground and background activity."
+          }
+        }
+      },
+      {
+        "end": 24.0,
+        "title": "Neon details",
+        "description": "Red, blue and green neon lettering fills the frame against a dark building facade. The luminous lines and stacked signs remain the main subject.",
+        "size": "Close-up",
+        "capture": "Upward street view",
+        "motion": "Mostly fixed detail view",
+        "role": "Texture / ending",
+        "recommendation": "Compress",
+        "useDuration": 3,
+        "reason": "A short hold communicates the color and night-time character; a long hold adds little action.",
+        "connect": "End the night scene or cut on color to the next location.",
+        "caution": "These are photographed signs, not added captions.",
+        "reaction": "",
+        "importance_score": 85,
+        "start": 16,
+        "thumbnail": "/assets/media/cases/v3/citywalk-shot-2.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_003",
+          "start_time": "00:00:16.000",
+          "end_time": "00:00:24.000",
+          "description": "Red, blue and green neon lettering fills the frame against a dark building facade. The luminous lines and stacked signs remain the main subject.",
+          "shot_size": "Close-up",
+          "capture_type": "Upward street view",
+          "camera_motion": "Mostly fixed detail view",
+          "story_role": [
+            "Texture",
+            "ending"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 85,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "可压缩",
+            "recommended_duration_sec": 3,
+            "reason": "A short hold communicates the color and night-time character; a long hold adds little action."
+          }
+        }
+      }
+    ],
+    "video_summary": "Tokyo after dark",
+    "schemaVersion": 2
+  },
+  {
+    "id": "food",
+    "label": "Slow mornings",
+    "title": "Slow mornings",
+    "description": "Flour falls onto dough, milk draws a pattern in coffee, and breakfast is served. Soft light and close-up textures turn three separate food scenes into a calm morning sequence.",
+    "full_description": "细白面粉落在桌面的面团上，柔和光线让粉尘与表面纹理清晰可见；随后切到咖啡杯近景，手持奶缸倒入奶液，白色拉花逐渐展开；最后俯看摆有可颂、橙片、果汁和咖啡的早餐桌，手进入画面给杯中加入奶液。三个独立场景以制作和享用的顺序组成轻松的早餐段落。面粉飘落与拉花成形是高光，可压缩重复倒奶和静止等待，不应声称来自同一家店或同一份早餐；素材没有原声。",
+    "subjects": [
+      "Hands preparing coffee",
+      "Breakfast preparation"
+    ],
+    "tags": [
+      "Breakfast",
+      "Baking",
+      "Coffee",
+      "Food detail"
+    ],
+    "context": "Three separately sourced food scenes, arranged as a morning sequence. Not one documented café or recipe. No audio track.",
+    "duration": 24.0,
+    "width": 1920,
+    "height": 1080,
+    "audio": false,
+    "full": "/assets/media/cases/v3/food.mp4",
+    "preview": "/assets/media/cases/v3/food-preview.mp4",
+    "poster": "/assets/media/cases/v3/food.jpg",
+    "highlight": {
+      "start": 10.5,
+      "reason": "The milk pattern forms visibly in one continuous action, with a clean background and warm, shallow-focus lighting."
+    },
+    "sources": [
+      {
+        "start": 1,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/a-chef-covering-dough-with-flour-1669/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      },
+      {
+        "start": 0,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/serving-a-sparkling-cappuccino-in-a-cup-41859/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      },
+      {
+        "start": 2,
+        "duration": 8,
+        "page": "https://mixkit.co/free-stock-video/breakfast-at-a-table-with-bread-coffee-and-fruit-4866/",
+        "credit": "Mixkit contributors",
+        "license": "Mixkit Stock Video Free License"
+      }
+    ],
+    "sourcePage": "https://mixkit.co/free-stock-video/a-chef-covering-dough-with-flour-1669/",
+    "license": "Mixkit Stock Video Free License",
+    "licenseURL": "https://mixkit.co/free-stock-video/a-chef-covering-dough-with-flour-1669/",
+    "analysisModel": "Qwen3-VL visual draft + editorial shot review",
+    "transcript": [],
+    "captionFile": null,
+    "shots": [
+      {
+        "end": 8,
+        "title": "Flour in the light",
+        "description": "Flour falls onto a rounded piece of dough on a dusted wooden surface. Soft side light makes the particles and dough texture visible.",
+        "size": "Close-up",
+        "capture": "Table-level view",
+        "motion": "Fixed close framing",
+        "role": "Preparation / opening",
+        "recommendation": "Recommended",
+        "useDuration": 4,
+        "reason": "Retain the falling flour and a brief settled surface; repeated dusting can be shortened.",
+        "connect": "Match the falling flour to the flow of milk.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 90,
+        "start": 0,
+        "thumbnail": "/assets/media/cases/v3/food-shot-0.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_001",
+          "start_time": "00:00:00.000",
+          "end_time": "00:00:08.000",
+          "description": "Flour falls onto a rounded piece of dough on a dusted wooden surface. Soft side light makes the particles and dough texture visible.",
+          "shot_size": "Close-up",
+          "capture_type": "Table-level view",
+          "camera_motion": "Fixed close framing",
+          "story_role": [
+            "Preparation",
+            "opening"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 90,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 4,
+            "reason": "Retain the falling flour and a brief settled surface; repeated dusting can be shortened."
+          }
+        }
+      },
+      {
+        "end": 16,
+        "title": "The pattern appears",
+        "description": "A hand holds a white coffee cup while milk pours from a metal pitcher. A pale curved pattern broadens across the coffee surface.",
+        "size": "Close-up",
+        "capture": "Slightly elevated view",
+        "motion": "Fixed close framing",
+        "role": "Transformation / highlight",
+        "recommendation": "Keep",
+        "useDuration": 6,
+        "reason": "Keep the pour until the pattern becomes readable; this is the payoff of the making process.",
+        "connect": "Open out from the cup to the breakfast table.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 95,
+        "start": 8,
+        "thumbnail": "/assets/media/cases/v3/food-shot-1.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_002",
+          "start_time": "00:00:08.000",
+          "end_time": "00:00:16.000",
+          "description": "A hand holds a white coffee cup while milk pours from a metal pitcher. A pale curved pattern broadens across the coffee surface.",
+          "shot_size": "Close-up",
+          "capture_type": "Slightly elevated view",
+          "camera_motion": "Fixed close framing",
+          "story_role": [
+            "Transformation",
+            "highlight"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 95,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 6,
+            "reason": "Keep the pour until the pattern becomes readable; this is the payoff of the making process."
+          }
+        }
+      },
+      {
+        "end": 24.0,
+        "title": "Breakfast is ready",
+        "description": "An overhead view shows a croissant, orange slices, spreads, juice and coffee on a wooden table. A hand pours milk into the coffee and then withdraws.",
+        "size": "Medium",
+        "capture": "Overhead tabletop view",
+        "motion": "Fixed viewpoint",
+        "role": "Serving / ending",
+        "recommendation": "Recommended",
+        "useDuration": 4,
+        "reason": "Keep the pouring action and a short clean composition of the table.",
+        "connect": "End the morning vignette or cut to the day’s first outing.",
+        "caution": "This is a separate setting, not the same cup as the latte shot.",
+        "reaction": "",
+        "importance_score": 86,
+        "start": 16,
+        "thumbnail": "/assets/media/cases/v3/food-shot-2.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_003",
+          "start_time": "00:00:16.000",
+          "end_time": "00:00:24.000",
+          "description": "An overhead view shows a croissant, orange slices, spreads, juice and coffee on a wooden table. A hand pours milk into the coffee and then withdraws.",
+          "shot_size": "Medium",
+          "capture_type": "Overhead tabletop view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Serving",
+            "ending"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 86,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 4,
+            "reason": "Keep the pouring action and a short clean composition of the table."
+          }
+        }
+      }
+    ],
+    "video_summary": "Slow mornings",
+    "schemaVersion": 2
+  },
+  {
+    "id": "outdoors",
+    "label": "Geysers at golden hour",
+    "title": "Geysers at golden hour",
+    "description": "Steam and mineral textures build toward eruptions in golden light and a pink evening sky. Original narration explains their unpredictability; keep the changing light as the sequence’s payoff.",
+    "full_description": "蒸汽先在开阔地热盆地中升起，镜头靠近岩石中的泉口，随后交替展示强烈喷发的水柱、被蒸汽遮掩的岩石锥体和蓝天下的喷泉全景。光线转暖后，金色逆光照亮喷出的水与雾，最后以紫红晚霞中的喷发收尾。原声讲解强调间歇泉变化的不可预测性，画面从结构细节走向自然力量与光线的高潮。金色喷泉和晚霞最值得保留，可缩短相似日景，不把不同时间与机位表述成同一场喷发。",
+    "subjects": [],
+    "tags": [
+      "Yellowstone",
+      "Geysers",
+      "Golden light",
+      "Natural forces"
+    ],
+    "context": "Continuous excerpt from Yellowstone In Depth: Geysers, NPS / Steven M. Bumgardner. Different eruptions and lighting conditions; not one continuous event. No NPS endorsement.",
+    "duration": 43.471333,
+    "width": 1280,
+    "height": 720,
+    "audio": true,
+    "full": "/assets/media/cases/v3/outdoors.mp4",
+    "preview": "/assets/media/cases/v3/outdoors-preview.mp4",
+    "poster": "/assets/media/cases/v3/outdoors.jpg",
+    "highlight": {
+      "start": 27.5,
+      "reason": "Backlight turns the water and steam gold while a dark treeline gives the eruption a clear silhouette."
+    },
+    "sources": [
+      {
+        "start": 237.8,
+        "duration": 43.45,
+        "page": "https://www.nps.gov/media/video/view.htm?id=DBA52FFD-155D-451F-67C4471D28BA5344",
+        "credit": "NPS / Steven M. Bumgardner",
+        "license": "Public domain · NPS"
+      }
+    ],
+    "sourcePage": "https://www.nps.gov/media/video/view.htm?id=DBA52FFD-155D-451F-67C4471D28BA5344",
+    "license": "Public domain · NPS",
+    "licenseURL": "https://www.nps.gov/media/video/view.htm?id=DBA52FFD-155D-451F-67C4471D28BA5344",
+    "analysisModel": "Qwen3-VL visual draft + editorial shot review · Whisper + source-caption correction",
+    "transcript": [
+      {
+        "start": 0,
+        "end": 4.38,
+        "text": "Geysers are what we call mathematically chaotic systems."
+      },
+      {
+        "start": 4.74,
+        "end": 9.12,
+        "text": "Slight variations in the amount of cold water coming in,"
+      },
+      {
+        "start": 9.24,
+        "end": 10.64,
+        "text": "the amount of heat coming up,"
+      },
+      {
+        "start": 10.84,
+        "end": 15.54,
+        "text": "a change in the plumbing system can give you dramatically different results,"
+      },
+      {
+        "start": 15.8,
+        "end": 21.5,
+        "text": "and what I enjoy seeing is not the reproducibility of geysers,"
+      },
+      {
+        "start": 21.72,
+        "end": 23.6,
+        "text": "but the infinite variety,"
+      },
+      {
+        "start": 23.6,
+        "end": 25.6,
+        "text": "even within a single geyser."
+      },
+      {
+        "start": 27.46,
+        "end": 36.28,
+        "text": "We're lucky we can predict the 5 or 6 that we can, and that can vary from year to year, whether or not we can predict maybe how big a window around them."
+      },
+      {
+        "start": 36.7,
+        "end": 42.2,
+        "text": "I think it teaches us to respect natural systems that don't operate on our time frame."
+      }
+    ],
+    "captionFile": "/assets/media/cases/v3/outdoors.vtt",
+    "shots": [
+      {
+        "end": 4.98,
+        "title": "Steam across the basin",
+        "description": "A broad geothermal basin lies under a blue, cloud-streaked sky. White steam drifts sideways above pale mineral ground.",
+        "size": "Wide",
+        "capture": "Ground-level landscape view",
+        "motion": "Fixed viewpoint",
+        "role": "Environment / opening",
+        "recommendation": "Recommended",
+        "useDuration": 3,
+        "reason": "Use a brief establishing view before revealing the vent.",
+        "connect": "Cut in to the mineral opening.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 82,
+        "start": 0,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-0.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "Geysers are what we call mathematically chaotic systems.",
+        "editorial": {
+          "shot_id": "shot_001",
+          "start_time": "00:00:00.000",
+          "end_time": "00:00:04.980",
+          "description": "A broad geothermal basin lies under a blue, cloud-streaked sky. White steam drifts sideways above pale mineral ground.",
+          "shot_size": "Wide",
+          "capture_type": "Ground-level landscape view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Environment",
+            "opening"
+          ],
+          "dialogue": "Geysers are what we call mathematically chaotic systems.",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 82,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 3,
+            "reason": "Use a brief establishing view before revealing the vent."
+          }
+        }
+      },
+      {
+        "end": 10.82,
+        "title": "Look into the vent",
+        "description": "An irregular opening interrupts the pale mineral surface. Steam and water movement are visible inside its darker hollow.",
+        "size": "Close-up",
+        "capture": "Downward oblique view",
+        "motion": "Fixed framing",
+        "role": "Information / detail",
+        "recommendation": "Recommended",
+        "useDuration": 4,
+        "reason": "Hold long enough to read the opening that feeds the larger eruption sequence.",
+        "connect": "Cut from the confined opening to an expansive water plume.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 84,
+        "start": 4.98,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-1.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "the amount of heat coming up,",
+        "editorial": {
+          "shot_id": "shot_002",
+          "start_time": "00:00:04.980",
+          "end_time": "00:00:10.820",
+          "description": "An irregular opening interrupts the pale mineral surface. Steam and water movement are visible inside its darker hollow.",
+          "shot_size": "Close-up",
+          "capture_type": "Downward oblique view",
+          "camera_motion": "Fixed framing",
+          "story_role": [
+            "Information",
+            "detail"
+          ],
+          "dialogue": "the amount of heat coming up,",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 84,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 4,
+            "reason": "Hold long enough to read the opening that feeds the larger eruption sequence."
+          }
+        }
+      },
+      {
+        "end": 16.54,
+        "title": "The plume rises",
+        "description": "A tall white plume surges upward from a dark cone, with dense steam catching light against the blue sky.",
+        "size": "Wide",
+        "capture": "Low ground-level view",
+        "motion": "Fixed viewpoint",
+        "role": "Action / power",
+        "recommendation": "Keep",
+        "useDuration": 5,
+        "reason": "Retain the rising plume and contrasting silhouette as a clear action beat.",
+        "connect": "Move closer to the wet mineral cone.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 92,
+        "start": 10.82,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-2.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "a change in the plumbing system can give you dramatically different results,",
+        "editorial": {
+          "shot_id": "shot_003",
+          "start_time": "00:00:10.820",
+          "end_time": "00:00:16.540",
+          "description": "A tall white plume surges upward from a dark cone, with dense steam catching light against the blue sky.",
+          "shot_size": "Wide",
+          "capture_type": "Low ground-level view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Action",
+            "power"
+          ],
+          "dialogue": "a change in the plumbing system can give you dramatically different results,",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 92,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 5,
+            "reason": "Retain the rising plume and contrasting silhouette as a clear action beat."
+          }
+        }
+      },
+      {
+        "end": 21.7,
+        "title": "Water over stone",
+        "description": "Steam wraps a mineral cone as water spills over its dark, uneven rim. The closer view emphasizes wet surfaces and turbulent vapor.",
+        "size": "Close-up",
+        "capture": "Ground-level detail",
+        "motion": "Fixed viewpoint",
+        "role": "Texture / detail",
+        "recommendation": "Recommended",
+        "useDuration": 3,
+        "reason": "Use the visible spill to add a different scale; avoid repeating too much steam.",
+        "connect": "Return to a wide view for scale.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 85,
+        "start": 16.54,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-3.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_004",
+          "start_time": "00:00:16.540",
+          "end_time": "00:00:21.700",
+          "description": "Steam wraps a mineral cone as water spills over its dark, uneven rim. The closer view emphasizes wet surfaces and turbulent vapor.",
+          "shot_size": "Close-up",
+          "capture_type": "Ground-level detail",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Texture",
+            "detail"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 85,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 3,
+            "reason": "Use the visible spill to add a different scale; avoid repeating too much steam."
+          }
+        }
+      },
+      {
+        "end": 26.3,
+        "title": "A column against blue sky",
+        "description": "A tall eruption rises from a mineral mound into a clear blue sky, with lower vapor moving across the surrounding ground.",
+        "size": "Wide",
+        "capture": "Ground-level landscape view",
+        "motion": "Fixed viewpoint",
+        "role": "Scale / transition",
+        "recommendation": "Recommended",
+        "useDuration": 3,
+        "reason": "Use a short wide view before the decisive change in light.",
+        "connect": "Cut on the water column to the golden backlit eruption.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 87,
+        "start": 21.7,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-4.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "but the infinite variety,",
+        "editorial": {
+          "shot_id": "shot_005",
+          "start_time": "00:00:21.700",
+          "end_time": "00:00:26.300",
+          "description": "A tall eruption rises from a mineral mound into a clear blue sky, with lower vapor moving across the surrounding ground.",
+          "shot_size": "Wide",
+          "capture_type": "Ground-level landscape view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Scale",
+            "transition"
+          ],
+          "dialogue": "but the infinite variety,",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 87,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 3,
+            "reason": "Use a short wide view before the decisive change in light."
+          }
+        }
+      },
+      {
+        "end": 36.94,
+        "title": "Water turns to gold",
+        "description": "Low golden light illuminates a narrow jet and surrounding spray. A dark treeline and wet foreground frame the bright water.",
+        "size": "Wide",
+        "capture": "Backlit landscape view",
+        "motion": "Fixed viewpoint",
+        "role": "Visual highlight / climax",
+        "recommendation": "Keep",
+        "useDuration": 6,
+        "reason": "Hold the clean silhouette and sparkling spray; this is the strongest five-second excerpt.",
+        "connect": "Let the warmer light lead into the pink evening sky.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 97,
+        "start": 26.3,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-5.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "We're lucky we can predict the 5 or 6 that we can, and that can vary from year to year, whether or not we can predict maybe how big a window around them.",
+        "editorial": {
+          "shot_id": "shot_006",
+          "start_time": "00:00:26.300",
+          "end_time": "00:00:36.940",
+          "description": "Low golden light illuminates a narrow jet and surrounding spray. A dark treeline and wet foreground frame the bright water.",
+          "shot_size": "Wide",
+          "capture_type": "Backlit landscape view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Visual highlight",
+            "climax"
+          ],
+          "dialogue": "We're lucky we can predict the 5 or 6 that we can, and that can vary from year to year, whether or not we can predict maybe how big a window around them.",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 97,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 6,
+            "reason": "Hold the clean silhouette and sparkling spray; this is the strongest five-second excerpt."
+          }
+        }
+      },
+      {
+        "end": 43.471333,
+        "title": "An evening eruption",
+        "description": "White water rises against pink and violet clouds above a dark horizon. The changing plume remains visible as the narration finishes.",
+        "size": "Wide",
+        "capture": "Evening landscape view",
+        "motion": "Fixed viewpoint",
+        "role": "Resolution / ending",
+        "recommendation": "Keep",
+        "useDuration": 5,
+        "reason": "Keep the complete final thought over the colorful closing view.",
+        "connect": "End the sequence without an extra explanatory title.",
+        "caution": "Different light does not establish that this is the same eruption.",
+        "reaction": "",
+        "importance_score": 95,
+        "start": 36.94,
+        "thumbnail": "/assets/media/cases/v3/outdoors-shot-6.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_007",
+          "start_time": "00:00:36.940",
+          "end_time": "00:00:43.471",
+          "description": "White water rises against pink and violet clouds above a dark horizon. The changing plume remains visible as the narration finishes.",
+          "shot_size": "Wide",
+          "capture_type": "Evening landscape view",
+          "camera_motion": "Fixed viewpoint",
+          "story_role": [
+            "Resolution",
+            "ending"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 95,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 5,
+            "reason": "Keep the complete final thought over the colorful closing view."
+          }
+        }
+      }
+    ],
+    "video_summary": "Geysers at golden hour",
+    "schemaVersion": 2
+  },
+  {
+    "id": "alpine",
+    "label": "Wild Alaska",
+    "title": "Wild Alaska",
+    "description": "A feeding brown bear gives way to winding rivers, blue lakes and snow-covered peaks. Original narration connects wildlife with the landscape; the bright mountain reveal is the visual payoff.",
+    "full_description": "棕熊在浅水中进食，海鸟在旁走动；镜头随后升到森林上方，沿弯曲河道展示林地与苔原，再转向云雾中的陡峭雪山、蓝色湖湾和覆雪火山。旁白将动物获取食物与阿拉斯加的地貌连接起来，叙事由生命细节扩展到广阔环境。棕熊进食和明亮雪峰最有保留价值，航拍适合建立空间或作为章节高潮；可压缩相似山景的停留，不应把不同机位误写为同一次连续飞行。",
+    "subjects": [
+      "Brown bear",
+      "Shore birds"
+    ],
+    "tags": [
+      "Alaska",
+      "Wildlife",
+      "Snow peaks",
+      "Aerial landscape"
+    ],
+    "context": "Continuous excerpt from the NPS Lake Clark film (2018). Original narration preserved; no added graphics. Not unedited camera footage. No NPS endorsement.",
+    "duration": 50.221333,
+    "width": 1920,
+    "height": 1080,
+    "audio": true,
+    "full": "/assets/media/cases/v3/alpine.mp4",
+    "preview": "/assets/media/cases/v3/alpine-preview.mp4",
+    "poster": "/assets/media/cases/v3/alpine.jpg",
+    "highlight": {
+      "start": 40.4,
+      "reason": "Bright snow, a clearly defined summit and blue sky create the strongest landscape reveal, without titles or graphics."
+    },
+    "sources": [
+      {
+        "start": 102.8,
+        "duration": 50.2,
+        "page": "https://www.nps.gov/media/video/view.htm?id=a7ea1719-005e-42cd-b7c9-79cda436ecad",
+        "credit": "NPS / T. Vaughn and J. Pfeiffenberger",
+        "license": "Public domain · NPS"
+      }
+    ],
+    "sourcePage": "https://www.nps.gov/media/video/view.htm?id=a7ea1719-005e-42cd-b7c9-79cda436ecad",
+    "license": "Public domain · NPS",
+    "licenseURL": "https://www.nps.gov/media/video/view.htm?id=a7ea1719-005e-42cd-b7c9-79cda436ecad",
+    "analysisModel": "Qwen3-VL visual draft + editorial shot review · Whisper + source-caption correction",
+    "transcript": [
+      {
+        "start": 0,
+        "end": 6.62,
+        "text": "Their bodies feed ocean-derived nutrients to wildlife, humans, and the land."
+      },
+      {
+        "start": 10.86,
+        "end": 17.38,
+        "text": "Here, rolling tundra and boreal forest are intersected by the Chigmit and Neacola Mountains."
+      },
+      {
+        "start": 19.16,
+        "end": 27.42,
+        "text": "The Neacolas stand among snowy giants, a part of the mighty Alaska Range which reaches north to the highest peaks on the continent."
+      },
+      {
+        "start": 30.0,
+        "end": 40.8,
+        "text": "The Chigmits rise at the head of the Aleutian Range, a complex of glacier-topped mountains that stretch south and west to the far reaches of the state."
+      },
+      {
+        "start": 43.78,
+        "end": 48.82,
+        "text": "Two active volcanoes, Iliamna and Redoubt, tower above the Chigmit mountains."
+      }
+    ],
+    "captionFile": "/assets/media/cases/v3/alpine.vtt",
+    "shots": [
+      {
+        "end": 10.9,
+        "title": "A bear at the water",
+        "description": "A brown bear eats in shallow water while pale birds approach and pass in front of it. The animal briefly turns its head before returning to the food.",
+        "size": "Medium",
+        "capture": "Shore-level wildlife view",
+        "motion": "Mostly fixed framing",
+        "role": "Action / wildlife detail",
+        "recommendation": "Keep",
+        "useDuration": 6,
+        "reason": "Retain an eating movement and the head turn to establish an active subject.",
+        "connect": "Open out to the habitat from above.",
+        "caution": "Do not infer the animal’s emotion or identify an individual.",
+        "reaction": "",
+        "importance_score": 92,
+        "start": 0,
+        "thumbnail": "/assets/media/cases/v3/alpine-shot-0.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "Their bodies feed ocean-derived nutrients to wildlife, humans, and the land.",
+        "editorial": {
+          "shot_id": "shot_001",
+          "start_time": "00:00:00.000",
+          "end_time": "00:00:10.900",
+          "description": "A brown bear eats in shallow water while pale birds approach and pass in front of it. The animal briefly turns its head before returning to the food.",
+          "shot_size": "Medium",
+          "capture_type": "Shore-level wildlife view",
+          "camera_motion": "Mostly fixed framing",
+          "story_role": [
+            "Action",
+            "wildlife detail"
+          ],
+          "dialogue": "Their bodies feed ocean-derived nutrients to wildlife, humans, and the land.",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 92,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 6,
+            "reason": "Retain an eating movement and the head turn to establish an active subject."
+          }
+        }
+      },
+      {
+        "end": 19.38,
+        "title": "Follow the river",
+        "description": "An elevated moving view follows a winding reddish river through dense green trees; open tundra becomes visible beyond the forest.",
+        "size": "Wide",
+        "capture": "Aerial",
+        "motion": "Forward travel",
+        "role": "Habitat / scale",
+        "recommendation": "Recommended",
+        "useDuration": 5,
+        "reason": "Keep the river bend and the change from forest to open terrain.",
+        "connect": "Cut from the river’s curve to the mountain ridgeline.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 85,
+        "start": 10.9,
+        "thumbnail": "/assets/media/cases/v3/alpine-shot-1.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_002",
+          "start_time": "00:00:10.900",
+          "end_time": "00:00:19.380",
+          "description": "An elevated moving view follows a winding reddish river through dense green trees; open tundra becomes visible beyond the forest.",
+          "shot_size": "Wide",
+          "capture_type": "Aerial",
+          "camera_motion": "Forward travel",
+          "story_role": [
+            "Habitat",
+            "scale"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 85,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 5,
+            "reason": "Keep the river bend and the change from forest to open terrain."
+          }
+        }
+      },
+      {
+        "end": 29.1,
+        "title": "Into the cloud",
+        "description": "Dark rock walls and bands of snow fill a steep mountain face. Cloud brushes the upper ridge as the elevated viewpoint moves alongside it.",
+        "size": "Wide",
+        "capture": "Aerial",
+        "motion": "Lateral travel",
+        "role": "Transition / dramatic scale",
+        "recommendation": "Recommended",
+        "useDuration": 5,
+        "reason": "Keep the section where cloud reveals the ridgeline; shorten similar rock textures.",
+        "connect": "Reveal the lake and distant range next.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 86,
+        "start": 19.38,
+        "thumbnail": "/assets/media/cases/v3/alpine-shot-2.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_003",
+          "start_time": "00:00:19.380",
+          "end_time": "00:00:29.100",
+          "description": "Dark rock walls and bands of snow fill a steep mountain face. Cloud brushes the upper ridge as the elevated viewpoint moves alongside it.",
+          "shot_size": "Wide",
+          "capture_type": "Aerial",
+          "camera_motion": "Lateral travel",
+          "story_role": [
+            "Transition",
+            "dramatic scale"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 86,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 5,
+            "reason": "Keep the section where cloud reveals the ridgeline; shorten similar rock textures."
+          }
+        }
+      },
+      {
+        "end": 39.7,
+        "title": "The lake opens out",
+        "description": "A blue lake and projecting wooded landform spread across the foreground, with a long line of snow-covered mountains behind.",
+        "size": "Extreme wide",
+        "capture": "Aerial",
+        "motion": "Slow forward drift",
+        "role": "Place / reveal",
+        "recommendation": "Keep",
+        "useDuration": 5,
+        "reason": "Hold the clean wide composition to connect water and mountains.",
+        "connect": "Move closer to a bright snow-covered summit.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 90,
+        "start": 29.1,
+        "thumbnail": "/assets/media/cases/v3/alpine-shot-3.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_004",
+          "start_time": "00:00:29.100",
+          "end_time": "00:00:39.700",
+          "description": "A blue lake and projecting wooded landform spread across the foreground, with a long line of snow-covered mountains behind.",
+          "shot_size": "Extreme wide",
+          "capture_type": "Aerial",
+          "camera_motion": "Slow forward drift",
+          "story_role": [
+            "Place",
+            "reveal"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 90,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 5,
+            "reason": "Hold the clean wide composition to connect water and mountains."
+          }
+        }
+      },
+      {
+        "end": 46.54,
+        "title": "A summit in sunlight",
+        "description": "A bright snow-covered volcanic peak dominates the frame. Dark ridges and crevasses become clearer as the viewpoint moves past its slopes.",
+        "size": "Wide",
+        "capture": "Aerial",
+        "motion": "Gliding lateral view",
+        "role": "Highlight / climax",
+        "recommendation": "Keep",
+        "useDuration": 6,
+        "reason": "Use the full reveal; the strong snow-and-sky contrast makes it readable even at preview size.",
+        "connect": "Finish by opening back out to the wider mountain range.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 96,
+        "start": 39.7,
+        "thumbnail": "/assets/media/cases/v3/alpine-shot-4.jpg",
+        "highlight": true,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_005",
+          "start_time": "00:00:39.700",
+          "end_time": "00:00:46.540",
+          "description": "A bright snow-covered volcanic peak dominates the frame. Dark ridges and crevasses become clearer as the viewpoint moves past its slopes.",
+          "shot_size": "Wide",
+          "capture_type": "Aerial",
+          "camera_motion": "Gliding lateral view",
+          "story_role": [
+            "Highlight",
+            "climax"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 96,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "必留",
+            "recommended_duration_sec": 6,
+            "reason": "Use the full reveal; the strong snow-and-sky contrast makes it readable even at preview size."
+          }
+        }
+      },
+      {
+        "end": 50.221333,
+        "title": "Return to the whole range",
+        "description": "A distant snowy summit sits above a darker mountain range and blue water, returning the scene to a broad landscape view.",
+        "size": "Extreme wide",
+        "capture": "Aerial",
+        "motion": "Gentle drift",
+        "role": "Resolution / ending",
+        "recommendation": "Recommended",
+        "useDuration": 3,
+        "reason": "Keep the final landscape and let the sentence finish.",
+        "connect": "Close the chapter or transition to a new location.",
+        "caution": "",
+        "reaction": "",
+        "importance_score": 84,
+        "start": 46.54,
+        "thumbnail": "/assets/media/cases/v3/alpine-shot-5.jpg",
+        "highlight": false,
+        "audio": [],
+        "dialogue": "",
+        "editorial": {
+          "shot_id": "shot_006",
+          "start_time": "00:00:46.540",
+          "end_time": "00:00:50.221",
+          "description": "A distant snowy summit sits above a darker mountain range and blue water, returning the scene to a broad landscape view.",
+          "shot_size": "Extreme wide",
+          "capture_type": "Aerial",
+          "camera_motion": "Gentle drift",
+          "story_role": [
+            "Resolution",
+            "ending"
+          ],
+          "dialogue": "",
+          "reaction": "",
+          "audio": [],
+          "importance_score": 84,
+          "duplicate_candidate": false,
+          "unusable_candidate": false,
+          "edit_recommendation": {
+            "level": "推荐",
+            "recommended_duration_sec": 3,
+            "reason": "Keep the final landscape and let the sentence finish."
+          }
+        }
+      }
+    ],
+    "video_summary": "Wild Alaska",
+    "schemaVersion": 2
+  }
+]

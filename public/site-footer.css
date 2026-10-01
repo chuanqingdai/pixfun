@@ -1,0 +1,30 @@
+/* Shared public-site footer. Scoped to avoid changing page content or forms. */
+.site-footer.footer {
+  box-sizing:border-box;display:block;max-width:1232px;margin:0 auto;
+  padding:62px 40px 26px;border-top:1px solid var(--line);
+  font:14px/1.6 'DM Sans',Arial,sans-serif;color:var(--muted);
+}
+.site-footer .footer-main{display:grid;grid-template-columns:minmax(0,1.8fr) repeat(2,minmax(0,1fr));gap:48px;padding-bottom:52px}
+.site-footer .brand-v2{display:block;position:relative;flex:0 0 auto;width:154px;height:41px;overflow:hidden}
+.site-footer .brand-v2 .brand-logo{display:block;position:absolute;width:216px;height:auto;max-width:none;left:-30px;top:-16px;filter:url('/assets/images/logo-effects.svg#clear-black')}
+.site-footer .footer-about p{font-size:18px;line-height:1.6;letter-spacing:-.2px;color:#ecece1;margin:22px 0 12px}
+.site-footer .footer-about>span{font-size:13px;color:var(--subtle)}
+.site-footer .footer-links{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.site-footer .footer-links h2{font:600 11px/1.6 'DM Sans',Arial,sans-serif;letter-spacing:1.5px;text-transform:uppercase;color:#dfc08f;margin:4px 0 14px}
+.site-footer .footer-links a{display:inline-flex;align-items:center;min-height:44px;color:var(--muted);text-decoration:none;transition:color .2s}
+.site-footer .footer-links a:hover{color:#f2d398}
+.site-footer a:focus-visible{outline:2px solid var(--focus-ring);outline-offset:4px;border-radius:3px}
+.site-footer .footer-bottom{display:flex;align-items:center;justify-content:center;gap:20px;border-top:1px solid var(--line);padding-top:20px;font-size:12px;color:var(--subtle);text-align:center}
+.site-footer .footer-bottom small{font-size:12px;color:inherit;width:auto;text-align:center;margin:0}
+.studio-mode .site-footer{display:none}
+.case-main + .site-footer,.application-main + .site-footer{margin-top:56px}
+@media(max-width:760px){.site-footer.footer{padding-inline:23px}}
+@media(max-width:700px){
+  .site-footer.footer{padding-top:40px;padding-bottom:22px}
+  .site-footer .footer-main{grid-template-columns:repeat(2,minmax(0,1fr));gap:32px 22px;padding-bottom:32px}
+  .site-footer .footer-about{grid-column:1/-1}
+  .site-footer .footer-about p{margin-top:18px}
+  .site-footer .footer-links a{font-size:13px}
+  .case-main + .site-footer,.application-main + .site-footer{margin-top:32px}
+}
+@media(prefers-reduced-motion:reduce){.site-footer .footer-links a{transition:none}}

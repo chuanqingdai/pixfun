@@ -1,28 +1,105 @@
 <!doctype html>
-<html lang="en">
-<head>
+<html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#111115"><meta name="description" content="Analyze the creative structure behind a reference video, then create a fresh version with your own footage, message, and brand in Pixfun.">
-<title>Pixfun — Turn viral formats into original videos.</title>
-<link rel="icon" type="image/png" sizes="32x32" href="/assets/images/favicon-32.png"><link rel="icon" type="image/png" sizes="512x512" href="/assets/images/pixfun-icon.png"><link rel="apple-touch-icon" sizes="180x180" href="/assets/images/apple-touch-icon.png"><link rel="stylesheet" href="/assets/pixfun.css"><link rel="stylesheet" href="/assets/studio.css"><link rel="stylesheet" href="/assets/hero.css"><link rel="stylesheet" href="/assets/theme.css"><link rel="stylesheet" href="/assets/typography.css"><link rel="stylesheet" href="/assets/sections.css"><link rel="stylesheet" href="/assets/story-layout.css"><link rel="stylesheet" href="/assets/controls.css">
-<link rel="stylesheet" href="/assets/studio-flow.css">
-<script src="/assets/motion.js" defer></script><script src="/assets/pixfun.js" defer></script>
-</head>
-<body>
-<a href="#create" class="skip">Skip to video upload</a>
-<header class="header wrap"><a class="brand" href="#" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span class="studio-context">Studio</span><nav aria-label="Main navigation"><a href="#features">Features</a><a href="#useCases">Use cases</a><a href="#how">How it works</a><a href="#faq">FAQ</a></nav><div class="home-header-actions"><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><a class="button small primary" href="#create">Try Pixfun</a></div><div class="studio-header-actions"><button id="backHome" class="text-button" type="button">Back to home</button><button id="changeVideo" class="button secondary" type="button">New video</button><button class="button primary" id="confirmConversation" type="button" disabled>Export</button></div></header>
-<main>
-<section class="hero hero-remix" aria-labelledby="heroTitle">
-<p class="eyebrow hero-label">AI VIDEO CREATION</p>
-<h1 id="heroTitle">Turn viral video formats into your next original.</h1>
-<p class="hero-copy">Pixfun breaks down the hook, scenes, pacing, captions, and music—then helps you create a fresh version with your own footage, message, and brand.</p>
-<div class="import-box" id="create">
-<form id="urlForm" class="url-form"><label class="sr-only" for="urlInput">Reference video link</label><input id="urlInput" type="url" placeholder="Paste a video link" required><button class="button primary" id="analyzeBtn" type="submit">Analyze</button></form>
-<div class="upload-row"><span>or</span><button id="uploadBtn" type="button">Upload video</button><input id="fileInput" class="sr-only" type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.m4v" tabindex="-1"></div>
-<p class="status" id="importStatus" role="status"></p>
-</div>
-</section>
+<meta name="theme-color" content="#111714"><meta name="description" content="Pixfun understands scenes, actions and key moments in your travel footage, helping you find the right shots and shape your story. Mac app in development.">
+<title>Pixfun — AI Video Editing for Travel Creators</title>
+<link rel="icon" type="image/png" sizes="192x192" href="/assets/images/pixfun-icon-v2.png"><link rel="apple-touch-icon" href="/assets/images/pixfun-icon-v2.png">
+<link rel="preload" href="/assets/fonts/lora-regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/assets/fonts/dm-sans-regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/assets/media/cases/v3/islands.jpg" as="image" fetchpriority="high">
+<link rel="stylesheet" href="/assets/pixfun.css?v=travel-7"><link rel="stylesheet" href="/assets/studio.css?v=travel-7"><link rel="stylesheet" href="/assets/theme.css?v=travel-7"><link rel="stylesheet" href="/assets/controls.css?v=travel-7"><link rel="stylesheet" href="/assets/studio-flow.css?v=travel-7"><link rel="stylesheet" href="/assets/travel.css?v=travel-24">
+<link rel="stylesheet" href="/assets/polish.css?v=polish-8">
+<link rel="stylesheet" href="/assets/palette.css?v=workspace-2">
+<link rel="stylesheet" href="/assets/brand-voices.css?v=3">
+<link rel="stylesheet" href="/assets/workflow-story.css?v=8">
+<link rel="stylesheet" href="/assets/library.css?v=8">
+<link rel="stylesheet" href="/assets/shot-library.css?v=16">
+<script src="/assets/media-metadata.js?v=1" defer></script>
+<script src="/assets/asset-understanding.js?v=11" defer></script>
+<link rel="stylesheet" href="/assets/desktop.css?v=5">
+<link rel="stylesheet" href="/assets/scene-browser.css?v=2">
+<script src="/assets/scene-browser.js?v=2" defer></script>
+<script src="/assets/media-masonry.js?v=1" defer></script>
+<script src="/assets/library.js?v=31" defer></script>
+<link rel="stylesheet" href="/assets/web-analysis.css?v=3">
+<script src="/assets/web-analysis.js?v=6" defer></script>
+<script src="/assets/desktop-client.js?v=1" defer></script>
+<script src="/assets/desktop-workspace.js?v=6" defer></script>
+<link rel="stylesheet" href="/assets/desktop-skills.css?v=1">
+<script src="/assets/desktop-skills.js?v=1" defer></script>
+<link rel="stylesheet" href="/assets/landing-cases.css?v=1">
+<link rel="stylesheet" href="/assets/site-footer.css?v=1">
+<link rel="stylesheet" href="/assets/site-refinements.css?v=1">
+<script src="/assets/pixfun.js?v=travel-14" defer></script><script src="/assets/hero-player.js?v=playlist-3" defer></script><script src="/assets/travel.js?v=travel-27" defer></script><script src="/assets/polish.js?v=polish-4" defer></script>
+</head><body>
+<a href="#create" class="skip">Skip to early access</a>
+<header class="header wrap"><a class="brand brand-v2" href="#" aria-label="Pixfun home"><img class="brand-logo" src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun" width="1086" height="362"></a>
 
+<div class="home-header-actions" hidden><button class="text-button" id="resumeStudio" type="button" hidden>Open studio</button><details class="mobile-menu"><summary>Menu</summary><nav aria-label="Mobile navigation"><a href="#faq">Questions &amp; answers</a><button id="mobileResume" class="text-button" type="button" hidden>Open studio</button></nav></details></div>
+<div class="studio-header-actions"><button id="changeVideo" class="button secondary" type="button">New video</button><button class="button primary" id="confirmConversation" type="button" disabled>Export</button></div></header>
+<main>
+<section class="travel-hero" aria-labelledby="heroTitle">
+<div class="hero-film-frame"><img id="heroPoster" class="hero-poster" src="/assets/media/cases/v3/islands.jpg" alt="" width="1280" height="720" fetchpriority="high" decoding="async"><video id="heroFilm" muted playsinline preload="none" data-src="/assets/media/cases/v3/islands-preview.mp4" poster="/assets/media/cases/v3/islands.jpg" aria-label="Island escape travel sample, 5 seconds"></video><span class="hero-loading" aria-hidden="true"></span></div>
+<div class="hero-intro wrap"><p class="travel-eyebrow">AI EDITING FOR TRAVEL VLOGS</p>
+<h1 id="heroTitle"><span class="hero-title-line">Turn your travel footage into</span> <span class="hero-title-line">beautiful films, <span class="hero-multiplier">10<span class="hero-times">×</span></span> faster.</span></h1>
+<p class="travel-lead">AI that understands your scenes, actions, and key moments.<br>Break footage into editable shots. Find the story in what you see and hear.</p>
+<div class="travel-import" id="create"><div class="hero-actions"><a class="button primary" id="downloadMac" href="/mac-early-access" aria-describedby="macDownloadInfo">Apply for early access <span aria-hidden="true">↗</span></a></div>
+<p class="mac-download-info" id="macDownloadInfo">Mac app in development</p>
+<div hidden><button class="button primary" id="uploadBtn" type="button">Import footage</button>
+<input id="fileInput" class="sr-only" type="file" accept="video/*,image/*,.mp4,.mov,.mkv,.webm,.m4v,.heic,.heif" tabindex="-1">
+<form id="urlForm" hidden><label for="urlInput">Video link</label><input id="urlInput" type="url" required><button id="analyzeBtn" type="submit">Analyze</button></form>
+<p class="status" id="importStatus" role="status"></p></div></div></div>
+<div class="hero-bottom wrap" id="footage-examples"><div class="hero-playback"><span>5-second highlights · Open a clip to explore its story</span></div>
+<p id="heroPlaybackHelp" class="sr-only">Five short previews play in sequence. Each link opens the full video and its editorial breakdown on a separate page.</p>
+<div class="film-selector" role="group" aria-label="Explore travel footage samples" aria-describedby="heroPlaybackHelp">
+<a href="/stories/islands" data-film="islands" data-mobile-src="/assets/media/cases/v3/islands-preview-mobile.mp4" data-label="Island escape" data-src="/assets/media/cases/v3/islands-preview.mp4" data-poster="/assets/media/cases/v3/islands.jpg" aria-current="true"><img src="/assets/media/cases/v3/islands.jpg" alt=""><span>Island escape<small>3 shots</small></span></a>
+<a href="/stories/citywalk" data-film="citywalk" data-mobile-src="/assets/media/cases/v3/citywalk-preview-mobile.mp4" data-label="Tokyo nights" data-src="/assets/media/cases/v3/citywalk-preview.mp4" data-poster="/assets/media/cases/v3/citywalk.jpg" aria-current="false"><img src="/assets/media/cases/v3/citywalk.jpg" alt=""><span>Tokyo nights<small>3 shots</small></span></a>
+<a href="/stories/food" data-film="food" data-mobile-src="/assets/media/cases/v3/food-preview-mobile.mp4" data-label="Slow mornings" data-src="/assets/media/cases/v3/food-preview.mp4" data-poster="/assets/media/cases/v3/food.jpg" aria-current="false"><img src="/assets/media/cases/v3/food.jpg" alt=""><span>Slow mornings<small>3 shots</small></span></a>
+<a href="/stories/outdoors" data-film="outdoors" data-mobile-src="/assets/media/cases/v3/outdoors-preview-mobile.mp4" data-label="Golden geysers" data-src="/assets/media/cases/v3/outdoors-preview.mp4" data-poster="/assets/media/cases/v3/outdoors.jpg" aria-current="false"><img src="/assets/media/cases/v3/outdoors.jpg" alt=""><span>Golden geysers<small>7 shots</small></span></a>
+<a href="/stories/alpine" data-film="alpine" data-mobile-src="/assets/media/cases/v3/alpine-preview-mobile.mp4" data-label="Wild Alaska" data-src="/assets/media/cases/v3/alpine-preview.mp4" data-poster="/assets/media/cases/v3/alpine.jpg" aria-current="false"><img src="/assets/media/cases/v3/alpine.jpg" alt=""><span>Wild Alaska<small>6 shots</small></span></a>
+</div></div>
+</section>
+<section id="webAnalysis" hidden aria-labelledby="webAnalysisTitle">
+<header class="web-analysis-header"><a class="library-brand" href="#" aria-label="Pixfun home"><img loading="lazy" decoding="async" src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun" width="1086" height="362"></a><button id="webNewFile" type="button" class="button secondary">Import another file</button></header>
+<div class="web-analysis-column">
+<a class="web-back" href="#">← Back to home</a>
+<div class="web-analysis-heading"><p class="web-eyebrow">FOOTAGE ANALYSIS</p><h1 id="webAnalysisTitle" tabindex="-1">Understand your footage.</h1><p id="webAnalysisMeta">Explore one video or photo, from the first frame to the details.</p></div>
+<p id="webAnalysisNotice" role="status" hidden></p>
+<div id="webUpload" class="web-upload"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="8" width="36" height="32" rx="6"/><path d="M24 32V17m-6 6 6-6 6 6M6 34l9-9 5 5"/></svg><h2>Start with one file.</h2><p>Drop a video or photo here to explore its scenes and details.</p><button id="webChooseFile" class="button primary" type="button">Import footage</button><span>One file at a time · Up to 500 MB</span></div>
+<div id="webAnalysisReport" hidden>
+<div id="webAnalysisPreview" class="web-analysis-preview"></div>
+<div id="webAnalysisProgress" class="web-analysis-progress" role="status" hidden><div><span class="media-import-spinner" aria-hidden="true"></span><strong id="webProgressLabel">Reading your file…</strong><button id="webStop" class="text-button" type="button">Stop</button></div><progress id="webUploadProgress" max="100" hidden></progress></div>
+<div id="webAnalysisScenes"></div>
+<div id="webAnalysisSections"></div>
+</div>
+</div></section>
+<section id="mediaLibrary" hidden aria-labelledby="libraryTitle">
+<aside class="library-sidebar">
+<a href="#" class="library-brand" aria-label="Pixfun home"><img loading="lazy" decoding="async" src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun" width="1086" height="362"></a>
+<nav aria-label="Workspace navigation"><button type="button" data-workspace-page="home">Home</button><button type="button" data-workspace-page="media" aria-current="page">Media <span id="allCount">0</span></button><button type="button" data-workspace-page="skills">Skills</button></nav>
+</aside>
+<div class="library-main">
+<input id="folderInput" type="file" webkitdirectory multiple hidden>
+<div class="library-content"><div class="library-heading"><div><h1 id="libraryTitle" tabindex="-1">Media</h1><p id="librarySummary"></p></div><div id="mediaImportActions" class="media-import-actions"><button class="button secondary" id="importFolder" type="button">Import folder</button><button class="button primary" id="libraryImport" type="button">Import footage</button></div></div>
+<p id="libraryImportStatus" class="sr-only" role="status" aria-atomic="true"></p>
+<p id="libraryNotice" role="status"></p>
+<div id="workspaceHome" hidden>
+<div class="home-shortcuts" aria-label="Quick actions">
+<button type="button" class="home-action-card home-action-import" id="homeImport"><span class="home-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z"/><path d="M12 16v-6m-3 3 3-3 3 3"/></svg></span><span class="home-action-copy"><strong>Import footage</strong><span>Bring your videos and photos together.</span></span><svg class="home-action-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+<a class="home-action-card" id="homeDownload" href="/mac-early-access"><span class="home-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="12" rx="2"/><path d="M9 15v5m6-5v5M7 20h10m-5-14v6m-2-2 2 2 2-2"/></svg></span><span class="home-action-copy"><strong>Mac early access</strong><span>In development · Apply to join</span></span><svg class="home-action-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+</div>
+<section class="home-media" aria-labelledby="homeMediaTitle"><div class="home-section-head"><div><h2 id="homeMediaTitle">Media</h2><p>Your imported videos and photos, all in one place.</p></div><button type="button" class="text-button" data-tutorial-page="media">View all</button></div><div id="homeMediaGrid" class="home-media-grid"></div><p id="homeMediaEmpty" class="home-media-empty">No footage yet.</p></section>
+<section class="home-showcase" aria-labelledby="showcaseTitle"><div class="home-section-head"><div><h2 id="showcaseTitle">Showcase</h2><p>Find inspiration for your next travel story.</p></div></div><div class="showcase-grid"><button type="button" data-showcase="citywalk" data-showcase-title="A day in the city" aria-label="Play city walk sample"><img loading="lazy" decoding="async" src="/assets/media/travel/hero-citywalk.jpg" alt="A lively city street"><span><strong>City walks</strong></span></button><button type="button" data-showcase="food" data-showcase-title="Follow the flavor" aria-label="Play food travel sample"><img loading="lazy" decoding="async" src="/assets/media/travel/hero-food.jpg" alt="Cooking at a local food stop"><span><strong>Food discoveries</strong></span></button><button type="button" data-showcase="alpine" data-showcase-title="Take the scenic route" aria-label="Play outdoor travel sample"><img loading="lazy" decoding="async" src="/assets/media/travel/hero-alpine.jpg" alt="Travelers in snowy mountains"><span><strong>Outdoor adventures</strong></span></button></div></section>
+<section class="home-skills" aria-labelledby="homeSkillsTitle"><div class="home-section-head"><div><h2 id="homeSkillsTitle">Skills</h2><p>Explore creative styles for your next edit.</p></div><button type="button" class="text-button" id="homeSkills">View all</button></div><div class="home-skill-list"><button type="button" data-home-skill="Travel diary"><img src="/assets/media/travel/roadtrip.jpg" alt="" loading="lazy"><strong>Travel diary</strong></button><button type="button" data-home-skill="Cinematic journey"><img src="/assets/media/travel/coast.jpg" alt="" loading="lazy"><strong>Cinematic journey</strong></button><button type="button" data-home-skill="City explorer"><img src="/assets/media/travel/citywalk.jpg" alt="" loading="lazy"><strong>City explorer</strong></button><button type="button" data-home-skill="Food discoveries"><img src="/assets/media/travel/food.jpg" alt="" loading="lazy"><strong>Food discoveries</strong></button></div></section>
+<section class="home-tutorials" aria-labelledby="tutorialTitle"><div class="home-section-head"><div><h2 id="tutorialTitle">Tutorials</h2><p>Learn how to import, explore, and shape your footage.</p></div></div><div class="tutorial-grid"><details><summary><img src="/assets/media/travel/project-airport.jpg" alt="" loading="lazy"><strong>Import your footage</strong></summary><p>Select photos and videos, or import a folder from Media. Up to 500 MB per file.</p><button type="button" class="button secondary" id="tutorialImport">Import footage</button></details><details><summary><img src="/assets/media/travel/project-lake.jpg" alt="" loading="lazy"><strong>Explore your media</strong></summary><p>Select a file to preview it and explore its details, tags, and transcript. Retry any file that needs attention.</p><button type="button" class="button secondary" data-tutorial-page="media">Open Media</button></details><details><summary><img src="/assets/media/travel/project-island.jpg" alt="" loading="lazy"><strong>Choose a skill</strong></summary><p>Choose a creative style and save your preference. Automatic editing with Skills is not connected yet.</p><button type="button" class="button secondary" data-tutorial-page="skills">Open Skills</button></details></div></section>
+</div>
+<section id="workspaceSkills" hidden aria-label="Creative skills"><div class="skills-grid"><button type="button" data-skill="Travel diary" aria-pressed="false"><img loading="lazy" decoding="async" src="/assets/media/travel/roadtrip.jpg" alt="A journey on the road"><span><strong>Travel diary</strong><p>Keep the conversations, small discoveries, and sounds that made the trip yours.</p></span></button><button type="button" data-skill="Cinematic journey" aria-pressed="false"><img loading="lazy" decoding="async" src="/assets/media/travel/coast.jpg" alt="An open coastal landscape"><span><strong>Cinematic journey</strong><p>Give wide views and quiet moments room to breathe, with an intentional visual rhythm.</p></span></button><button type="button" data-skill="City explorer" aria-pressed="false"><img loading="lazy" decoding="async" src="/assets/media/travel/citywalk.jpg" alt="A city street"><span><strong>City explorer</strong><p>Connect neighborhoods, street life, and after-dark discoveries into a city story.</p></span></button><button type="button" data-skill="Food discoveries" aria-pressed="false"><img loading="lazy" decoding="async" src="/assets/media/travel/food.jpg" alt="Food and cafe discoveries"><span><strong>Food discoveries</strong><p>Bring the place, preparation, and first reaction together without losing the atmosphere.</p></span></button></div><p id="skillStatus" class="sr-only" role="status"></p></section>
+<div id="mediaBrowseBar" class="media-browse-bar"><nav id="mediaViews" class="media-views" aria-label="Media categories"><button type="button" data-library-view="all" aria-current="page">All media</button><button type="button" data-library-view="video">Videos</button><button type="button" data-library-view="image">Photos</button><button type="button" data-library-view="favorites">Favorites</button></nav>
+<div class="library-toolbar"><button class="text-button" id="cancelImport" type="button" hidden>Stop processing</button><label class="sr-only" for="librarySearch">Search descriptions, filenames, tags, or transcripts</label><input id="librarySearch" type="search" placeholder="Search your footage…"></div></div>
+<div class="library-layout"><div><div id="libraryGrid" class="library-grid"></div><div class="library-empty" id="libraryEmpty"><h2>Bring every angle of your trip.</h2><p>Choose videos and photos from your phone, camera, or drone.<br>You can also drop files here.</p><button class="button primary" id="emptyImport" type="button">Import footage</button><small>Up to 500 MB per file · 100 files per batch</small></div></div></div>
+</div></div></section>
+<dialog id="mediaDetailDialog" aria-labelledby="mediaDetailTitle"><header><h2 id="mediaDetailTitle">Media details</h2><form method="dialog"><button type="submit" class="media-detail-close" aria-label="Close media details" title="Close" autofocus><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></form></header><div id="libraryInspector" class="media-detail-body"></div></dialog>
+<dialog id="showcaseDialog" aria-labelledby="showcaseDialogTitle"><div><h2 id="showcaseDialogTitle">Travel footage sample</h2><form method="dialog"><button class="button secondary">Close</button></form></div><video id="showcaseVideo" controls playsinline preload="none"></video><p>Real travel footage sample. This is not an automatically generated Pixfun result.</p></dialog>
 <section class="workspace wrap" id="results" hidden aria-labelledby="studioTitle">
 <h1 id="studioTitle" class="sr-only" tabindex="-1">Pixfun Studio</h1>
 <div class="studio-canvas">
@@ -72,80 +149,134 @@
 <div class="studio-bottomline"><span id="studioProgressLabel" role="status">Step 1 of 2</span></div>
 </div></div></section>
 
-<section class="story-intro wrap" id="features"><div class="section-heading"><p class="eyebrow purple">CREATIVE BLUEPRINT</p><h2>One reference. A format you can make your own.</h2></div></section>
-<section class="story" id="story" aria-label="Five-stage creative blueprint demonstration">
-<div class="story-sticky">
-<div class="story-top"><span>PIXFUN STUDIO</span><span>Interactive demo</span></div>
-<div class="story-layout">
-<nav class="chapter-nav" aria-label="Demo chapters"><button type="button" data-go="0" aria-current="step"><span>01</span> Reference</button><button type="button" data-go="1"><span>02</span> Deconstruct</button><button type="button" data-go="2"><span>03</span> Replace</button><button type="button" data-go="3"><span>04</span> Create</button><button type="button" data-go="4"><span>05</span> Export</button></nav>
-<div class="story-copy">
-<div class="chapter active" data-chapter="0"><p class="eyebrow">01 / REFERENCE</p><h2>Bring a format<br><span>worth studying.</span></h2><p>Paste a link or upload an authorized reference. Pixfun treats it as a format to understand, not footage to republish.</p><div class="chapter-tags"><span>Video links</span><span>Local files</span></div></div>
-<div class="chapter" data-chapter="1"><p class="eyebrow">02 / DECONSTRUCT</p><h2>See the system.<br><span>Not just the scenes.</span></h2><p>Map the hook, shot order, scene length, pacing, transitions, captions, and beats behind the edit.</p><div class="chapter-tags"><span>Creative structure</span><span>Timing & rhythm</span></div></div>
-<div class="chapter" data-chapter="2"><p class="eyebrow">03 / REPLACE</p><h2>Swap in<br><span>your world.</span></h2><p>Plan your own footage, presenter, script, brand, language, and licensed music around the blueprint.</p><div class="chapter-tags"><span>Your assets</span><span>Your story</span></div><p class="capability-note">The current local prototype saves direction; automatic replacement remains a product demo.</p></div>
-<div class="chapter" data-chapter="3"><p class="eyebrow">04 / CREATE</p><h2>Bring your version to life.<br><span>Keep your point of view.</span></h2><p>Fit your own scenes and message to the creative blueprint. The presenter and Spanish script shown here are a demo.</p></div>
-<div class="chapter" data-chapter="4"><p class="eyebrow">05 / EXPORT</p><h2>An original.<br><span>Built on strategy.</span></h2><p>Export your vertical version, ready to test and refine. The current prototype keeps the source footage and audio.</p><div class="chapter-tags"><span>Vertical video</span><span>MP4 export</span></div></div>
 
+<section class="story-outcome section-space wrap" id="stories" aria-labelledby="outcomeTitle">
+<div class="travel-section-head"><p class="travel-eyebrow">FROM RAW CLIPS TO A FINISHED VIDEO</p><h2 id="outcomeTitle">Turn a trip’s worth of footage into one complete travel film.</h2><p>Bring your clips and an idea. See how they come together in one edited video.</p></div>
+<div class="edit-example">
+<div class="example-input">
+<div class="example-heading"><div><span class="example-label">INPUT</span><h3>A whole trip of footage</h3></div><span class="example-count">96 clips · 2 hr 18 min</span></div>
+<div class="source-pile" aria-describedby="exampleCaption">
+<ul aria-label="Eight thumbnails from an illustrative 96-clip project">
+<li><img src="/assets/media/travel/coast.jpg" alt="Coastal aerial footage" width="960" height="540" loading="lazy"><span>coast_014.mov</span><time datetime="PT2M14S">2:14</time></li>
+<li><img src="/assets/media/travel/citywalk.jpg" alt="An evening city walk" width="1280" height="720" loading="lazy"><span>city_008.mp4</span><time datetime="PT4M32S">4:32</time></li>
+<li><img src="/assets/media/travel/luxury.jpg" alt="Private flight footage" width="1280" height="720" loading="lazy"><span>flight_003.mov</span><time datetime="PT1M48S">1:48</time></li>
+<li><img src="/assets/media/travel/roadtrip.jpg" alt="A road trip filmed from the back seat" width="960" height="540" loading="lazy"><span>road_021.mp4</span><time datetime="PT3M6S">3:06</time></li>
+<li><img src="/assets/media/travel/food.jpg" alt="A stop for local food" width="1280" height="720" loading="lazy"><span>food_012.mp4</span><time datetime="PT2M37S">2:37</time></li>
+<li><img src="/assets/media/travel/citybreak.jpg" alt="City skyline footage" width="1280" height="720" loading="lazy"><span>night_006.mov</span><time datetime="PT5M12S">5:12</time></li>
+<li><img src="/assets/media/travel/outdoors.jpg" alt="Travelers on a snowy mountain" width="1280" height="720" loading="lazy"><span>summit_018.mp4</span><time datetime="PT3M41S">3:41</time></li>
+<li><img src="/assets/media/travel/hiking.jpg" alt="A couple on a hiking trip" width="960" height="540" loading="lazy"><span>trail_027.mov</span><time datetime="PT1M56S">1:56</time></li>
+</ul><span class="source-pile-more">+88 more clips</span>
 </div>
-<div class="stage" id="stage" aria-label="The same video moving from original footage to a vertical composition">
-<div class="stage-grid" aria-hidden="true"></div>
-<div class="source-badge float-layer" id="sourceBadge"><span class="source-icon">▶</span><div><b>A format worth studying</b><small>Conference talk · 00:32</small></div><span class="check">✓</span></div>
-<div class="media-frame" id="mediaFrame"><div class="media-toolbar"><span>Blueprint preview</span><span id="ratioLabel">16:9</span></div><div class="media-picture"><img id="originalScene" src="/assets/images/speaker-medium.png" alt="Before: a female speaker on a violet-lit conference stage" width="1536" height="1024" fetchpriority="high"><img id="replacementScene" src="/assets/images/speaker-male-suit.png" alt="After: a male presenter in a black suit holding a microphone on a blue keynote stage" width="1536" height="1024"><span class="media-original" id="originalBadge">REFERENCE</span><span class="media-original" id="replacementBadge">YOUR VERSION</span><div class="caption" id="demoCaption" lang="es"><strong>El mundo te espera.</strong></div><span class="timecode">00:08 / 00:32</span></div><div class="media-footer"><span>▶</span><div><i></i></div><span>32s</span></div></div>
-<div class="demo-timeline" id="demoTimeline"><div class="timeline-head"><span>Structure map</span><span>00:00　　 00:10　　 00:20　　 00:30</span></div><div class="filmstrip"><div><img src="/assets/images/speaker-wide.png" alt="Wide shot of the stage and audience" width="1536" height="1024" loading="lazy"><span>01 · Hook</span></div><div class="is-current" aria-current="true"><img src="/assets/images/speaker-medium.png" alt="Medium shot of the speaker gesturing, matching the video preview" width="1536" height="1024" loading="lazy"><em>Now · 00:08</em><span>02 · Key idea</span></div><div><img src="/assets/images/speaker-audience.png" alt="Audience listening and taking notes" width="1536" height="1024" loading="lazy"><span>03 · Proof</span></div><div><img src="/assets/images/speaker-close.png" alt="Close-up of the speaker delivering the closing line" width="1536" height="1024" loading="lazy"><span>04 · CTA</span></div></div><div class="audio-track" aria-hidden="true"></div><div class="playhead" id="playhead"><span>00:08</span></div><p><span class="current-dot" aria-hidden="true"></span>Scene 02 matches the preview above</p></div>
-<div class="edit-card float-layer" id="editCard"><span class="editor-kicker">ESPAÑOL / SAMPLE SCRIPT</span><div><span>01 / Hook</span><b lang="es">Cambia de perspectiva.</b></div><div class="selected"><span>02 / STORY</span><b lang="es">El mundo te espera.<i></i></b></div><div><span>03 / CTA</span><b lang="es">Empieza hoy.</b></div></div>
-<div class="brief-card float-layer" id="briefCard"><span class="editor-kicker">CREATION PLAN</span><h4>Replace the ingredients.</h4><div class="brief-mini"><span>Person · Male presenter</span></div><div class="reference-chip"><img src="/assets/images/speaker-male-suit.png" alt="Male presenter reference preview" width="32" height="36"><span>male-presenter-suit.png</span><b>✓ Added</b></div><div class="brief-mini"><span>Language · English → Spanish</span></div><p>Male presenter. Black suit. Blue stage. Rewrite the English script in Spanish.</p><div class="brief-saved">✓ Plan saved</div><small>Demo preview · Automatic replacement and translation are not connected</small></div>
-<div class="export-card float-layer" id="exportCard"><span class="success-icon">✓</span><div><b>Your original is ready</b><small>MP4 · 720 × 1280</small></div><span>↓</span></div>
+<div class="example-brief"><span class="example-label">YOUR DIRECTION</span><p>“Make a twenty-minute travel vlog. Keep the little moments that made this trip ours.”</p></div>
+</div>
+<div class="example-arrow" aria-hidden="true">→</div>
+<div class="example-output">
+<div class="example-heading"><div><span class="example-label">OUTPUT</span><h3>One story worth sharing</h3></div><span class="example-count">YouTube cover · 20:18</span></div>
+<figure class="example-cover" aria-label="Static example YouTube cover: One week away, 20 minutes 18 seconds" aria-describedby="exampleCaption">
+<img class="cover-landscape" src="/assets/media/travel/coast.jpg" alt="A rugged coastline beside the ocean" width="960" height="540" loading="lazy">
+<img class="cover-travelers" src="/assets/media/travel/hiking-detail.jpg" alt="Two travelers taking a selfie in the mountains" width="960" height="540" loading="lazy">
+<div class="cover-title" aria-hidden="true"><span>OUR TRAVEL DIARY</span><strong>ONE WEEK<br><em>AWAY.</em></strong></div>
+<time datetime="PT20M18S" class="cover-duration">20:18</time>
+</figure>
+<div class="example-result"><strong>One week away — a travel diary</strong><span>1080p · 16:9</span></div>
+<p id="exampleCaption" class="example-caption">Illustrative, not generated live. Clip counts, durations, and cover are examples.</p>
 </div>
 </div>
-<div class="story-bottom"><span id="sceneLabel">01 — Reference</span></div>
-</div>
-</section>
-
-<section class="use-cases wrap" id="useCases" aria-labelledby="useCasesTitle">
-<div class="use-cases-heading section-heading">
-<p class="eyebrow purple">USE CASES</p>
-<h2 id="useCasesTitle">Start with a pattern. <span>Build for your audience.</span></h2>
-<p>Pixfun works best when the creative structure is proven and the ingredients can become unmistakably yours.</p>
-</div>
-<article class="case-study">
-<figure class="case-study-media"><img src="/assets/images/case-talking-head-v1.png" alt="A female fitness coach in a bright home gym beside a male fitness coach in a dark training studio" width="1672" height="941" loading="lazy"><figcaption><span>REFERENCE FORMAT</span><span>YOUR VERSION</span></figcaption></figure>
-<div class="case-study-copy">
-<p class="case-index">CASE 01 · FITNESS CREATOR</p>
-<h3>Change the presenter.<br>Keep the delivery system.</h3>
-<p>Turn a proven coaching format into a fresh creator video with a new face, environment, and message.</p>
-<dl class="case-change-list"><div><dt>Keep</dt><dd>Hook · Framing · Delivery rhythm</dd></div><div><dt>Change</dt><dd>Presenter · Studio · Script · Brand</dd></div></dl>
-</div>
-</article>
-<div class="scenario-grid" aria-label="Typical Pixfun use cases">
-<article class="scenario-card"><div class="scenario-media"><img src="/assets/images/case-localized-v1.png" alt="Travel creator presenting from a Mediterranean food market" width="1448" height="1086" loading="lazy"></div><div class="scenario-card-body"><p class="scenario-label">CASE 02 · LOCALIZED VERSIONS</p><h3>Take a creator format into a new market.</h3><p>Translate the dialogue, voice, and captions while keeping the visual rhythm viewers already understand.</p><div class="scenario-tags"><span>Language</span><span>Captions</span><span>Voice</span></div></div></article>
-<article class="scenario-card"><div class="scenario-media"><img src="/assets/images/case-performance-ad-v1.png" alt="Beauty creator presenting an amber skincare bottle" width="1448" height="1086" loading="lazy"></div><div class="scenario-card-body"><p class="scenario-label">CASE 03 · PERFORMANCE ADS</p><h3>Turn one strong ad structure into more tests.</h3><p>Keep the hook–proof–CTA sequence, then replace the product, offer, creator, and brand assets.</p><div class="scenario-tags"><span>Product</span><span>Offer</span><span>CTA</span></div></div></article>
-<article class="scenario-card"><div class="scenario-media"><img src="/assets/images/case-ai-character-v1.png" alt="Original teal robot chef presenting a dessert in a futuristic kitchen" width="1448" height="1086" loading="lazy"></div><div class="scenario-card-body"><p class="scenario-label">CASE 04 · AI CHARACTER SERIES</p><h3>Switch the character, not the storyboard.</h3><p>Preserve the camera beats and scene order while building a completely new character and visual world.</p><div class="scenario-tags"><span>Character</span><span>Style</span><span>Scene</span></div></div></article>
-</div>
-</section>
-
-<section class="how wrap workflow-section" id="how" aria-labelledby="howTitle">
-<div class="workflow-heading section-heading">
-<p class="eyebrow purple">HOW PIXFUN WORKS</p><h2 id="howTitle">From reference to original. <span>Three clear steps.</span></h2>
-<p>Study the strategy. Replace the ingredients. Create your version.</p>
-</div>
-<ol class="workflow-cards">
-<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">01</span><span class="workflow-label">REFERENCE</span></div><h3>Start with a format that works.</h3><p>Paste a link or upload an authorized video whose creative structure is worth studying.</p><div class="workflow-card-footer"><span>Video links</span><span>Local files</span></div></li>
-<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">02</span><span class="workflow-label">DECONSTRUCT</span></div><h3>Turn the edit into a blueprint.</h3><p>Understand the hook, shot sequence, pacing, transitions, captions, and beat structure.</p><div class="workflow-card-footer"><span>Creative structure</span><span>Beat map</span></div></li>
-<li class="workflow-card"><div class="workflow-card-top"><span class="workflow-number" aria-hidden="true">03</span><span class="workflow-label">CREATE</span></div><h3>Make every ingredient yours.</h3><p>Use your own footage, message, brand, and licensed music to create an original version.</p><div class="workflow-card-footer"><span>Your assets</span><span>Your original</span></div></li>
-</ol>
-</section>
-<section class="faq wrap faq-section" id="faq" aria-labelledby="faqTitle">
-<div class="faq-heading section-heading"><p class="eyebrow purple">GOOD TO KNOW</p><h2 id="faqTitle">The blueprint, <span>explained.</span></h2><p>What Pixfun studies, what you replace, and where originality begins.</p></div>
-<div class="faq-list">
-<details open><summary>What does Pixfun deconstruct?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Pixfun’s product direction is to map the hook, shot order, scene length, pacing, transitions, caption rhythm, and music beats behind a reference edit.</p><p class="faq-limit">Today’s local prototype supports import, scene detection, storyboard thumbnails, timeline segmentation, and timed text. Advanced transition and music analysis, asset replacement, translation, and dubbing remain product demos.</p></div></details>
-<details><summary>Does Pixfun copy the original video?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>No. The goal is to reuse creative strategy, not someone else’s footage or identity. A blueprint describes how the edit works; your final version should use your own authorized assets, story, and brand.</p></div></details>
-<details><summary>What can I replace in a blueprint?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>The intended workflow lets you replace footage, products, presenters, script, language, captions, brand elements, and music while preserving the useful structure and rhythm.</p><p>In the current prototype, you can save direction, split scenes, edit text, and export a vertical MP4. Automatic visual replacement is not connected yet.</p></div></details>
-<details><summary>Can I reuse the reference music?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Only when you have the rights to use it on your destination platform. Otherwise, reuse the tempo and beat strategy with licensed music, platform-cleared audio, or a track you own.</p></div></details>
-<details><summary>Can I use a link or upload a file?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Both. Upload a supported video file up to 500 MB, or import a supported video link. Link access depends on the platform, your connection, and your permissions.</p></div></details>
-<details><summary>What content am I allowed to analyze?<span class="faq-toggle" aria-hidden="true">+</span></summary><div class="faq-answer"><p>Use content you own, are licensed to use, or have permission to analyze. Pixfun does not bypass private access, DRM, copyright, music rights, or platform rules.</p></div></details>
+<div class="share-destinations" id="sharePlatforms" aria-labelledby="shareTitle">
+<div class="share-copy"><h3 id="shareTitle">Share your travel films on your favorite platforms.</h3><p>Export your video, then upload it wherever you share.</p></div>
+<ul class="platform-logos" aria-label="Video sharing destinations">
+<li><img src="/assets/images/platforms/youtube.svg" alt="" width="28" height="28" loading="lazy"><span>YouTube</span></li>
+<li><img src="/assets/images/platforms/tiktok.svg" alt="" width="28" height="28" loading="lazy"><span>TikTok</span></li>
+<li><img src="/assets/images/platforms/instagram.svg" alt="" width="28" height="28" loading="lazy"><span>Instagram</span></li>
+<li><img src="/assets/images/platforms/facebook.svg" alt="" width="28" height="28" loading="lazy"><span>Facebook</span></li>
+</ul>
 </div>
 </section>
-<section class="closing"><img class="closing-background" src="/assets/images/creator-studio-background.png" alt="" aria-hidden="true" width="2172" height="724" loading="lazy" decoding="async"><h2>A proven format. Your original result.</h2><a class="button primary" href="#create">Start creating</a></section>
+<section class="travel-workflow" id="how" aria-labelledby="workflowTitle"><div class="workflow-sticky">
+<div class="travel-section-head"><p class="travel-eyebrow">WORKFLOW PREVIEW</p><h2 id="workflowTitle">See how your footage becomes a finished travel film.</h2></div>
+<div class="workflow-shell wrap"><nav class="workflow-steps" aria-label="Editing workflow">
+<button type="button" data-stage="0" aria-current="step"><span>01</span> Import footage</button><button type="button" data-stage="1"><span>02</span> Analyze with AI</button><button type="button" data-stage="2"><span>03</span> Describe your idea</button><button type="button" data-stage="3"><span>04</span> Build your story</button><button type="button" data-stage="4"><span>05</span> Refine your edit</button><button type="button" data-stage="5"><span>06</span> Review your film</button></nav>
+<div class="workflow-demo" data-stage="0"><div class="demo-summary"><h3 id="demoHeading">One trip. All the moments.</h3><p id="demoDescription">Start with the people, places, and details you want to remember.</p></div>
+<div class="demo-main">
+<div class="demo-sources" id="demoSources" aria-label="Twelve sample clips">
+<div class="source-grid">
+<figure><img src="/assets/media/travel/story/coffee.jpg" alt="Morning coffee" loading="lazy"><figcaption>01 Morning coffee</figcaption></figure>
+<figure><img src="/assets/media/travel/story/trail.jpg" alt="Into the forest" loading="lazy"><figcaption>02 Into the forest</figcaption></figure>
+<figure><img src="/assets/media/travel/story/hike.jpg" alt="Follow the trail" loading="lazy"><figcaption>03 Follow the trail</figcaption></figure>
+<figure><img src="/assets/media/travel/story/look.jpg" alt="A moment to look" loading="lazy"><figcaption>04 A moment to look</figcaption></figure>
+<figure><img src="/assets/media/travel/story/snow.jpg" alt="Beyond the treeline" loading="lazy"><figcaption>05 Beyond the treeline</figcaption></figure>
+<figure><img src="/assets/media/travel/story/clouds.jpg" alt="Above the clouds" loading="lazy"><figcaption>06 Above the clouds</figcaption></figure>
+<figure><img src="/assets/media/travel/story/vista.jpg" alt="The view opens" loading="lazy"><figcaption>07 The view opens</figcaption></figure>
+<figure><img src="/assets/media/travel/story/together.jpg" alt="Take it all in" loading="lazy"><figcaption>08 Take it all in</figcaption></figure>
+<figure><img src="/assets/media/travel/story/selfie.jpg" alt="Keep the memory" loading="lazy"><figcaption>09 Keep the memory</figcaption></figure>
+<figure><img src="/assets/media/travel/story/camp.jpg" alt="Back at camp" loading="lazy"><figcaption>10 Back at camp</figcaption></figure>
+<figure><img src="/assets/media/travel/story/fire.jpg" alt="A little warmth" loading="lazy"><figcaption>11 A little warmth</figcaption></figure>
+<figure><img src="/assets/media/travel/story/stars.jpg" alt="Under the stars" loading="lazy"><figcaption>12 Under the stars</figcaption></figure>
+</div></div>
+<div class="demo-preview" id="demoViewer" hidden>
+<div class="demo-viewer"><img loading="lazy" decoding="async" id="demoImage" src="/assets/media/travel/story/together.jpg" alt="Two hikers taking in a mountain view">
+<div class="scene-insight-overlay" id="demoSceneInsights" hidden>
+<div class="scene-place"><span class="frame-eyebrow">AI UNDERSTANDING · EXAMPLE</span><strong>Mountain overlook</strong><span class="scene-location">Exact location not provided</span></div>
+<div class="scene-observations" aria-label="Visible elements"><span>Two hikers</span><span>Forest &amp; ridgeline</span><span>Shared pause</span></div>
+</div>
+<div class="film-direction-overlay" id="demoFilmDirection" hidden><span class="frame-eyebrow" id="demoDirectionMeta">EXAMPLE FILM · 45s · CINEMATIC</span><strong>Beyond the trail.</strong><p>A little tension. A view worth the journey.</p></div>
+</div>
+</div>
+<aside class="demo-context" id="demoContext" aria-label="Current editing step">
+<div id="demoImport"><h4>Beyond the trail.</h4><p>A forest trail, wild peaks, and the warmth of camp after dark.</p><div class="story-project-spec"><span>12 clips</span><span>16:9</span></div></div>
+<div id="demoUnderstanding" hidden><h4>Understand with AI.</h4><p>AI models describe the action, suggest shot boundaries, and identify moments worth keeping.</p><dl><div><dt>Content</dt><dd>Two hikers pause to take in the mountains.</dd></div><div><dt>Framing</dt><dd>A rear view, with forested ridgelines beyond.</dd></div><div><dt>Use</dt><dd>A quiet pause after the walk. Keep the shared look.</dd></div></dl></div>
+<div id="demoStyle" hidden><h4>Describe your film.</h4><textarea id="demoRequirements" rows="7" maxlength="2000" aria-label="Video requirements" placeholder="Describe the story, audience, length, and style. Which moments must stay? Add preferences for music, voiceover, and captions.">Make a 45-second cinematic adventure. Build tension with the snowy peaks, hold the view, keep our selfie, and end with the campfire and stars.</textarea><p class="story-brief-hint">Editable brief · curated preview, not generated live.</p><div id="stylePicker" class="creative-styles" role="group" aria-label="Preview pacing">
+<button type="button" data-style="Cinematic" aria-pressed="true"><span>Cinematic</span></button>
+<button type="button" data-style="Travel diary" aria-pressed="false"><span>Travel diary</span></button>
+<button type="button" data-style="Quick highlights" aria-pressed="false"><span>Quick highlights</span></button>
+</div></div>
+<div class="story-outline" id="demoArrange" hidden><span class="story-shot-position" id="demoStoryPosition">01 / 12</span><h4 id="demoStoryShot">Morning coffee</h4><p id="demoStoryReason">Meet the travelers at camp before following them into the forest.</p></div>
+<div class="edit-conversation" id="demoRefine" hidden aria-label="Example editing conversation"><h4>Make room for the view.</h4><blockquote id="demoRefineRequest">“Hold the mountain view longer. Keep it at 45 seconds.”</blockquote><p id="demoRefineReply">Add 2 seconds to the viewpoint. Trim 1 second each from coffee and the first walking shot.</p><button type="button" class="story-action" id="demoApplyRefine">Apply to example</button><p class="edit-change" id="demoRefineChange" role="status" hidden></p></div>
+<div id="demoFinish" hidden><h4>A story with an ending.</h4><p>Return to camp, slow the pace, and close under the stars.</p><dl class="finish-tasks"><div><dt>Story</dt><dd id="demoFinishStory">12 shots · 45 seconds</dd></div><div><dt>Structure</dt><dd>Departure → Discovery → Reward → Return</dd></div></dl></div>
+</aside>
+<div class="demo-timeline" id="demoTimeline" aria-label="Four-chapter adventure story" hidden>
+<div class="story-timeline-heading"><strong>Beyond the trail.</strong><span id="demoStoryMeta">12 shots · 45s · Cinematic</span></div>
+<div id="demoStoryActs" class="story-board">
+<div class="story-chapter"><button class="story-chapter-title" type="button" data-story-act="0" aria-pressed="true"><span>01 Departure</span><time></time></button><div class="demo-track"><button type="button" data-story-shot="0" aria-pressed="true"><img src="/assets/media/travel/story/coffee.jpg" alt="" loading="lazy"><span>Morning coffee</span><small></small></button><button type="button" data-story-shot="1" aria-pressed="false"><img src="/assets/media/travel/story/trail.jpg" alt="" loading="lazy"><span>Into the forest</span><small></small></button><button type="button" data-story-shot="2" aria-pressed="false"><img src="/assets/media/travel/story/hike.jpg" alt="" loading="lazy"><span>Follow the trail</span><small></small></button></div></div>
+<div class="story-chapter"><button class="story-chapter-title" type="button" data-story-act="1" aria-pressed="false"><span>02 Into the wild</span><time></time></button><div class="demo-track"><button type="button" data-story-shot="3" aria-pressed="false"><img src="/assets/media/travel/story/look.jpg" alt="" loading="lazy"><span>A moment to look</span><small></small></button><button type="button" data-story-shot="4" aria-pressed="false"><img src="/assets/media/travel/story/snow.jpg" alt="" loading="lazy"><span>Beyond the treeline</span><small></small></button><button type="button" data-story-shot="5" aria-pressed="false"><img src="/assets/media/travel/story/clouds.jpg" alt="" loading="lazy"><span>Above the clouds</span><small></small></button></div></div>
+<div class="story-chapter"><button class="story-chapter-title" type="button" data-story-act="2" aria-pressed="false"><span>03 The reward</span><time></time></button><div class="demo-track"><button type="button" data-story-shot="6" aria-pressed="false"><img src="/assets/media/travel/story/vista.jpg" alt="" loading="lazy"><span>The view opens</span><small></small></button><button type="button" data-story-shot="7" aria-pressed="false"><img src="/assets/media/travel/story/together.jpg" alt="" loading="lazy"><span>Take it all in</span><small></small></button><button type="button" data-story-shot="8" aria-pressed="false"><img src="/assets/media/travel/story/selfie.jpg" alt="" loading="lazy"><span>Keep the memory</span><small></small></button></div></div>
+<div class="story-chapter"><button class="story-chapter-title" type="button" data-story-act="3" aria-pressed="false"><span>04 After dark</span><time></time></button><div class="demo-track"><button type="button" data-story-shot="9" aria-pressed="false"><img src="/assets/media/travel/story/camp.jpg" alt="" loading="lazy"><span>Back at camp</span><small></small></button><button type="button" data-story-shot="10" aria-pressed="false"><img src="/assets/media/travel/story/fire.jpg" alt="" loading="lazy"><span>A little warmth</span><small></small></button><button type="button" data-story-shot="11" aria-pressed="false"><img src="/assets/media/travel/story/stars.jpg" alt="" loading="lazy"><span>Under the stars</span><small></small></button></div></div>
+</div></div>
+</div></div></div>
+</div></section>
+<section class="creator-section section-space wrap" id="creators" aria-labelledby="creatorsTitle"><div class="travel-section-head"><p class="travel-eyebrow">BUILT AROUND TRAVEL CREATORS</p><h2 id="creatorsTitle">Create travel videos that match the way you explore.</h2><p>For vloggers, weekend explorers, and people documenting trips with friends or family. Different journeys need different edits.</p></div>
+<div class="creator-grid">
+<article><img src="/assets/media/travel/city.jpg" alt="An evening on the canals of Venice" loading="lazy"><p class="travel-eyebrow">CITY WALKS &amp; CITY BREAKS</p><h3>Find the story in the streets.</h3><p>Connect neighborhood walks, local landmarks, and after-dark discoveries into a city diary with a point of view.</p></article>
+<article><img src="/assets/media/travel/creator-cafe.jpg" alt="A traveler enjoying a coffee at a café" loading="lazy"><p class="travel-eyebrow">FOOD &amp; CAFÉ DISCOVERIES</p><h3>Turn every food stop into part of the story.</h3><p>Bring the place, the plate, and your first reaction together. Keep the atmosphere, not every take.</p></article>
+<article><img src="/assets/media/travel/creator-flight.jpg" alt="Travelers arriving by seaplane at an island pier" loading="lazy"><p class="travel-eyebrow">FLIGHTS &amp; SPECIAL STAYS</p><h3>Bring flights and stays into one travel story.</h3><p>Shape cabin details, arrivals, and room tours into a travel experience — from the first impression to the view.</p></article>
+<article><img src="/assets/media/travel/creator-outdoor.jpg" alt="Two travelers hiking in a rocky landscape" loading="lazy"><p class="travel-eyebrow">ROAD TRIPS &amp; OUTDOOR ESCAPES</p><h3>Keep the adventure. Lose the clutter.</h3><p>Weave road footage, trail moments, and wide-open views into a film that keeps the feeling of being there.</p></article>
+</div></section>
+<section class="creator-voices section-space wrap" id="creatorVoices" aria-labelledby="voicesTitle">
+<div class="voices-heading"><div class="travel-section-head"><p class="travel-eyebrow">WHO IT’S FOR</p><h2 id="voicesTitle">Who is Pixfun for?</h2><p>Personal adventures, growing channels, and professional travel projects.</p></div></div>
+<div class="voices-grid">
+<article class="voice-card"><div class="voice-category">TRAVEL ENTHUSIASTS</div><h3>Keep the trip.<br>Not just the clips.</h3><p>For travelers who want to turn phone and camera footage into memories worth sharing.</p></article>
+<article class="voice-card"><div class="voice-category">PLATFORM CREATORS</div><h3>Your next vlog.<br>Your own voice.</h3><p>For YouTube, TikTok, and Instagram creators shaping travel footage into stories for their audience.</p></article>
+<article class="voice-card"><div class="voice-category">STUDIOS &amp; EDITORS</div><h3>From raw footage.<br>To a clear story.</h3><p>For editors and small teams organizing multi-camera footage and planning a rough cut for client projects.</p></article>
+</div><div class="voices-invite"><a class="button primary" href="/mac-early-access">Apply for early access ↗</a><span>Mac app in development</span></div>
+</section>
+<section class="travel-faq section-space wrap" id="faq" aria-labelledby="faqTitle"><div class="travel-section-head"><p class="travel-eyebrow">BEFORE YOU GET STARTED</p><h2 id="faqTitle">A few things to know.</h2></div><div class="travel-faq-list">
+<details><summary>Is the Mac app available now?</summary><p>Pixfun for Mac is in development and is not open for public download. <a href="/mac-early-access">Apply for early access</a> to share your needs and leave your email. We have not announced a launch date.</p></details>
+<details><summary>What can I explore on the website?</summary><p>Watch five-second highlights, then open each example to explore the full video, visual descriptions, editable segments, and suggested story roles. These are precomputed, editorially reviewed examples. The workflow preview is a demonstration, not a live video generator.</p></details>
+<details><summary>What happens after I apply?</summary><p>Your answers and email are saved for application review and product research. We may contact you for feedback or an invitation when early access is ready. Applying does not guarantee access, and no confirmation email is sent automatically.</p></details>
+<details><summary>How much will a subscription cost?</summary><p>Pricing has not been set. The last application question asks what you would consider paying in USD per month if Pixfun solves your editing needs. You can enter 0 or choose “Not sure yet.” Applying does not subscribe you or charge you anything.</p></details>
+<details><summary>Is Pixfun only for quick highlight reels?</summary><p>We’re exploring travel vlogs, personal diaries, cinematic films, and longer stories—not just short highlights. Tell us your usual video length and editing challenges in the application so we can prioritize useful workflows.</p></details>
+<details><summary>How is my application data used?</summary><p>Your answers and email are stored for product research and early-access follow-up. The application does not collect footage or payment details.</p></details>
+</div></section>
+<section class="travel-closing wrap" aria-labelledby="closingTitle"><div class="closing-content"><p class="travel-eyebrow">YOUR NEXT FILM STARTS HERE</p><h2 id="closingTitle">Help shape Pixfun for Mac.</h2><p>In development. Built around the way you create.</p><a class="button primary" href="/mac-early-access">Apply for early access</a></div></section>
 </main>
-<footer class="footer wrap"><a href="#" class="brand" aria-label="Pixfun home"><img src="/assets/images/pixfun-logo.png" alt="Pixfun" width="599" height="183"></a><span>© 2026 Pixfun. Build the format. Make it yours.</span><span id="engineText" role="status">Connecting to your local engine…</span></footer>
-<noscript><p class="noscript">Enable JavaScript to use video imports, processing, and interactive effects.</p></noscript>
+<footer class="footer site-footer wrap" id="footer" aria-label="Site footer">
+<div class="footer-main">
+<div class="footer-about"><a class="brand brand-v2" href="#" aria-label="Pixfun home"><img class="brand-logo" src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun" width="1086" height="362" loading="lazy"></a><p>Intelligent editing.<br>For the journeys worth sharing.</p><span>Real footage. Your point of view.</span></div>
+<nav class="footer-links" aria-labelledby="footerProduct"><h2 id="footerProduct">Product</h2><a href="/mac-early-access">Mac early access</a><a href="#how">How it works</a></nav>
+<nav class="footer-links" aria-labelledby="footerExplore"><h2 id="footerExplore">Help</h2><a href="#faq">Questions &amp; answers</a></nav>
+</div>
+<div class="footer-bottom"><small>© 2026 Pixfun. All rights reserved.</small></div>
+<small id="engineText" hidden>Checking local video engine…</small>
+</footer>
+<noscript><p class="noscript">Enable JavaScript to import and analyze a video.</p></noscript>
 </body></html>

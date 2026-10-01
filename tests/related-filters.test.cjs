@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict');
+const a=require('../public/asset-understanding.js');
+function asset(name,meta,understanding={}){return a.normalize({id:name,file:{name},kind:'video',metadata:meta,assetUnderstanding:understanding});}
+const beach=asset('beach.mp4',{width:3840,height:2160,hasAudio:false,camera:'Drone camera',capturedAt:'2025-07-19T09:00:00Z'},{subjects:['Ocean'],scene:['Coast'],capture:{cameraMode:'drone'},editing:{shotRole:'establishing'}});
+const food=asset('food.mp4',{width:1080,height:1920,hasAudio:true,camera:'Phone',capturedAt:'2025-07-20T09:00:00Z'},{subjects:['Food'],scene:['Restaurant'],capture:{cameraMode:'handheld'},editing:{shotRole:'detail'}});
+const street=asset('street.mp4',{width:1080,height:1920,hasAudio:false,camera:'Phone'},{subjects:['Buildings'],scene:['City'],capture:{cameraMode:'handheld'}});
+const all=[beach,food,street];
+assert.deepEqual(a.relatedOptions(all,{orientation:'Portrait'},'','resolution'),[{value:'1080p',count:2}]);
+assert.deepEqual(a.relatedOptions(all,{orientation:'Portrait',quality:'Audio'},'','content'),[{value:'Food',count:1}]);
+assert.deepEqual(a.relatedOptions(all,{scene:'Coast'},'','capture'),[{value:'Drone',count:1}]);
+assert.deepEqual(a.relatedOptions(all,{capture:'Drone'},'','device'),[{value:'Drone camera',count:1}]);
+assert.deepEqual(a.relatedOptions(all,{},'restaurant','orientation'),[{value:'Portrait',count:1}]);
+assert.deepEqual(a.relatedOptions(all,{dateFrom:'2025-07-20'},'','content'),[{value:'Food',count:1}]);
+assert.deepEqual(a.relatedOptions([street],{},'','quality'),[{value:'Silent',count:1}],'Respect category/favorite scope supplied by the caller');
+assert.deepEqual(a.relatedOptions(all,{orientation:'Portrait',resolution:'4K'},'','resolution'),[{value:'1080p',count:2},{value:'4K',count:0}],'Keep selected zero-result values removable');
+assert.ok(!a.matches(beach,{orientation:'Portrait'}));assert.ok(a.matches(food,{orientation:'Portrait',device:'Phone',quality:'Audio'}));
+assert.equal(a.description({...beach,summary:'Waves along the coast'}),'Waves along the coast');
+assert.equal(a.normalize({file:{name:'x.mp4'},description:'My own travel note'}).summary,'My own travel note');
+assert.match(a.description({...beach,duration:28},4),/28-second landscape video\. 4 scene segments available\. No audio track\./);
+console.log('PASS: Related filters intersect current selections, query and scope; descriptions prioritize real annotations.');

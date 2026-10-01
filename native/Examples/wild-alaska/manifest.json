@@ -1,0 +1,429 @@
+{
+  "filename": "wild-alaska.mp4",
+  "record": {
+    "id": "example-wild-alaska-v1",
+    "isExample": true,
+    "kind": "video",
+    "status": "ready",
+    "file": {
+      "name": "Wild Alaska.mp4",
+      "type": "video/mp4",
+      "size": 198550606
+    },
+    "title": "Wild Alaska",
+    "coverUrl": "/assets/examples/wild-alaska/cover.jpg",
+    "metadata": {
+      "width": 1920,
+      "height": 1080,
+      "duration": 209.000458,
+      "fps": 23.976023976023978,
+      "hasAudio": true
+    },
+    "context": {
+      "location": "Lake Clark, Alaska",
+      "credit": "NPS · T. Vaughn & J. Pfeiffenberger",
+      "source": "https://www.nps.gov/media/video/view.htm?id=a7ea1719-005e-42cd-b7c9-79cda436ecad",
+      "license": "Public domain · NPS credit",
+      "example": "Continuous excerpt, source 00:25–03:54. Original narration/music; not raw camera footage."
+    },
+    "videoDescription": {
+      "status": "ready",
+      "title": "Wild Alaska",
+      "model": "Prepared editorial example",
+      "coverage": "Prepared, visually reviewed sample description; not a new AI analysis.",
+      "full_description": "Lakes and forest open the journey before people fishing, handling nets and standing beside rapids bring it down to a human scale. Underwater salmon and a feeding brown bear connect daily life with the food chain. Aerial river bends, blue lake bays and bright snow-covered peaks then reveal the wider landscape. The film returns to coastal bears, including cubs, and closes with shoreline research and a bear on the beach. Original narration connects local life, wildlife and conservation. The fishing actions, bear close-ups and sunlit summit are strong editing anchors. Similar underwater and landscape holds can be shortened; preserve complete thoughts and audio continuity when recutting the existing narration and music."
+    },
+    "result": {
+      "ok": true,
+      "analysis": {
+        "segments": [
+          {
+            "id": "example-shot-001",
+            "label": "Shot 1",
+            "start": 0,
+            "end": 13.222,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-01.jpg",
+            "boundary": {
+              "type": "video_start"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-002",
+            "label": "Shot 2",
+            "start": 13.222,
+            "end": 22.648,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-02.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-003",
+            "label": "Shot 3",
+            "start": 22.648,
+            "end": 31.406,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-03.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-004",
+            "label": "Shot 4",
+            "start": 31.406,
+            "end": 41.583,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-04.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-005",
+            "label": "Shot 5",
+            "start": 41.583,
+            "end": 55.264,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-05.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-006",
+            "label": "Shot 6",
+            "start": 55.264,
+            "end": 68.068,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-06.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-007",
+            "label": "Shot 7",
+            "start": 68.068,
+            "end": 77.452,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-07.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-008",
+            "label": "Shot 8",
+            "start": 77.452,
+            "end": 88.714,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-08.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-009",
+            "label": "Shot 9",
+            "start": 88.714,
+            "end": 97.18,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-09.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-010",
+            "label": "Shot 10",
+            "start": 97.18,
+            "end": 106.898,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-10.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-011",
+            "label": "Shot 11",
+            "start": 106.898,
+            "end": 117.492,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-11.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-012",
+            "label": "Shot 12",
+            "start": 117.492,
+            "end": 124.333,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-12.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-013",
+            "label": "Shot 13",
+            "start": 124.333,
+            "end": 138.138,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-13.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-014",
+            "label": "Shot 14",
+            "start": 138.138,
+            "end": 150.317,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-14.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-015",
+            "label": "Shot 15",
+            "start": 150.317,
+            "end": 157.908,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-15.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-016",
+            "label": "Shot 16",
+            "start": 157.908,
+            "end": 169.294,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-16.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-017",
+            "label": "Shot 17",
+            "start": 169.294,
+            "end": 181.807,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-17.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-018",
+            "label": "Shot 18",
+            "start": 181.807,
+            "end": 186.728,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-18.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-019",
+            "label": "Shot 19",
+            "start": 186.728,
+            "end": 195.237,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-19.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-020",
+            "label": "Shot 20",
+            "start": 195.237,
+            "end": 201.702,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-20.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-021",
+            "label": "Shot 21",
+            "start": 201.702,
+            "end": 205.831,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-21.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          },
+          {
+            "id": "example-shot-022",
+            "label": "Shot 22",
+            "start": 205.831,
+            "end": 209.000458,
+            "thumbnailUrl": "/assets/examples/wild-alaska/shot-22.jpg",
+            "boundary": {
+              "type": "detected_cut"
+            },
+            "note": "Detected visual cut · prepared example; semantic analysis available on request"
+          }
+        ],
+        "cuts": [
+          13.222,
+          22.648,
+          31.406,
+          41.583,
+          55.264,
+          68.068,
+          77.452,
+          88.714,
+          97.18,
+          106.898,
+          117.492,
+          124.333,
+          138.138,
+          150.317,
+          157.908,
+          169.294,
+          181.807,
+          186.728,
+          195.237,
+          201.702,
+          205.831
+        ],
+        "segmentationMethod": "detected-cuts",
+        "subtitleCues": [
+          {
+            "start": 0,
+            "end": 9.0,
+            "text": "The park and preserve spans over 4 million acres and is larger than the size of Connecticut and Rhode Island combined."
+          },
+          {
+            "start": 10.030000000000001,
+            "end": 19.0,
+            "text": "Lake Clark was created by the landmark 1980 Alaska National Interest Lands Conservation Act."
+          },
+          {
+            "start": 19.049999999999997,
+            "end": 23.0,
+            "text": "This act protects Alaska's wildlands and maintains"
+          },
+          {
+            "start": 23.009999999999998,
+            "end": 32.0,
+            "text": "traditional hunting, fishing, and foraging activities that people have engaged in since before the arrival of many Alaska National Parks."
+          },
+          {
+            "start": 34.0,
+            "end": 40.0,
+            "text": "In this realm without roads, local people are inspired and sustained by the land and water."
+          },
+          {
+            "start": 41.0,
+            "end": 53.0,
+            "text": "The parks resources support deep cultural and spiritual connections for the Dena'ina Athabaskan people who have called Lake Clark home for thousands of years."
+          },
+          {
+            "start": 55.0,
+            "end": 67.0,
+            "text": "Another reason for the creation of the park and preserve was to protect the spawning and rearing habitat at the headwaters of the Bristol Bay sockeye salmon fishery."
+          },
+          {
+            "start": 68.05,
+            "end": 75.0,
+            "text": "Each year salmon return from the ocean to the creeks where they hatched to spawn and die."
+          },
+          {
+            "start": 78.05,
+            "end": 85.05,
+            "text": "Their bodies feed ocean-derived nutrients to wildlife, humans, and the land."
+          },
+          {
+            "start": 89.0,
+            "end": 96.0,
+            "text": "Here, rolling tundra and boreal forest are intersected by the Chigmit and Neacola Mountains."
+          },
+          {
+            "start": 97.0,
+            "end": 106.0,
+            "text": "The Neacolas stand among snowy giants, a part of the mighty Alaska Range which reaches north to the highest peaks on the continent."
+          },
+          {
+            "start": 107.0,
+            "end": 119.0,
+            "text": "The Chigmits rise at the head of the Aleutian Range, a complex of glacier-topped mountains that stretch south and west to the far reaches of the state."
+          },
+          {
+            "start": 120.0,
+            "end": 127.0,
+            "text": "Two active volcanoes, Iliamna and Redoubt, tower above the Chigmit mountains."
+          },
+          {
+            "start": 132.0,
+            "end": 140.0,
+            "text": "East of the mountains is a 123-mile expanse of wild coastline where enormous ocean tides feed marine nutrients"
+          },
+          {
+            "start": 140.03,
+            "end": 144.03,
+            "text": "into ribbons of estuaries and salt marshes."
+          },
+          {
+            "start": 147.0,
+            "end": 152.05,
+            "text": "In the spring and summer, brown bears take advantage of the abundant food resources"
+          },
+          {
+            "start": 153.0,
+            "end": 155.0,
+            "text": "available in these intertidal zones."
+          },
+          {
+            "start": 159.0,
+            "end": 167.0,
+            "text": "Salmon, razor clams, berries, and salty sedge grasses are some of the key components in a coastal bear's diet."
+          },
+          {
+            "start": 169.0,
+            "end": 172.05,
+            "text": "These food resources support dense populations of brown bears"
+          },
+          {
+            "start": 173.0,
+            "end": 179.0,
+            "text": "and allow some male bears to reach bodyweights exceeding one-thousand pounds."
+          },
+          {
+            "start": 181.0,
+            "end": 185.0,
+            "text": "As ocean conditions change and human activities increase,"
+          },
+          {
+            "start": 186.0,
+            "end": 195.0,
+            "text": "collected scientific data and observations will help park managers make decisions that protect these unique and vital ecosystems."
+          },
+          {
+            "start": 199.0,
+            "end": 208.05,
+            "text": "Join scientists as they research the connections between ocean-influenced ecosystems and the terrestrial creatures that depend on them."
+          }
+        ],
+        "subtitleState": "source-reference",
+        "subtitleMessage": "Official NPS captions, offset to the continuous excerpt; not a new transcription."
+      }
+    }
+  }
+}

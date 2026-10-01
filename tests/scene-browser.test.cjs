@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict');
+const {describe,activeIndex}=require('../public/scene-browser.js');
+const segments=[{id:'a',start:0,end:5},{id:'b',start:5,end:20,assetUnderstanding:{scene:['Mountain valley'],summary:'A valley beneath cloudy mountains.'}},{id:'c',start:20,end:30}];
+assert.equal(describe(segments[0],0).boundary,'Video start');
+assert.equal(describe(segments[1],1).boundary,'Unrecorded boundary');
+assert.equal(describe(segments[1],1,{cuts:[5]}).boundary,'Detected cut');
+assert.equal(describe(segments[2],2,{cuts:[5]}).boundary,'Time-based split');
+assert.equal(describe(segments[1],1,{segmentationMethod:'time-sampled'}).boundary,'Time-based split');
+assert.equal(describe(segments[1],1).title,'Mountain valley');
+assert.equal(describe({...segments[1],label:'Opening hook',assetUnderstanding:{}},1).title,'Segment 2','Never use heuristic storytelling labels as recognized content');
+assert.equal(describe(segments[1],1,{}, {b:{title:'My valley',description:'My notes'}}).summary,'My notes');
+assert.equal(describe(segments[1],1,{cuts:[5,10,15]}).cutCount,2);
+assert.equal(activeIndex(segments,5),1);assert.equal(activeIndex(segments,30),2);
+console.log('PASS: Scene provenance, grouped cuts, measured time ranges, content naming, manual overrides and unknown legacy boundaries.');

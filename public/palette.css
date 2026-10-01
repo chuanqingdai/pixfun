@@ -1,0 +1,105 @@
+/* Shared software palette. Brand color signals action, not every surface. */
+:root {
+  --canvas: #151819;
+  --surface: #1d2123;
+  --raised: #272c2f;
+  --surface-hover: #303639;
+  --input-surface: #292f32;
+  --preview-surface: #101213;
+  --ink: #e9ebe8;
+  --muted: #b1b9bc;
+  --subtle: #9aa5aa;
+  --line: #363e42;
+  --control-border: #748088;
+  --accent: #d7b581;
+  --purple: var(--accent);
+  --brand-hover: #e5c796;
+  --brand-active: #c4a16c;
+  --brand-soft: #343027;
+  --on-accent: #20221f;
+  --focus-ring: #9bbfd9;
+  --success: #91cbaa;
+  --warning: #e5c17d;
+  --danger: #f0a2a2;
+  --info: #a4c5de;
+  --info-soft: #25333d;
+  --playhead: #dce6eb;
+  color-scheme: dark;
+  background: var(--canvas);
+  color: var(--ink);
+}
+body, body.studio-mode { background: var(--canvas); color: var(--ink); }
+::selection { background: #d7b58140; color: var(--ink); }
+.button.primary, .studio-mode .button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: none; }
+.button.primary:hover, .studio-mode .button.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); box-shadow: none; }
+.button.primary:active, .studio-mode .button.primary:active { background: var(--brand-active); border-color: var(--brand-active); }
+.button.secondary, .studio-mode .studio-header-actions .button.secondary { background: var(--raised); border-color: var(--control-border); color: var(--ink); }
+.button.secondary:hover, .studio-mode .studio-header-actions .button.secondary:hover { background: var(--surface-hover); border-color: var(--subtle); color: var(--ink); }
+.button:disabled, .button:disabled:hover, .studio-mode .button:disabled { background: var(--raised); border-color: var(--line); color: var(--subtle); opacity: 1; box-shadow: none; cursor: not-allowed; }
+.button[aria-busy="true"], .button[aria-busy="true"]:disabled { background: var(--brand-soft); border-color: var(--accent); color: var(--accent); cursor: wait; }
+.button:focus-visible, .text-button:focus-visible, .brand:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
+.status { color: var(--info); }
+.status.error { color: var(--danger); }
+.status.ok, .status.success { color: var(--success); }
+.status.warning { color: var(--warning); }
+
+/* Marketing keeps photography and warm highlights; broad surfaces are neutral. */
+.travel-workflow { background: #1a1e20; border-color: var(--line); }
+.workflow-demo { background: transparent; border-color: var(--line); box-shadow: none; }
+.workflow-steps button { color: var(--muted); border-color: var(--line); }
+.workflow-steps button span, .demo-ruler { color: var(--subtle); }
+.workflow-steps button[aria-current] { background: var(--brand-soft); color: var(--ink); border-color: var(--accent); }
+.workflow-steps button[aria-current] span { color: var(--accent); }
+.travel-section-head>p:last-child:not(.travel-eyebrow), .creator-grid article>p:last-child, .travel-faq-list details p, .value-notes span, .demo-context>p:not(.travel-eyebrow), .share-copy p { color: var(--muted); }
+.travel-faq, .travel-faq-list, .travel-faq-list details, .value-notes, .share-destinations { border-color: var(--line); }
+.travel-faq-list summary { color: var(--ink); }
+.example-brief, .source-pile li, .voice-card { background: var(--surface); border-color: var(--line); box-shadow: none; }
+.example-brief { border-left-color: var(--accent); }
+.source-pile-more { background: var(--raised); border-color: var(--line); color: var(--muted); }
+.example-count, .example-result>span, .example-output .example-caption, .voices-disclosure { color: var(--subtle); }
+.demo-track { background: var(--raised); }
+.demo-tags span, #stylePicker button { border-color: var(--control-border); color: var(--muted); }
+#stylePicker button[aria-pressed=true] { background: var(--brand-soft); border-color: var(--accent); color: var(--ink); }
+.site-footer.footer, .footer-bottom { border-color: var(--line); }
+.footer-about>span, .footer-bottom { color: var(--subtle); }
+.footer-links a, .footer-bottom>a { color: var(--muted); }
+
+/* Neutral editing surround avoids tinting perception of source footage. */
+.studio-mode .header { background: var(--canvas); border-color: var(--line); }
+.studio-mode .workspace { --accent: #d7b581; --purple: var(--accent); }
+.workspace .media-workspace, .workspace .chat-workspace { background: var(--surface); border-color: var(--line); box-shadow: none; }
+.workspace .preview-screen, .workspace .preview-screen video { background: var(--preview-surface); border-color: var(--line); }
+.workspace .timeline-track, .workspace .subtitle-panel { background: var(--canvas); border-color: var(--line); }
+.workspace .timeline button, .workspace .timeline button:nth-child(even), .workspace .clip-time { background: var(--raised); border-color: var(--control-border); color: var(--muted); }
+.workspace .timeline button:hover { border-color: var(--subtle); }
+.workspace .timeline button[aria-pressed="true"] { background: var(--brand-soft); border-color: var(--accent); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.workspace .clip-thumbnail { background: var(--preview-surface); }
+.workspace .clip-label { background: #101213dd; color: var(--ink); }
+.workspace .timeline-ruler, .workspace .subtitle-cue-time, .workspace .source-info>p, .workspace .subtitle-panel-head span, .workspace .subtitle-empty { color: var(--subtle); }
+.workspace .timeline-heading h3, .workspace .source-info .metrics, .preview-bar>span { color: var(--muted); }
+.workspace .source-info .metrics b, .workspace .subtitle-panel-head h3 { color: var(--ink); }
+.workspace .workspace-playhead, .workspace .timeline-track.is-playing .workspace-playhead { background: var(--playhead); box-shadow: none; }
+.workspace .workspace-playhead span, .workspace .workspace-playhead em { background: var(--playhead); color: var(--preview-surface); }
+.workspace .subtitle-cue { color: var(--ink); border-color: var(--line); }
+.workspace .subtitle-cue-role { background: var(--info-soft); border-color: #596f7e; color: var(--info); }
+.workspace .subtitle-cue:hover { background: var(--raised); color: var(--ink); }
+.workspace .subtitle-cue[aria-current="true"] { background: var(--brand-soft); box-shadow: inset 2px 0 var(--accent); }
+.workspace .subtitle-cue:focus-visible, .workspace .timeline button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.workspace .conversation-message.user { background: var(--raised); border-color: var(--line); }
+.workspace .conversation-speaker { color: var(--subtle); }
+.workspace .conversation-message p { color: var(--ink); }
+.workspace .quick-direction, .workspace .conversation-composer { background: var(--surface); border-color: var(--line); }
+.workspace .quick-direction textarea, .workspace .conversation-composer textarea, .studio-panel input:not([type=file]), .studio-panel select, .studio-panel textarea { background: var(--input-surface); border-color: var(--control-border); color: var(--ink); }
+.workspace textarea::placeholder, .studio-panel input::placeholder { color: var(--subtle); }
+.workspace .quick-direction textarea:focus, .workspace .conversation-composer textarea:focus { border-color: var(--subtle); outline: none; box-shadow: none; }
+.workspace .quick-direction textarea:focus-visible, .workspace .conversation-composer textarea:focus-visible { border-color: var(--focus-ring); outline: none; box-shadow: none; }
+.workspace .studio-panel input[aria-invalid="true"] { border-color: var(--danger); }
+.workspace .timeline-editor, .workspace .subtitle-list, .workspace .direction-conversation { scrollbar-color: var(--control-border) transparent; }
+.reference-upload, .import-complete, .brief-summary, .workspace .studio-output { background: var(--surface); border-color: var(--line); color: var(--ink); }
+.reference-list li, .export-specs span { background: var(--raised); color: var(--muted); border-color: var(--line); }
+.studio-output h3, .review-guide b, .studio-panel label { color: var(--ink); }
+.output-check, .success-icon { background: #213a2e; color: var(--success); }
+.preview-switch { background: var(--canvas); }
+.preview-switch button { color: var(--muted); }
+.preview-switch button[aria-pressed=true] { background: var(--raised); color: var(--ink); }
+@media(prefers-reduced-motion:reduce) { .button { transition: none; } }

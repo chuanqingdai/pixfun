@@ -10,6 +10,8 @@ The web server itself uses the Python standard library. Optional local tools:
 from __future__ import annotations
 
 import cgi
+import base64
+import html
 import json
 import math
 import mimetypes
@@ -19,22 +21,27 @@ import shutil
 import subprocess
 import sys
 import time
+import threading
 import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, urlparse
+from transcript_quality import checked_cues
 
 
 ROOT = Path(__file__).resolve().parent
-PUBLIC = ROOT / "public"
-DATA = ROOT / "data"
+PUBLIC = Path(os.environ.get("PIXFUN_PUBLIC_DIR", str(ROOT / "public")))
+DATA = Path(os.environ.get("PIXFUN_DATA_DIR", str(ROOT / "data")))
 UPLOADS = DATA / "uploads"
 JOBS = DATA / "jobs"
 OUTPUTS = DATA / "outputs"
 TRANSCRIBER = ROOT / "scripts" / "transcribe_media.py"
 TRANSCRIBER_PYTHON = ROOT / ".venv" / "bin" / "python"
+VISION_LOCK = threading.Lock()
+APPLICATION_LOCK = threading.Lock()
+APPLICATION_ATTEMPTS = {}
 for folder in (UPLOADS, JOBS, OUTPUTS):
     folder.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +97,7 @@ def media_url(kind: str, job_id: str, filename: str) -> str:
 
 def probe_media(source: Path) -> dict:
     if not command_exists("ffprobe"):
-        return {"available": False, "message": "未找到 ffprobe，无法读取视频元数据"}
+        return {"available": False, "message": "ffprobe was not found. Video metadata cannot be read."}
     code, stdout, stderr = run_command(
         [
             "ffprobe",
@@ -105,16 +112,17 @@ def probe_media(source: Path) -> dict:
         timeout=30,
     )
     if code != 0:
-        return {"available": False, "message": stderr[-500:] or "ffprobe 读取失败"}
+        return {"available": False, "message": stderr[-500:] or "ffprobe could not read the video."}
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return {"available": False, "message": "ffprobe 返回了无法解析的数据"}
+        return {"available": False, "message": "ffprobe returned unreadable data."}
     streams = data.get("streams", [])
     video = next((s for s in streams if s.get("codec_type") == "video"), {})
     audio = next((s for s in streams if s.get("codec_type") == "audio"), {})
     subtitles = [s for s in streams if s.get("codec_type") == "subtitle"]
     fmt = data.get("format", {})
+    tags = {**video.get("tags", {}), **fmt.get("tags", {})}
     duration = float(fmt.get("duration") or video.get("duration") or 0)
     width = int(video.get("width") or 0)
     height = int(video.get("height") or 0)
@@ -126,6 +134,10 @@ def probe_media(source: Path) -> dict:
         fps = 0
     return {
         "available": True,
+        "capturedAt": tags.get("com.apple.quicktime.creationdate"),
+        "mediaCreatedAt": tags.get("creation_time"),
+        "dateSource": "QuickTime creationdate" if tags.get("com.apple.quicktime.creationdate") else "Container creation_time" if tags.get("creation_time") else None,
+        "camera": tags.get("com.apple.quicktime.model") or tags.get("model"),
         "duration": round(duration, 2),
         "durationLabel": format_duration(duration),
         "width": width,
@@ -139,7 +151,7 @@ def probe_media(source: Path) -> dict:
         "audioCodec": audio.get("codec_name", "unknown") if audio else None,
         "size": int(fmt.get("size") or source.stat().st_size),
         "format": fmt.get("format_name", "unknown"),
-        "orientation": "竖屏" if height >= width else "横屏",
+        "orientation": "Portrait" if height >= width else "Landscape",
     }
 
 
@@ -187,8 +199,8 @@ def detect_cuts(source: Path, duration: float) -> list[float]:
             break
     # Keep the timeline scannable while sampling boundaries across the whole
     # video instead of dropping the ending when many rapid cuts are detected.
-    if len(cuts) > 7:
-        cuts = [cuts[round(index * (len(cuts) - 1) / 6)] for index in range(7)]
+    # Keep all detected boundaries as evidence. make_segments may group them
+    # for navigation, but must not erase the additional cuts inside a group.
     return cuts
 
 
@@ -215,7 +227,7 @@ def make_segments(duration: float, cuts: list[float]) -> list[dict]:
         if end - start >= 0.65:
             raw.append((start, end))
     # The semantic labels are intentionally editable heuristics in the MVP.
-    labels = ["Hook 开场", "问题/冲突", "证明/展示", "转折/反应", "CTA 收束"]
+    labels = ["Opening hook", "Problem / conflict", "Evidence / demonstration", "Turning point / reaction", "Closing CTA"]
     result = []
     for index, (start, end) in enumerate(raw[:8]):
         if index == 0:
@@ -231,8 +243,10 @@ def make_segments(duration: float, cuts: list[float]) -> list[dict]:
                 "start": round(start, 2),
                 "end": round(end, 2),
                 "duration": round(end - start, 2),
+                "boundary": {"type": "video_start" if start == 0 else "detected_cut" if any(abs(start - cut) < 0.015 for cut in cuts) else "time_split"},
+                "containedCutCount": sum(start + 0.015 < cut < end - 0.015 for cut in cuts),
                 "percent": round((end - start) / duration * 100, 1),
-                "note": "可在下一步替换为更准确的台词或画面说明",
+                "note": "Refine the dialogue or scene description in the next step.",
             }
         )
     if not result:
@@ -244,8 +258,10 @@ def make_segments(duration: float, cuts: list[float]) -> list[dict]:
                 "start": round(i * step, 2),
                 "end": round((i + 1) * step, 2),
                 "duration": round(step, 2),
+                "boundary": {"type": "video_start" if i == 0 else "time_split"},
+                "containedCutCount": 0,
                 "percent": 20,
-                "note": "基于时长的初始切分，建议人工校准",
+                "note": "Initial duration-based segments. Review and adjust as needed.",
             }
             for i in range(5)
         ]
@@ -268,7 +284,7 @@ def make_timeline_thumbnails(source: Path, job_id: str, segments: list[dict]) ->
             [
                 "ffmpeg", "-y", "-ss", f"{max(0, timestamp):.3f}", "-i", str(source),
                 "-frames:v", "1", "-vf",
-                "scale=480:270:force_original_aspect_ratio=increase,crop=480:270",
+                "scale=480:480:force_original_aspect_ratio=decrease,setsar=1",
                 "-q:v", "3", str(output),
             ],
             timeout=30,
@@ -276,6 +292,7 @@ def make_timeline_thumbnails(source: Path, job_id: str, segments: list[dict]) ->
         if code == 0 and output.exists() and output.stat().st_size > 0:
             segment["thumbnailUrl"] = media_url("output", job_id, filename)
             segment["thumbnailTime"] = round(max(0, timestamp), 2)
+            segment["thumbnailFit"] = "native"
     return segments
 
 
@@ -289,6 +306,47 @@ def subtitle_time_seconds(value: str) -> float:
     except ValueError:
         return 0.0
     return 0.0
+
+
+def parse_subtitle_text(content: str) -> list[dict]:
+    """Read complete SRT/WebVTT captions, retaining all cues and their text."""
+    cues = []
+    timestamp = r"(?:\d+:)?\d{2}:\d{2}[.,]\d{3}"
+    for block in re.split(r"\n\s*\n", content.lstrip("\ufeff").replace("\r\n", "\n").strip()):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines or re.match(r"^(NOTE|STYLE|REGION)(?:\s|$)", lines[0]):
+            continue
+        for index, line in enumerate(lines):
+            # Some NPS VTT exports use comma-separated start/end timestamps.
+            match = re.match(rf"^({timestamp})\s*(?:-->|,)\s*({timestamp})(?:\s.*)?$", line)
+            if not match:
+                continue
+            start, end = map(subtitle_time_seconds, match.groups())
+            text = html.unescape(re.sub(r"<[^>]+>", "", " ".join(lines[index + 1:]))).replace(r"\N", " ").strip()
+            if text and end > start:
+                cues.append({"id": f"sub-{len(cues) + 1}", "start": round(start, 3), "end": round(end, 3), "text": text})
+            break
+    return cues
+
+
+def local_subtitle_track(source: Path, previous_signature=None) -> dict:
+    """Read a same-name local caption file; never fetch remote transcripts."""
+    for suffix in (".vtt", ".srt", ".en.vtt", ".en.srt"):
+        path = source.with_suffix(suffix)
+        try:
+            stat = path.stat()
+            if not path.is_file() or stat.st_size > 5 * 1024 * 1024:
+                continue
+            signature = f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}"
+            if signature == previous_signature:
+                return {}
+            cues = parse_subtitle_text(path.read_text(encoding="utf-8-sig", errors="replace"))
+            if cues:
+                return {"subtitleCues": cues, "subtitleState": "sidecar", "subtitleSource": path.name,
+                        "subtitleSignature": signature, "subtitleMessage": "Imported from a local caption file"}
+        except OSError:
+            continue
+    return {}
 
 
 def extract_subtitle_cues(source: Path, job_id: str) -> list[dict]:
@@ -305,21 +363,7 @@ def extract_subtitle_cues(source: Path, job_id: str) -> list[dict]:
     if code != 0 or not output.exists() or output.stat().st_size == 0:
         output.unlink(missing_ok=True)
         return []
-    content = output.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
-    cues: list[dict] = []
-    for block in re.split(r"\n\s*\n", content.strip()):
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        timing_index = next((index for index, line in enumerate(lines) if "-->" in line), -1)
-        if timing_index < 0:
-            continue
-        timing = lines[timing_index].split("-->", 1)
-        start = subtitle_time_seconds(timing[0])
-        end = subtitle_time_seconds(timing[1].split()[0])
-        text = " ".join(lines[timing_index + 1:])
-        text = re.sub(r"<[^>]+>", "", text).replace(r"\N", " ").strip()
-        if text and end > start:
-            cues.append({"id": f"sub-{len(cues) + 1}", "start": round(start, 2), "end": round(end, 2), "text": text[:500]})
-    return cues[:200]
+    return parse_subtitle_text(output.read_text(encoding="utf-8", errors="replace"))
 
 
 def transcribe_audio_cues(source: Path, job_id: str) -> tuple[list[dict], dict]:
@@ -349,13 +393,61 @@ def transcribe_audio_cues(source: Path, job_id: str) -> tuple[list[dict], dict]:
         text = " ".join(str(item.get("text") or "").split())
         if text and end > start:
             cues.append({"id": f"sub-{len(cues) + 1}", "start": round(start, 2), "end": round(end, 2), "text": text[:500]})
+    cues, rejected = checked_cues(cues)
+    rejected += int(payload.get("rejectedCount") or 0)
     return cues, {
-        "state": "transcribed" if cues else "silent",
-        "message": "" if cues else "No speech was detected in this video",
-        "language": payload.get("language"),
-        "text": str(payload.get("text") or "").strip(),
+        "state": "partial" if cues and rejected else "unreliable" if rejected else "transcribed" if cues else "silent",
+        "message": "Repetitive speech recognition was excluded. The transcript needs review." if rejected else "" if cues else "No speech was detected in this video",
+        "language": payload.get("language") if cues else None,
+        "text": " ".join(cue["text"] for cue in cues),
         "model": payload.get("model"),
     }
+
+
+def make_structure_cues(segments: list[dict], subtitle_cues: list[dict], duration: float) -> list[dict]:
+    """Group contiguous scenes into a small, timeline-aligned content structure."""
+    if not segments:
+        return []
+    duration = max(float(duration or 0), float(segments[-1].get("end") or 0), 0.01)
+    role_sets = {
+        1: [("core", "Core idea", "Main message")],
+        2: [("hook", "Hook", "Opening beat"), ("cta", "CTA", "Closing action")],
+        3: [("hook", "Hook", "Opening beat"), ("core", "Core idea", "Main message"), ("cta", "CTA", "Closing action")],
+        4: [("hook", "Hook", "Opening beat"), ("setup", "Setup", "Context and tension"), ("core", "Core idea", "Main message"), ("cta", "CTA", "Closing action")],
+        5: [("hook", "Hook", "Opening beat"), ("setup", "Setup", "Context and tension"), ("core", "Core idea", "Main message"), ("proof", "Proof / payoff", "Evidence or reveal"), ("cta", "CTA", "Closing action")],
+    }
+    role_count = min(5, len(segments))
+    roles = role_sets[role_count]
+    result: list[dict] = []
+    for index, (role, label, fallback) in enumerate(roles):
+        first = round(index * len(segments) / role_count)
+        last = round((index + 1) * len(segments) / role_count)
+        grouped = segments[first:max(first + 1, last)]
+        start = float(grouped[0].get("start") or 0)
+        end = float(grouped[-1].get("end") or start)
+        matching_text = [
+            " ".join(str(cue.get("text") or "").split())
+            for cue in subtitle_cues
+            if float(cue.get("end") or 0) > start and float(cue.get("start") or 0) < end
+        ]
+        summary = " ".join(part for part in matching_text if part).strip()
+        if len(summary) < 4:
+            summary = fallback
+        if len(summary) > 96:
+            summary = summary[:93].rstrip() + "…"
+        result.append({
+            "id": f"beat-{index + 1}",
+            "role": role,
+            "label": label,
+            "start": round(start, 2),
+            "end": round(end, 2),
+            "duration": round(max(0, end - start), 2),
+            "percent": round(max(0, end - start) / duration * 100, 1),
+            "sceneIds": [segment.get("id") for segment in grouped if segment.get("id")],
+            "summary": summary,
+            "confidence": "estimated",
+        })
+    return result
 
 
 def build_creative_plan(brief: dict, has_references: bool = False) -> dict:
@@ -414,13 +506,13 @@ def make_analysis(source: Path, source_name: str, source_url: str = "") -> dict:
         "cutCount": len(cuts),
         "cuts": cuts,
         "segments": segments,
-        "formatGuess": "口播/UGC 短视频" if aspect == "9:16" else "横屏内容/讲解视频",
+        "formatGuess": "Talking-head / UGC short video" if aspect == "9:16" else "Landscape / explainer video",
         "hookScore": 78 if duration <= 45 else 61,
         "structureScore": 72 if len(segments) >= 4 else 54,
         "suggestedVariables": [
-            {"key": "hook", "label": "开场 Hook", "value": "3 秒内提出一个强冲突问题"},
-            {"key": "subject", "label": "主体/产品", "value": "替换为你的产品、人物或主题"},
-            {"key": "cta", "label": "结尾 CTA", "value": "保留一个明确、可执行的下一步"},
+            {"key": "hook", "label": "Opening hook", "value": "Open with a compelling question in the first 3 seconds."},
+            {"key": "subject", "label": "Subject / product", "value": "Use your own product, presenter, or topic."},
+            {"key": "cta", "label": "Closing CTA", "value": "End with a clear, actionable next step."},
         ],
         "transcript": "",
     }
@@ -550,6 +642,28 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+        if path in ('/admin/mac-applications', '/api/admin/mac-applications'):
+            if not self.allow_local_application_admin():
+                self.send_json({'ok': False, 'error': 'Open this page directly on the Mac running Pixfun.'}, 403)
+                return
+            if path == '/admin/mac-applications':
+                self.send_file(PUBLIC / 'mac-applications-admin.html')
+            else:
+                from mac_applications import list_applications
+                try:
+                    self.send_json({'ok': True, 'applications': list_applications(DATA / 'mac-applications.sqlite3')})
+                except Exception:
+                    self.send_json({'ok': False, 'error': 'Applications could not be loaded. Try again.'}, 503)
+            return
+        if path in ("/mac-early-access", "/mac-early-access/"):
+            self.send_file(PUBLIC / "mac-early-access.html")
+            return
+        if path.rstrip('/') in {"/stories/" + name for name in ("alpine", "citywalk", "food", "outdoors", "islands")}:
+            self.send_file(PUBLIC / "footage-case.html")
+            return
+        if path == "/downloads/pixfun-mac.dmg":
+            self.send_mac_installer()
+            return
         if path == "/api/health":
             self.send_json(
                 {
@@ -584,13 +698,79 @@ class Handler(BaseHTTPRequestHandler):
                 return
         self.send_error(HTTPStatus.NOT_FOUND)
 
-    def send_file(self, target: Path) -> None:
-        content = target.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", mimetypes.guess_type(str(target))[0] or "application/octet-stream")
-        self.send_header("Content-Length", str(len(content)))
+    def do_HEAD(self) -> None:
+        if unquote(urlparse(self.path).path) == "/downloads/pixfun-mac.dmg":
+            self.send_mac_installer(head_only=True)
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def send_mac_installer(self, head_only: bool = False) -> None:
+        # Publish only the current packaged release, never a client-supplied path.
+        try:
+            version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+            if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", version):
+                raise ValueError("Invalid release version")
+            releases = (ROOT / "dist-desktop").resolve()
+            filename = f"Pixfun-{version}-arm64.dmg"
+            target = (releases / filename).resolve()
+            if not target.is_relative_to(releases) or not target.is_file() or not target.stat().st_size:
+                raise FileNotFoundError(filename)
+        except (OSError, ValueError, KeyError, TypeError):
+            self.send_error(HTTPStatus.NOT_FOUND, "Mac installer is unavailable. Please try again later.")
+            return
+        self.send_file(target, download_name=filename, head_only=head_only)
+
+    def send_file(self, target: Path, download_name: Optional[str] = None, head_only: bool = False) -> None:
+        size = target.stat().st_size
+        start, end = 0, max(0, size - 1)
+        partial = False
+        range_header = self.headers.get("Range", "").strip()
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header) if range_header else None
+        if match and size:
+            first, last = match.groups()
+            try:
+                if first:
+                    start = int(first)
+                    end = min(int(last), size - 1) if last else size - 1
+                elif last:
+                    suffix = min(int(last), size)
+                    start, end = size - suffix, size - 1
+                partial = start <= end and 0 <= start < size
+            except ValueError:
+                partial = False
+            if not partial:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+        length = end - start + 1 if size else 0
+        self.send_response(HTTPStatus.PARTIAL_CONTENT if partial else HTTPStatus.OK)
+        content_type = "text/vtt; charset=utf-8" if target.suffix.lower() == ".vtt" else mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+        self.send_header("Content-Type", "application/x-apple-diskimage" if download_name else content_type)
+        if download_name:
+            self.send_header("Content-Disposition", f'attachment; filename="{download_name}"')
+            self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Cache-Control", "no-store" if download_name or target.is_relative_to(PUBLIC.resolve()) else "private, max-age=3600")
+        if partial:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
-        self.wfile.write(content)
+        if head_only:
+            return
+        try:
+            with target.open("rb") as stream:
+                stream.seek(start)
+                remaining = length
+                while remaining:
+                    chunk = stream.read(min(256 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
@@ -598,7 +778,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        limits = {"/api/import": 501 * 1024 * 1024, "/api/brief": 101 * 1024 * 1024}
+        limits = {"/api/mac-applications": 8192, "/api/import": 501 * 1024 * 1024, "/api/brief": 101 * 1024 * 1024, "/api/vision": 4 * 1024 * 1024}
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -608,8 +788,12 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             self.send_json({"ok": False, "error": "Request exceeds the upload limit"}, 413)
             return
-        if parsed.path == "/api/import":
+        if parsed.path == "/api/mac-applications":
+            self.handle_mac_application()
+        elif parsed.path == "/api/import":
             self.handle_import()
+        elif parsed.path == "/api/vision":
+            self.handle_vision()
         elif parsed.path == "/api/brief":
             self.handle_brief()
         elif parsed.path == "/api/analyze":
@@ -620,6 +804,111 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_render()
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
+
+    def allow_local_application_admin(self) -> bool:
+        # This operator view is intentionally unavailable through public hosts or proxies.
+        host = self.headers.get('Host', '')
+        port = self.server.server_address[1]
+        if self.client_address[0] not in ('127.0.0.1', '::1') or host not in (f'127.0.0.1:{port}', f'localhost:{port}', f'[::1]:{port}'):
+            return False
+        if any(key.lower().startswith(('forwarded', 'x-forwarded-', 'x-real-ip')) for key in self.headers):
+            return False
+        origin = self.headers.get('Origin')
+        return (not origin or origin in ('http://' + host, 'https://' + host)) and self.headers.get('Sec-Fetch-Site', 'none') in ('none', 'same-origin')
+
+    def handle_mac_application(self) -> None:
+        from mac_applications import save_application, validate_application
+        origin, host = self.headers.get("Origin"), self.headers.get("Host", "")
+        if self.headers.get("Content-Type", "").split(';')[0].strip() != "application/json" or (origin and origin not in ("http://" + host, "https://" + host)) or self.headers.get("Sec-Fetch-Site") == "cross-site":
+            self.send_json({"ok": False, "error": "Submit from the Pixfun application page."}, 403)
+            return
+        try:
+            data = self.read_json()
+            validate_application(data)
+            if data.get('website'):
+                raise ValueError('Please try submitting the form again.')
+        except (ValueError, TypeError, UnicodeError):
+            self.send_json({"ok": False, "error": "Check your email, editing needs, monthly budget and contact consent."}, 400)
+            return
+        now, address = time.monotonic(), self.client_address[0]
+        with APPLICATION_LOCK:
+            for key in list(APPLICATION_ATTEMPTS):
+                if now - APPLICATION_ATTEMPTS[key][0] >= 600:
+                    del APPLICATION_ATTEMPTS[key]
+            start, count = APPLICATION_ATTEMPTS.get(address, (now, 0))
+            if count >= 5:
+                self.send_json({"ok": False, "error": "Too many requests. Please try again in 10 minutes."}, 429)
+                return
+            APPLICATION_ATTEMPTS[address] = (start, count + 1)
+        try:
+            with APPLICATION_LOCK:
+                save_application(DATA / "mac-applications.sqlite3", data)
+        except Exception:
+            self.send_json({"ok": False, "error": "We could not save your application. Please try again later."}, 503)
+            return
+        self.send_json({"ok": True}, 201)
+
+    def handle_vision(self) -> None:
+        # Web-only opt-in endpoint. Native service has a separate route allowlist.
+        from cloud_vision import VisionError, configuration, video_frames, analyze_frames
+        origin = self.headers.get("Origin")
+        host = self.headers.get("Host", "")
+        if not self.headers.get("Content-Type", "").startswith("application/json") or (origin and origin not in ("http://" + host, "https://" + host)):
+            self.send_json({"ok": False, "error": "Use the same-origin web analysis page."}, 403)
+            return
+        if not configuration()["configured"]:
+            self.send_json({"ok": False, "state": "not_configured", "error": "Cloud visual analysis needs a server API key. File details remain available."}, 503)
+            return
+        if not VISION_LOCK.acquire(blocking=False):
+            self.send_json({"ok": False, "state": "error", "error": "Another visual analysis is running. Please retry shortly."}, 429)
+            return
+        try:
+            payload = self.read_json()
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid request")
+            job = None
+            if payload.get("jobId"):
+                if not re.fullmatch(r"[a-f0-9]{12}", str(payload["jobId"])):
+                    raise ValueError("Invalid job")
+                job = read_job(payload["jobId"])
+                if job["analysis"].get("visualAnalysis", {}).get("state") == "ready":
+                    self.send_json({"ok": True, "analysis": job["analysis"]})
+                    return
+                frames = video_frames(Path(job["sourcePath"]), job["analysis"]["segments"], run_command)
+            else:
+                image = payload.get("image", "")
+                if not isinstance(image, str) or not image.startswith("data:image/jpeg;base64,"):
+                    raise ValueError("Invalid photo")
+                data = base64.b64decode(image.split(",", 1)[1], validate=True)
+                if not data.startswith(b"\xff\xd8\xff") or len(data) > 3 * 1024 * 1024:
+                    raise ValueError("Invalid photo")
+                frames = [{"id": "photo", "time": 0, "image": image}]
+            result = analyze_frames(frames)
+            analysis = job["analysis"] if job else {"segments": [], "subtitleCues": []}
+            analysis["assetUnderstanding"] = result["assetUnderstanding"]
+            analysis["visualAnalysis"] = result["visualAnalysis"]
+            for segment in analysis.get("segments", []):
+                if segment["id"] in result["sceneUnderstanding"]:
+                    segment["assetUnderstanding"] = result["sceneUnderstanding"][segment["id"]]
+            if analysis.get("subtitleState") != "embedded":
+                cues, rejected = checked_cues(analysis.get("subtitleCues", []))
+                if rejected:
+                    analysis.update(subtitleCues=cues, transcript=" ".join(c["text"] for c in cues),
+                                    subtitleState="partial" if cues else "unreliable", subtitleLanguage=analysis.get("subtitleLanguage") if cues else None,
+                                    subtitleMessage="Repetitive speech recognition was excluded. The transcript needs review.")
+                    analysis["structureCues"] = make_structure_cues(analysis["segments"], cues, analysis.get("metadata", {}).get("duration", 0))
+                    analysis["tracks"] = {"scenes": analysis["segments"], "subtitles": cues, "structure": analysis["structureCues"]}
+            if job:
+                write_job(job)
+            self.send_json({"ok": True, "analysis": analysis})
+        except VisionError as exc:
+            self.send_json({"ok": False, "state": exc.state, "error": str(exc)}, 503 if exc.state == "not_configured" else 502)
+        except FileNotFoundError:
+            self.send_json({"ok": False, "state": "missing_source", "error": "The source is no longer on the server. Import this file again."}, 404)
+        except (ValueError, TypeError, KeyError):
+            self.send_json({"ok": False, "state": "error", "error": "Invalid visual analysis request."}, 400)
+        finally:
+            VISION_LOCK.release()
 
     def handle_brief(self) -> None:
         content_type = self.headers.get("Content-Type", "")
@@ -755,6 +1044,14 @@ class Handler(BaseHTTPRequestHandler):
         else:
             analysis["subtitleState"] = "silent"
             analysis["subtitleMessage"] = "This video has no audio track"
+        analysis["structureCues"] = make_structure_cues(
+            analysis["segments"], analysis["subtitleCues"], float(analysis["metadata"].get("duration") or 0)
+        )
+        analysis["tracks"] = {
+            "scenes": analysis["segments"],
+            "subtitles": analysis["subtitleCues"],
+            "structure": analysis["structureCues"],
+        }
         job = {"id": job_id, "createdAt": int(time.time()), "sourcePath": str(source), "analysis": analysis}
         write_job(job)
         relative_media = None

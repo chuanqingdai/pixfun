@@ -3,8 +3,32 @@ data/jobs/*
 data/outputs/*
 .venv/
 data/models/
+data/mac-applications.sqlite3*
 __pycache__/
 *.pyc
+node_modules/
+.desktop-venv/
+build-desktop/
+dist-desktop/
+build-native/
+dist-native/
+native/.build/
+*.spec
+.env
+.env.*
+!.env.example
 !data/uploads/.gitkeep
 !data/jobs/.gitkeep
 !data/outputs/.gitkeep
+
+# Local source downloads, research intermediates and new QA captures.
+/data/*
+!/data/uploads/
+!/data/jobs/
+!/data/outputs/
+/qa/
+.DS_Store
+
+# This 199 MB offline sample exceeds GitHub's ordinary Git file limit.
+# Keep it locally; see README.md before building the native app elsewhere.
+/native/Examples/wild-alaska/wild-alaska.mp4

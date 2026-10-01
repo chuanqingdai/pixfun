@@ -1,0 +1,123 @@
+/* Scroll-led desktop story, with a click-through small-screen/motion fallback. */
+#how{height:auto;background:transparent;border:0}
+#how .workflow-sticky{position:static;min-height:0;padding:64px 0;display:block}
+#how .workflow-shell{display:grid;grid-template-columns:180px minmax(0,1fr);gap:30px;max-width:1400px}
+#how .workflow-steps{display:flex;flex-direction:column;justify-content:center;gap:4px;margin:0}
+#how .workflow-steps button{justify-content:flex-start;border:0;border-left:2px solid var(--line);border-radius:0;background:transparent;min-height:52px;padding:12px 14px;font-size:14px;gap:10px;color:var(--muted)}
+#how .workflow-steps button span{font-size:12px;color:inherit}
+#how .workflow-steps button[aria-current]{border-left-color:var(--accent);color:var(--ink);background:none}
+#how .workflow-steps button[aria-current] span{color:var(--accent)}
+#how .workflow-demo{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+#how .demo-summary{max-width:none;margin-bottom:24px}
+#how .demo-summary h3{font:600 clamp(22px,2.1vw,28px)/1.3 var(--font-body,'DM Sans',sans-serif);letter-spacing:-.6px;margin-bottom:8px}
+#how .demo-summary p{font-size:14px;color:var(--muted);max-width:none;line-height:1.5}
+#how .workflow-demo .demo-main{display:grid;grid-template-columns:minmax(0,2.35fr) minmax(250px,1fr);gap:24px;align-items:start}
+#how .demo-sources{padding:0;background:none;border:0}
+#how .source-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 10px}
+#how .source-grid img{aspect-ratio:16/9;object-fit:cover;border-radius:5px}
+#how .source-grid figcaption{font-size:13px;line-height:1.4;margin-top:6px;color:var(--ink)}
+#how .demo-preview{min-width:0;scroll-margin-top:24px}
+#how .workflow-demo .demo-viewer{width:100%;height:auto;aspect-ratio:16/9;max-height:none;border-radius:7px;background:#0d100f;position:relative}
+#how .demo-viewer img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;transform:none;transition:none;max-height:none}
+#how .scene-insight-overlay,#how .film-direction-overlay{position:absolute;inset:0;z-index:1;pointer-events:none;color:#fff;border-radius:inherit;overflow:hidden;text-shadow:0 1px 8px #0009}
+#how .scene-insight-overlay{display:flex;flex-direction:column;justify-content:space-between;padding:clamp(14px,2vw,26px);background:linear-gradient(180deg,#07110d99,transparent 48%,#07110d99)}
+#how .frame-eyebrow{display:block;font:500 10px/1.5 var(--font-body,'DM Sans',sans-serif);letter-spacing:1.5px;color:#f2dfbf}
+#how .scene-place strong{display:block;font-size:clamp(16px,1.65vw,22px);line-height:1.3;font-weight:500;margin-top:5px}
+#how .scene-location{display:block;font-size:11px;line-height:1.5;margin-top:5px;color:#e0e5e2}
+#how .scene-observations{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;line-height:1.5}
+#how .scene-observations span+span{padding-left:14px;border-left:1px solid #ffffff60}
+#how .film-direction-overlay{display:flex;flex-direction:column;justify-content:flex-end;padding:clamp(16px,2.5vw,32px);background:linear-gradient(180deg,transparent 25%,#07110dbd)}
+#how .film-direction-overlay strong{font:400 clamp(24px,3vw,40px)/1.15 Lora,Georgia,serif;letter-spacing:-.6px;margin-top:10px}
+#how .film-direction-overlay p{font-size:clamp(12px,1.1vw,14px);line-height:1.5;margin:8px 0 0;color:#f0f0e9;max-width:32ch}
+@media(max-width:760px){#how .scene-observations{gap:5px 8px;font-size:10px}#how .scene-observations span+span{padding-left:8px}#how .frame-eyebrow{font-size:9px;letter-spacing:1px}#how .scene-location{font-size:10px}#how .film-direction-overlay strong{margin-top:5px}#how .film-direction-overlay p{margin-top:4px}}
+#how .demo-context{padding:4px 0 0;min-width:0;display:flex;flex-direction:column;gap:24px;order:initial}
+#how .demo-context h4{font:600 20px/1.35 var(--font-body,'DM Sans',sans-serif);letter-spacing:-.3px;margin:0 0 14px;color:var(--ink)}
+#how .demo-context p{font-size:14px;line-height:1.65;margin:0;color:var(--muted)}
+#how .story-project-spec{display:flex;gap:16px;margin-top:20px;color:var(--muted);font-size:13px}
+#how #demoUnderstanding dl,#how .finish-tasks{margin:16px 0 0}
+#how #demoUnderstanding dl>div,#how .finish-tasks>div{border-top:1px solid var(--line);padding:12px 0;display:block}
+#how #demoUnderstanding dt,#how .finish-tasks dt{font-size:12px;color:var(--muted)}
+#how #demoUnderstanding dd,#how .finish-tasks dd{font-size:14px;color:var(--ink);margin:4px 0 0;line-height:1.5}
+#how .demo-tags{margin:0;gap:6px}
+#how .demo-tags span{font-size:12px;line-height:1.4;padding:5px 7px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:4px}
+#how #stylePicker.creative-styles{display:flex;flex-flow:row wrap;gap:7px;margin-top:14px}
+#how #stylePicker button{padding:7px 10px;min-height:34px;border:1px solid var(--line);border-radius:5px;background:transparent;position:relative}
+#how #stylePicker button[aria-pressed=true]{border-color:var(--accent);background:transparent}
+#how #stylePicker span{font-size:12px;margin:0}
+#how #stylePicker small{font-size:12px;margin-top:3px;color:var(--muted);line-height:1.5}
+#how #demoRequirements{box-sizing:border-box;display:block;min-height:182px;width:100%;max-width:100%;resize:vertical;border:1px solid var(--line);border-radius:7px;background:var(--canvas);color:var(--ink);padding:12px;font:400 14px/1.6 var(--font-body,'DM Sans',sans-serif)}
+#how #demoRequirements:focus{border-color:var(--accent)}
+#how #demoRequirements::placeholder{color:var(--muted)}
+#how .demo-context .story-brief-hint{font-size:12px;line-height:1.5;margin-top:9px}
+#how .story-shot-position{display:block;font-size:12px;color:var(--accent);margin-bottom:10px;font-variant-numeric:tabular-nums}
+#how .edit-conversation{margin:0}
+#how .edit-conversation blockquote{font-size:15px;line-height:1.65;margin:0 0 16px;padding:4px 14px;border-left:2px solid var(--accent);background:transparent;border-radius:0}
+#how .story-action{font-size:13px;border:1px solid var(--accent);border-radius:5px;background:transparent;color:var(--accent);padding:9px 13px;margin-top:16px}
+#how .edit-conversation .edit-change{font-size:12px;color:var(--accent);margin-top:12px}
+#how .demo-context .story-finish-note{font-size:13px;margin-top:12px}
+#how .demo-timeline{grid-column:1/-1;order:initial;margin:0;padding-top:4px;min-width:0}
+#how .story-timeline-heading{margin-bottom:14px;font-size:13px;align-items:center}
+#how .story-timeline-heading strong{font-size:15px;font-weight:500;color:var(--ink)}
+#how .story-board{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+#how .story-chapter{min-width:0}
+#how .story-chapter-title{display:flex;justify-content:space-between;gap:8px;width:100%;padding:8px 0 12px;border:0;border-top:2px solid var(--line);border-radius:0;background:transparent;color:var(--muted);font-size:13px;text-align:left;line-height:1.4}
+#how .story-chapter-title time{font-size:12px;white-space:nowrap}
+#how .story-chapter-title[aria-pressed=true]{color:var(--accent);border-top-color:var(--accent)}
+#how .demo-track{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));height:auto;padding:0;gap:7px;background:none}
+#how .demo-track button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;overflow:hidden;min-width:0;padding:0;text-align:left;color:var(--ink)}
+#how .demo-track button[aria-pressed=true]{border-color:var(--accent);box-shadow:none}
+#how .demo-track button img{width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;display:block;object-position:center}
+#how .demo-track button>span{display:block;font-size:13px;line-height:1.4;padding:8px 9px 0;min-height:27px;white-space:normal;overflow:visible}
+#how .demo-track button small{display:block;font-size:12px;line-height:1.5;padding:4px 9px 8px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+@media(min-width:1000px) and (min-height:650px) and (prefers-reduced-motion:no-preference){
+  #how.is-scrollable{height:460vh}
+  #how.is-scrollable .workflow-sticky{position:sticky;top:0;height:100dvh;min-height:0;max-height:100dvh;padding:16px 0;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;overflow:clip}
+  #how.is-scrollable .travel-section-head{margin-bottom:12px;flex:none}
+  #how.is-scrollable .workflow-shell{max-width:1480px;width:100%;box-sizing:border-box;padding:24px 32px 8px;display:grid;grid-template-columns:170px minmax(0,1fr);flex:none;min-height:0;gap:24px}
+  #how.is-scrollable .workflow-steps{margin:0;padding:0;min-height:0;align-self:start;justify-content:flex-start}
+  #how.is-scrollable .workflow-steps button{min-height:52px;padding:12px;flex:none}
+  #how.is-scrollable .workflow-demo{padding:0;display:flex;min-height:0;box-sizing:border-box}
+  #how.is-scrollable .demo-summary{display:none}
+  #how.is-scrollable .demo-summary h3{font-size:22px;margin:0 0 5px}
+  #how.is-scrollable .workflow-demo .demo-main{gap:24px;flex:1;min-height:0;height:var(--workflow-content-height,500px);grid-template-columns:minmax(0,1fr) clamp(240px,23vw,300px);grid-template-rows:var(--workflow-media-row,minmax(0,1fr)) 176px;align-items:stretch;align-content:start}
+  #how.is-scrollable .workflow-demo[data-stage="0"] .demo-main,
+  #how.is-scrollable .workflow-demo[data-stage="1"] .demo-main,
+  #how.is-scrollable .workflow-demo[data-stage="2"] .demo-main{grid-template-rows:var(--workflow-media-row,minmax(0,1fr))}
+  #how.is-scrollable .demo-preview{width:100%;height:100%;min-height:0;container-type:size;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;box-sizing:border-box;padding:0}
+  #how.is-scrollable .workflow-demo .demo-viewer{flex:none;width:min(100%,calc(100cqh*16/9));height:auto;aspect-ratio:16/9;transform:none}
+  #how.is-scrollable .demo-sources{min-height:0;display:block;container-type:size}
+  #how.is-scrollable .source-grid{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(3,auto);align-content:start;width:min(100%,calc((100cqh - 96px)*64/27));height:auto;margin:0;gap:12px}
+  #how.is-scrollable .source-grid figure{min-height:0;display:block;margin:0}
+  #how.is-scrollable .source-grid img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;background:transparent}
+  #how.is-scrollable .source-grid figcaption{font-size:12px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #how.is-scrollable .demo-context{gap:16px;padding:0;min-height:0;overflow:visible;align-self:start}
+  #how.is-scrollable .demo-context>*{flex-shrink:0}
+  #how.is-scrollable .demo-context h4{font-size:18px;margin-bottom:10px}
+  #how.is-scrollable .demo-context p{font-size:13px;line-height:1.5}
+  #how.is-scrollable #demoUnderstanding dl{margin-top:12px}
+  #how.is-scrollable #demoUnderstanding dl>div{display:grid;grid-template-columns:56px minmax(0,1fr);gap:10px;padding:9px 0}
+  #how.is-scrollable #demoUnderstanding dd{margin:0;font-size:13px}
+  #how.is-scrollable .story-project-spec{margin-top:16px}
+  #how.is-scrollable .edit-conversation blockquote{font-size:14px;line-height:1.5;padding:8px 10px;margin-bottom:10px}
+  #how.is-scrollable .finish-tasks>div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:8px 0}
+  #how.is-scrollable .finish-tasks dd{margin:0;font-size:13px}
+  #how.is-scrollable #demoRequirements{height:156px;min-height:132px;max-height:180px;resize:none;background:transparent}
+  #how.is-scrollable .demo-timeline{min-height:0;display:flex;flex-direction:column;padding:0}
+  #how.is-scrollable .story-board{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;flex:1;min-height:0}
+  #how.is-scrollable .story-chapter{display:flex;flex-direction:column;min-height:0}
+  #how.is-scrollable .story-timeline-heading{margin-bottom:6px}
+  #how.is-scrollable .story-chapter-title{font-size:12px;padding:6px 0;flex-wrap:wrap}
+  #how.is-scrollable .demo-track{gap:5px;flex:1;min-height:0}
+  #how.is-scrollable .demo-track button{display:grid;grid-template-rows:minmax(0,1fr) 40px 24px}
+  #how.is-scrollable .demo-track button img{height:100%;min-height:0;object-fit:contain}
+  #how.is-scrollable .demo-track button>span{font-size:12px;padding:4px 0 0;min-height:0;line-height:1.4;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+  #how.is-scrollable .demo-track button small{font-size:11px;padding:3px 0 5px}
+}
+@media(min-width:1400px){#how .demo-track button span{font-size:13px;min-height:43px}#how .demo-track button small{font-size:12px}}
+@media(min-width:761px) and (max-width:1100px){#how .workflow-shell,#how.is-scrollable .workflow-shell{grid-template-columns:160px minmax(0,1fr);gap:22px}#how .workflow-steps button{font-size:13px;padding-inline:10px}}
+@media(max-width:1050px){#how .workflow-shell{padding-inline:24px}#how .workflow-demo{padding:20px}#how .workflow-demo .demo-main{grid-template-columns:minmax(0,1.7fr) minmax(240px,1fr);gap:20px}#how .workflow-steps button{font-size:13px;gap:7px}#how .story-board{gap:10px}#how .story-chapter-title{flex-wrap:wrap}#how .demo-track button small{font-size:10px;padding-inline:4px}#how .demo-track button span{padding-inline:4px}}
+@media(max-width:760px){#how .workflow-steps{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 10px}#how .workflow-demo .demo-main{grid-template-columns:minmax(0,1fr)}#how .demo-context{order:initial}#how .demo-timeline{order:initial}#how .demo-context h4{font-size:19px}#how .story-board{grid-template-columns:minmax(0,1fr);gap:20px}#how .story-chapter-title{font-size:14px}#how .demo-track button span{font-size:13px;min-height:0;padding:8px 8px 0}#how .demo-track button small{font-size:12px;padding:5px 8px 8px}#how .demo-summary h3{font-size:23px}#how .demo-summary p{font-size:13px}#how .demo-context{gap:20px}#how .story-timeline-heading{gap:10px;flex-wrap:wrap}#how .source-grid figcaption{font-size:12px}#how .workflow-sticky{padding:44px 0}#how .workflow-demo{padding:16px}#how .workflow-shell{padding-inline:16px}}
+#how .workflow-demo{padding:0}
+#how .demo-track button small .story-shot-end{display:inline;font:inherit;padding:0;min-height:0;white-space:inherit}
+@media(min-width:1000px) and (max-width:1200px){#how.is-scrollable .demo-track button small .story-shot-end{display:none}}
+@media(max-width:760px){#how .workflow-shell{grid-template-columns:minmax(0,1fr);gap:24px}#how .workflow-steps{display:grid}#how .workflow-steps button{border-left:0;border-bottom:2px solid var(--line);padding:10px 4px}#how .workflow-steps button[aria-current]{border-bottom-color:var(--accent)}}

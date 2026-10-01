@@ -1,13 +1,13 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const state = { jobId: null, busy: false, step: 1, furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, creativePlan: null, conversationReady: false, subtitleCues: [], textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], outputUrl: null };
+const state = { jobId: null, busy: false, step: 1, furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, creativePlan: null, conversationReady: false, subtitleCues: [], structureCues: [], textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], outputUrl: null };
 const timeLabel = seconds => `${Math.floor(Number(seconds || 0) / 60)}:${String(Math.floor(Number(seconds || 0) % 60)).padStart(2, "0")}`;
 let timelineAnimationFrame = 0;
 function status(id, message, error = false) { $(id).textContent = message; $(id).classList.toggle("error", error); }
 function busy(value) {
   state.busy = value;
   ["analyzeBtn", "uploadBtn", "fileInput", "urlInput", "renderBtn", "saveTranscript", "saveBrief", "scriptPrompt", "confirmConversation"].forEach(id => { if ($(id)) $(id).disabled = value; });
-  document.querySelectorAll("[data-studio-step], #editBack, #textNext, #exportBack, #changeVideo, #backHome, #resumeStudio, #briefForm input, #briefForm textarea, #briefForm select, #textForm input, #transcriptInput").forEach(element => { element.disabled = value; });
+  document.querySelectorAll("[data-studio-step], #editBack, #textNext, #exportBack, #changeVideo, #resumeStudio, #briefForm input, #briefForm textarea, #briefForm select, #textForm input, #transcriptInput").forEach(element => { element.disabled = value; });
   syncStepNavigation();
   $("create").setAttribute("aria-busy", String(value));
   $("results").setAttribute("aria-busy", String(value));
@@ -103,10 +103,10 @@ function renderTimelineRuler(duration) {
     $("timelineRuler").append(mark);
   }
 }
-function renderSubtitleTrack(cues, duration, stateName = "none", message = "") {
+function renderSubtitleTrack(cues, duration, stateName = "none", message = "", structureCues = []) {
   const lane = $("subtitleLane");
   lane.replaceChildren();
-  $("subtitleCount").textContent = Array.isArray(cues) && cues.length ? `${cues.length} lines` : "";
+  $("subtitleCount").textContent = Array.isArray(cues) && cues.length ? `${cues.length} ${cues.length === 1 ? "line" : "lines"}` : "";
   if (!Array.isArray(cues) || !cues.length) {
     const empty = document.createElement("span");
     empty.className = "subtitle-empty";
@@ -116,13 +116,18 @@ function renderSubtitleTrack(cues, duration, stateName = "none", message = "") {
   }
   cues.forEach((cue, index) => {
     const start = Math.max(0, Number(cue.start || 0)), end = Math.max(start, Number(cue.end || start));
-    const button = document.createElement("button"), time = document.createElement("span"), copy = document.createElement("span");
+    const beat = structureCues.find((item, beatIndex) => start >= Number(item.start || 0) && (start < Number(item.end || 0) || beatIndex === structureCues.length - 1));
+    const button = document.createElement("button"), time = document.createElement("span"), role = document.createElement("span"), copy = document.createElement("span");
     button.type = "button"; button.className = "subtitle-cue";
     time.className = "subtitle-cue-time"; time.textContent = `${timeLabel(start)} – ${timeLabel(end)}`;
+    role.className = "subtitle-cue-role"; role.textContent = beat?.label || ""; role.hidden = !beat;
     copy.className = "subtitle-cue-text"; copy.textContent = cue.text || `Subtitle ${index + 1}`;
-    button.append(time, copy);
+    if (beat) button.classList.add("has-structure");
+    button.dataset.start = String(start); button.dataset.end = String(end);
+    button.append(time, role, copy);
     button.title = cue.text || "";
-    button.setAttribute("aria-label", `${cue.text || `Subtitle ${index + 1}`}, ${timeLabel(start)} to ${timeLabel(end)}`);
+    button.setAttribute("aria-current", "false");
+    button.setAttribute("aria-label", `${beat ? `${beat.label}, ` : ""}${cue.text || `Subtitle ${index + 1}`}, ${timeLabel(start)} to ${timeLabel(end)}`);
     button.addEventListener("click", () => { selectPreview(false); $("sourceVideo").currentTime = start; syncTimelinePosition(); });
     lane.append(button);
   });
@@ -190,6 +195,10 @@ function syncTimelinePosition() {
   $("timelineNow").textContent = `Now · ${timeLabel(current)}`;
   const activeIndex = state.segments.findIndex((segment, index) => current >= Number(segment.start || 0) && (current < Number(segment.end || 0) || index === state.segments.length - 1));
   $("timeline").querySelectorAll("button").forEach((button, index) => button.setAttribute("aria-pressed", String(index === Math.max(0, activeIndex))));
+  $("subtitleLane").querySelectorAll("button").forEach(button => {
+    const start = Number(button.dataset.start || 0), end = Number(button.dataset.end || start);
+    button.setAttribute("aria-current", String(current >= start && current < end));
+  });
   const editor = $("timelineEditor");
   if (!video.paused && editor && editor.scrollWidth > editor.clientWidth) {
     const target = editor.scrollWidth * percent / 100 - editor.clientWidth * .56;
@@ -248,7 +257,7 @@ async function request(url, options) {
 const postJSON = (url, data) => request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
 function showAnalysis(data) {
   state.jobId = data.jobId;
-  Object.assign(state, { furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, creativePlan: null, conversationReady: false, subtitleCues: [], textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], outputUrl: null });
+  Object.assign(state, { furthestStep: 1, reviewed: false, briefSaved: false, briefDirty: false, creativePlan: null, conversationReady: false, subtitleCues: [], structureCues: [], textDirty: false, textConfirmed: false, renderedText: null, notesDirty: false, references: [], segments: [], outputUrl: null });
   $("results").hidden = false;
   $("outputBox").hidden = true;
   $("outputVideo").pause(); $("outputVideo").removeAttribute("src"); $("outputVideo").load();
@@ -257,16 +266,18 @@ function showAnalysis(data) {
   selectPreview(false);
   $("sourceVideo").src = data.sourceUrl || "";
   const analysis = data.analysis;
-  state.subtitleCues = analysis.subtitleCues || [];
+  const tracks = analysis.tracks || {};
+  state.subtitleCues = tracks.subtitles || analysis.subtitleCues || [];
+  state.structureCues = tracks.structure || analysis.structureCues || [];
   $("fileName").textContent = analysis.sourceName;
   const meta = analysis.metadata || {};
   $("metrics").replaceChildren();
-  [[timeLabel(meta.duration), "Duration"], [`${meta.width || "—"} × ${meta.height || "—"}`, "Resolution"], [String((analysis.segments || []).length), "Segments"]].forEach(([value, label]) => {
+  state.segments = tracks.scenes || analysis.segments || [];
+  [[timeLabel(meta.duration), "Duration"], [`${meta.width || "—"} × ${meta.height || "—"}`, "Resolution"], [String(state.segments.length), "Segments"]].forEach(([value, label]) => {
     const item = document.createElement("div"), strong = document.createElement("b");
     strong.textContent = value; item.append(strong, document.createTextNode(label)); $("metrics").append(item);
   });
   $("timeline").replaceChildren();
-  state.segments = analysis.segments || [];
   const segmentTotal = state.segments.length, thumbnailImages = [];
   $("segmentCount").textContent = `${segmentTotal} ${segmentTotal === 1 ? "segment" : "segments"}`;
   state.segments.forEach((segment, i) => {
@@ -287,7 +298,7 @@ function showAnalysis(data) {
     }); $("timeline").append(button);
   });
   renderTimelineRuler(meta.duration);
-  renderSubtitleTrack(analysis.subtitleCues || [], Number(meta.duration || 0), analysis.subtitleState, analysis.subtitleMessage);
+  renderSubtitleTrack(state.subtitleCues, Number(meta.duration || 0), analysis.subtitleState, analysis.subtitleMessage, state.structureCues);
   syncTimelinePosition();
   hydrateTimelineThumbnails(data.sourceUrl || "", thumbnailImages, state.segments);
   $("transcriptInput").value = analysis.transcriptState ? analysis.transcript || "" : "";
@@ -309,7 +320,7 @@ async function importVideo(form, link = false) {
   if (state.busy) return;
   if (state.jobId && (state.briefDirty || state.textDirty || state.notesDirty) && !window.confirm("Start a new video? Unsaved edits in this workspace will be replaced after the import succeeds.")) { $("fileInput").value = ""; return; }
   const loadingButton = $(link ? "analyzeBtn" : "uploadBtn");
-  const idleLabel = link ? "Analyze" : "Upload video";
+  const idleLabel = loadingButton.textContent || (link ? "Analyze" : "Get started");
   busy(true);
   loadingButton.textContent = "Loading…";
   loadingButton.setAttribute("aria-busy", "true");
@@ -336,15 +347,15 @@ $("urlForm").addEventListener("submit", event => {
   const form = new FormData(); form.append("url", url.href); importVideo(form, true);
 });
 $("uploadBtn").addEventListener("click", () => $("fileInput").click());
-$("fileInput").addEventListener("change", event => uploadFile(event.target.files[0]));
+$("fileInput").addEventListener("change", event => window.PixfunLibrary ? window.PixfunLibrary.importFiles(event.target.files) : uploadFile(event.target.files[0]));
 let dragDepth = 0;
 $("create").addEventListener("dragenter", event => { event.preventDefault(); dragDepth++; if (!state.busy) $("create").classList.add("dragging"); });
 $("create").addEventListener("dragover", event => event.preventDefault());
 $("create").addEventListener("dragleave", () => { if (--dragDepth <= 0) $("create").classList.remove("dragging"); });
 $("create").addEventListener("drop", event => {
   event.preventDefault(); dragDepth = 0; $("create").classList.remove("dragging");
-  if (event.dataTransfer.files.length > 1) return status("importStatus", "Import one video at a time.", true);
-  uploadFile(event.dataTransfer.files[0]);
+  if (window.PixfunLibrary) window.PixfunLibrary.importFiles(event.dataTransfer.files);
+  else uploadFile(event.dataTransfer.files[0]);
 });
 $("textForm").addEventListener("submit", async event => {
   event.preventDefault(); if (state.busy || !state.jobId) return;
@@ -393,7 +404,7 @@ if ($("briefForm")) $("briefForm").addEventListener("submit", async event => {
   event.preventDefault(); if (!state.jobId || state.busy) return;
   const instruction = $("extraBrief").value.trim();
   if (!instruction) {
-    status("briefStatus", "Describe at least one change, such as the presenter, language, product, setting, or script.", true);
+    status("briefStatus", "Describe your edit, such as a slower pace, a shorter travel story, or new captions.", true);
     $("extraBrief").focus();
     return;
   }
@@ -437,9 +448,8 @@ $("textForm").addEventListener("input", () => {
   status("renderStatus", state.outputUrl ? "Direction changed. Send and confirm it to update the video." : "");
   syncStepNavigation();
 });
-$("backHome").addEventListener("click", () => { if (!state.busy) setStudioMode(false); });
-$("changeVideo").addEventListener("click", () => { if (!state.busy) { setStudioMode(false); $("urlInput").focus(); } });
-$("resumeStudio").addEventListener("click", () => { if (!state.busy) setStudioMode(true); });
+$("changeVideo").addEventListener("click", () => { if (!state.busy) { setStudioMode(false); $("uploadBtn").focus(); } });
+$("resumeStudio").addEventListener("click", () => { if (window.PixfunLibrary?.hasFiles) window.PixfunLibrary.open(true); else if (!state.busy) setStudioMode(true); });
 document.querySelector(".header .brand").addEventListener("click", event => { if (document.body.classList.contains("studio-mode")) { event.preventDefault(); if (!state.busy) setStudioMode(false); } });
 window.addEventListener("popstate", () => setStudioMode(location.hash === "#studio", false));
 window.addEventListener("beforeunload", event => { if (state.briefDirty || state.textDirty || state.notesDirty || state.busy) { event.preventDefault(); event.returnValue = ""; } });

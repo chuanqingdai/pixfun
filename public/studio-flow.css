@@ -1,33 +1,11 @@
 /* Two-pane creation workspace: media stays visible while direction is refined in chat. */
-.studio-context { display: none; }
 .studio-mode .header {
   height: 68px;
   padding-inline: max(28px, calc((100vw - 1320px) / 2));
   gap: 16px;
 }
 .studio-mode .header .brand { width: 104px; }
-.studio-mode .studio-context {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding-left: 16px;
-  border-left: 1px solid var(--line);
-  color: #9993a2;
-  font-size: .75rem;
-  font-weight: 500;
-  letter-spacing: .02em;
-}
 .studio-mode .studio-header-actions { margin-left: auto; gap: 10px; }
-.studio-mode .studio-header-actions .text-button {
-  min-height: 38px;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: #c8c2ce;
-  font-size: .8125rem;
-}
-.studio-mode .studio-header-actions .text-button:hover { background: var(--raised); border-color: #4a4254; color: var(--ink); }
 .studio-mode .studio-header-actions .button { min-height: 38px; padding: 8px 15px; font-size: .8125rem; }
 .studio-mode .studio-header-actions .button.secondary { background: #151219; border-color: #38313f; color: #cbc4d1; }
 .studio-mode .studio-header-actions .button.secondary:hover { background: #1d1822; border-color: #51455b; color: #fff; }
@@ -104,10 +82,13 @@
 .workspace .subtitle-panel-head span { color: #817a89; font-size: .625rem; }
 .workspace .subtitle-list { max-height: 122px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #493958 transparent; }
 .workspace .subtitle-cue { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; width: 100%; padding: 7px 2px; border: 0; border-top: 1px solid #26222b; border-radius: 0; background: transparent; color: #ddd6e3; font-size: .6875rem; line-height: 1.45; text-align: left; }
+.workspace .subtitle-cue.has-structure { grid-template-columns: 82px 76px minmax(0, 1fr); }
 .workspace .subtitle-cue:first-child { border-top: 0; }
 .workspace .subtitle-cue-time { color: #9385a4; font-variant-numeric: tabular-nums; }
+.workspace .subtitle-cue-role { align-self: start; width: fit-content; padding: 2px 6px; border: 1px solid #4b3c5c; border-radius: 4px; background: #21182b; color: #bfa6f4; font-size: .5625rem; font-weight: 700; line-height: 1.35; white-space: nowrap; }
 .workspace .subtitle-cue-text { overflow-wrap: anywhere; }
 .workspace .subtitle-cue:hover, .workspace .subtitle-cue:focus-visible { background: #1b1621; color: #fff; outline: none; }
+.workspace .subtitle-cue[aria-current="true"] { background: #18131e; }
 .workspace .subtitle-empty { display: block; padding: 7px 2px; color: #857d8e; font-size: .6875rem; }
 .workspace .source-info { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 2px 0; border: 0; background: transparent; }
 .workspace .source-info>p { max-width: 44%; margin: 0; overflow: hidden; color: #817a89; font-size: .6875rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -207,10 +188,7 @@
 @media (max-width: 620px) {
   .studio-mode .header { min-height: 62px; padding-inline: 16px; gap: 11px; }
   .studio-mode .header .brand { width: 92px; }
-  .studio-mode .studio-context { padding-left: 11px; font-size: .6875rem; }
-  .studio-mode .studio-header-actions .text-button { min-height: 36px; padding: 7px 10px; font-size: .75rem; }
   .workspace { padding: 24px 14px 50px; }
-  .studio-mode .studio-header-actions #backHome { display: none; }
   .workspace .media-workspace { padding: 12px; }
   .workspace .preview-screen video { height: clamp(220px, 40svh, 320px); }
   .workspace .timeline-ruler,
@@ -226,11 +204,11 @@
   .workspace .quick-direction .button,
   .workspace .conversation-composer .button { width: 78px; min-width: 78px; }
   .workspace .subtitle-cue { grid-template-columns: 74px minmax(0, 1fr); gap: 8px; }
+  .workspace .subtitle-cue.has-structure { grid-template-columns: 74px 66px minmax(0, 1fr); }
   .workspace .studio-output { padding: 14px; }
 }
 
 @media (max-width: 440px) {
-  .studio-mode .studio-context { display: none; }
   .studio-mode .studio-header-actions { gap: 7px; }
   .studio-mode .studio-header-actions .button { min-height: 36px; padding: 7px 10px; font-size: .6875rem; }
 }

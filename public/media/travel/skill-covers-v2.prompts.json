@@ -1,0 +1,47 @@
+{
+  "mode": "built-in imagegen",
+  "styleAnchor": "skill-travel-v2.jpg",
+  "note": "Illustrative skill covers, not user footage. Travel Vlog cover retained; eight new theme-specific covers.",
+  "assets": [
+    {
+      "id": "city-walk",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. City walk: immersive narrow European neighborhood street with warm terracotta buildings and late afternoon sunlight, small pedestrian walking the route; inset café espresso and architectural doorway details. Urban burnt orange, sage and cream; readable large street perspective.",
+      "file": "skill-city-walk-v2.jpg"
+    },
+    {
+      "id": "food-tour",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Food tour: close-up cinematic street-food wok cooking, ingredients glistening and steam illuminated, chef hands at work with natural anatomy; smaller inset plated noodles and shared tasting table. Rich amber, dark teal, chili red. Food is the clear dominant subject, authentic appetizing textures.",
+      "file": "skill-food-tour-v2.jpg"
+    },
+    {
+      "id": "travel-diary",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Travel diary: view from a passenger train window across rolling countryside in soft golden light, a seated traveler's shoulder quietly in foreground; two photographic insets showing coastal road trip and a candid station departure. Nostalgic muted olive and sky blue, intimate personal journey, no written journal or readable signs.",
+      "file": "skill-travel-diary-v2.jpg"
+    },
+    {
+      "id": "outdoor-adventure",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Outdoor adventure: wide dramatic rugged snowy mountain ridge with two small backpackers ascending a rocky path, energetic weather and distant mist; inset close view of worn hiking boots and hands holding trekking poles, another tiny warm camp in twilight. Slate blue and rugged earth, effort and scale, not a lake scene.",
+      "file": "skill-outdoor-adventure-v2.jpg"
+    },
+    {
+      "id": "flights-stays",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Flights and stays: elegant sunlit hotel room opening onto a bright coastal balcony, natural linen and carefully arranged travel bag; a large inset photograph of aircraft wing through oval passenger airplane window above clouds, smaller inset warm breakfast tray. Sophisticated warm ivory, sand, ocean blue; ordinary premium travel not private jet fantasy.",
+      "file": "skill-flights-stays-v2.jpg"
+    },
+    {
+      "id": "family-memories",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Family memories: candid family of two parents and a child sharing a relaxed beach picnic in soft sunset light, natural body anatomy, no posing toward camera; smaller inset child and parent hands collecting shells and a warm family walking silhouette. Gentle apricot, cream and faded ocean blue. Emotion, imperfect everyday travel moments, respectful natural faces.",
+      "file": "skill-family-memories-v2.jpg"
+    },
+    {
+      "id": "scenic-escape",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Scenic escape: breathtaking aerial turquoise bay wrapping around a sculptural rocky headland with white surf and deep emerald vegetation, no people; one inset long-exposure waterfall in lush forest, another quiet lavender dusk coastline. Turquoise, jade and chalk white. Calm monumental nature with flowing visual rhythm, not an alpine mountain landscape.",
+      "file": "skill-scenic-escape-v2.jpg"
+    },
+    {
+      "id": "travel-guide",
+      "prompt": "Use case: ads-marketing. Create one finished horizontal editorial photographic collage cover for a travel-video editing Skill in a premium charcoal macOS app. Photorealistic cinematic main photograph, one or two small overlapping inset photographs with thin warm ivory paper edges, restrained dotted sand-gold journey line, analog film texture. Elegant cohesive art direction, not cluttered scrapbook. Wide approximately 2:1. Important subjects safely in central 75 percent, works cropped to 2.35:1 card and 1.6:1 detail. Edge-to-edge image, no text, no letters, no logos, no watermarks, no UI. NOT a grid of alternative designs. Travel guide: beautifully framed old Mediterranean town and coastal lookout, a small traveler with camera pointing toward the route from the overlook; insets close-up stone archway and overhead unlabelled folded illustrated route map with camera. Restrained ochre, stone cream and sea teal. Strong sense of discovering and explaining a place, absolutely no readable map text or lettering.",
+      "file": "skill-travel-guide-v2.jpg"
+    }
+  ]
+}

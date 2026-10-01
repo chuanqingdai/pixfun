@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#151819"><meta name="description" content="Explore real footage, its visual understanding and editorial breakdown in Pixfun.">
+<title>Inside the footage — Pixfun</title><link rel="icon" href="/assets/images/pixfun-icon-v2.png">
+<link rel="stylesheet" href="/assets/palette.css"><link rel="stylesheet" href="/assets/footage-case.css?v=2"><link rel="stylesheet" href="/assets/site-footer.css?v=1">
+<script src="/assets/footage-case.js?v=3" defer></script><link rel="stylesheet" href="/assets/site-refinements.css?v=1"></head>
+<body><a class="skip" href="#main">Skip to footage</a>
+<header class="case-header"><a href="/" aria-label="Pixfun home"><img src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun" width="120" height="40"></a><a href="/#footage-examples">← All examples</a></header>
+<main id="main" class="case-main"><p id="caseStatus" role="status">Loading footage…</p>
+<div id="caseContent" hidden>
+<header class="case-heading"><p class="eyebrow">INSIDE THE FOOTAGE <span id="caseIndex"></span></p><h1 id="caseTitle"></h1><p id="caseSubtitle"></p></header>
+<div class="case-layout"><div class="case-primary">
+<div class="case-player"><video id="caseVideo" controls playsinline preload="metadata" aria-label="Complete example video"></video></div>
+<div class="playback-note"><span id="sourceDuration"></span><button id="playHighlight" type="button">Play selected 5s <span aria-hidden="true">↗</span></button></div>
+<p id="videoError" role="alert" hidden>This video could not load. <button id="retryVideo" type="button">Try again</button></p>
+<section class="shot-section" aria-labelledby="shotsTitle"><div class="section-heading"><h2 id="shotsTitle">Editable shots</h2><span id="shotCount"></span></div><div id="shotGrid" class="shot-grid"></div>
+<div id="shotDetails" class="shot-details" aria-live="polite"></div></section>
+<section id="transcriptSection" class="transcript-section" hidden aria-labelledby="transcriptTitle"><div class="section-heading"><h2 id="transcriptTitle">Transcript</h2><a id="captionDownload" download>Download captions ↓</a></div><p class="transcript-note">Extracted from the original audio with local Whisper, then checked against the source captions. Select a line to jump.</p><div id="transcriptLines"></div></section>
+</div><aside class="case-understanding" aria-label="Footage understanding">
+<section><p class="eyebrow">SEE THE STORY IN THE SOURCE</p><h2>Video description</h2><p id="fullDescription"></p></section>
+<section><h2>Why these 5 seconds?</h2><p id="highlightReason"></p><span id="highlightRange" class="gold"></span></section>
+<section id="subjectsSection" hidden><h2>Subjects on screen</h2><p id="subjects"></p></section>
+<section><h2>Searchable details</h2><div id="tags" class="case-tags"></div></section>
+<p id="exampleContext" class="example-context"></p>
+<details class="source-details"><summary>Source & analysis</summary><dl id="sourceFacts"></dl><p>Precomputed example, editorially reviewed against sampled frames and scene-change candidates. Story roles, quality marks and suggested trims are editing judgments. Unknown identities, equipment and ambient sounds are not inferred.</p><div id="sourceList"></div></details>
+</aside></div>
+<section class="more-cases" aria-labelledby="moreTitle"><div class="section-heading"><h2 id="moreTitle">Every clip has a different role.</h2><a href="/mac-early-access">Try it with your footage ↗</a></div><nav id="otherCases" aria-label="More footage examples"></nav></section>
+</div><noscript><p>Enable JavaScript to view this interactive footage breakdown.</p><a href="/">Back to home</a></noscript></main>
+<footer class="footer site-footer wrap" id="footer" aria-label="Site footer">
+<div class="footer-main">
+<div class="footer-about"><a class="brand brand-v2" href="/" aria-label="Pixfun home"><img class="brand-logo" src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun" width="1086" height="362" loading="lazy"></a><p>Intelligent editing.<br>For the journeys worth sharing.</p><span>Real footage. Your point of view.</span></div>
+<nav class="footer-links" aria-labelledby="footerProduct"><h2 id="footerProduct">Product</h2><a href="/mac-early-access">Mac early access</a><a href="/#how">How it works</a></nav>
+<nav class="footer-links" aria-labelledby="footerExplore"><h2 id="footerExplore">Help</h2><a href="/#faq">Questions &amp; answers</a></nav>
+</div>
+<div class="footer-bottom"><small>© 2026 Pixfun. All rights reserved.</small></div>
+</footer>
+</body></html>

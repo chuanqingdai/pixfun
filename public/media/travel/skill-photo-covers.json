@@ -1,0 +1,77 @@
+{
+  "note": "Real footage stills only; no generated or composited main images.",
+  "covers": [
+    {
+      "id": "visionflow-travel-director",
+      "image": "skill-visionflow-travel-director-photo-v3",
+      "source": "public/media/travel/hiking.jpg",
+      "url": "https://mixkit.co/free-stock-video/hiking-couple-taking-a-selfie-43150/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "city-walk",
+      "image": "skill-city-walk-photo-v3",
+      "source": "public/media/travel/hero-citywalk.jpg",
+      "url": "https://mixkit.co/free-stock-video/pedestrian-walk-in-tokyo-4231/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "food-tour",
+      "image": "skill-food-tour-photo-v3",
+      "source": "public/media/travel/hero-food.jpg",
+      "url": "https://www.pexels.com/video/a-chef-cooling-with-a-frying-pan-4003980/",
+      "kind": "real stock footage still",
+      "license": "Pexels License"
+    },
+    {
+      "id": "travel-diary",
+      "image": "skill-travel-diary-photo-v3",
+      "source": "public/media/travel/roadtrip.jpg",
+      "url": "https://mixkit.co/free-stock-video/road-trip-as-a-couple-aboard-a-van-41582/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "outdoor-adventure",
+      "image": "skill-outdoor-adventure-photo-v3",
+      "source": "public/media/travel/outdoors.jpg",
+      "url": "https://mixkit.co/free-stock-video/people-walking-on-the-snowy-summit-3335/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "flights-stays",
+      "image": "skill-flights-stays-photo-v3",
+      "source": "public/media/travel/creator-flight.jpg",
+      "url": "https://mixkit.co/free-stock-video/tourists-getting-off-a-water-plane-on-a-pier-2885/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "family-memories",
+      "image": "skill-family-memories-photo-v3",
+      "source": "public/media/travel/camping.jpg",
+      "url": "https://mixkit.co/free-stock-video/parents-and-their-daughter-roasting-marshmallows-in-a-forest-39771/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "scenic-escape",
+      "image": "skill-scenic-escape-photo-v3",
+      "source": "public/media/travel/../cases/islands.jpg",
+      "url": "https://mixkit.co/free-stock-video/white-sand-beach-background-1564/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
+      "id": "travel-guide",
+      "image": "skill-travel-guide-photo-v3",
+      "source": "public/media/travel/city.jpg",
+      "url": "https://mixkit.co/free-stock-video/venice-central-canal-at-night-4646/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "mode": "built-in image generation",
+  "asset": "skill-travel-v2.jpg",
+  "prompt": "Use case: ads-marketing. Asset type: finished horizontal cover artwork for a Travel Vlog editing skill in a premium dark charcoal macOS app, not a UI mockup. Create a designed cinematic travel editorial collage: a broad alpine lake landscape in soft morning light anchors the composition; two tasteful overlapping photographic frames capture a tiny hiker on a winding trail and the warm glow of a campsite at dusk. Subtle ivory photograph edges, dark forest green and muted warm sand-gold accents, delicate travel-route line connecting the scenes, fine analog film grain. Restrained art direction, excellent hierarchy, sophisticated rather than scrapbook clutter. Photorealistic scenes with natural detail, elegant asymmetric composition and generous visual breathing room. Wide landscape ratio approximately 2:1, with all important artwork inside the central 80 percent so it works as a short card cover. Edge-to-edge finished artwork. No text, no lettering, no logos, no watermarks, no buttons or UI frame. This is illustrative skill artwork, not a depiction of user footage.",
+  "transparent_background": false,
+  "postprocessing": "JPEG format conversion, quality 88; no content edits."
+}

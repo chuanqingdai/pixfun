@@ -1,0 +1,84 @@
+/* Shared public-site finish. No layout shifts, scroll interception or hidden copy. */
+:root{--site-ease:cubic-bezier(.22,1,.36,1)}
+:is(.travel-hero,.case-main,.application-main){overflow-wrap:break-word}
+:is(.film-selector a,.shot-card,#otherCases a,.playback-note button,.choice-options label,#applySubmit,.return-link){touch-action:manipulation;transition:background-color .2s,border-color .2s,box-shadow .25s,transform .3s var(--site-ease)}
+.film-selector a img{transition:filter .3s,transform .4s var(--site-ease)}
+.film-selector a::before{transition:transform .3s var(--site-ease)}
+.film-selector a:focus-visible{outline-offset:5px}
+.film-selector a[aria-current=true]{border-bottom-color:#e8c99870}
+.film-selector a[aria-current=false] img{filter:saturate(.85)}
+.shot-image{overflow:hidden}
+.shot-image img,#otherCases img{transition:transform .4s var(--site-ease),filter .3s}
+#otherCases a{border-radius:6px}
+.case-header>a:last-child{display:inline-flex;align-items:center;min-height:44px}
+.source-details summary{min-height:44px;align-content:center}
+.playback-note button{min-height:44px;flex-shrink:0}
+.travel-faq-list summary{position:relative;list-style:none;padding-right:32px}
+.travel-faq-list summary::-webkit-details-marker{display:none}
+.travel-faq-list summary::after{content:'+';position:absolute;right:4px;top:50%;margin-top:-12px;width:24px;height:24px;text-align:center;font:400 22px/24px 'DM Sans',sans-serif;color:var(--accent);transition:transform .25s var(--site-ease)}
+.travel-faq-list details[open] summary::after{transform:rotate(45deg)}
+#how .workflow-steps button{transition:color .2s,border-color .2s}
+.application-page :is(input,textarea,select){transition:border-color .2s,box-shadow .2s}
+.application-page :is(input,textarea,select):focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:3px}
+.application-page .choice-options label:has(input:checked){background:#d7b58112;border-color:var(--accent)}
+@media(hover:hover) and (pointer:fine){
+  .film-selector a:hover{background:#e8c99808}
+  .film-selector a:hover img{filter:brightness(1.08);transform:translateY(-2px)}
+  .film-selector a:hover::before{transform:translate(2px,-2px)}
+  .shot-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px #0002}
+  .shot-card:hover img,#otherCases a:hover img{filter:brightness(1.08)}
+  #otherCases a:hover{transform:translateY(-3px)}
+  #how .workflow-steps button:hover{color:var(--accent)}
+  .application-page .choice-options label:hover{border-color:var(--accent)}
+}
+:is(.film-selector a,.shot-card,#otherCases a,.playback-note button,#applySubmit,.return-link):active{transform:translateY(1px)}
+/* Avoid a cramped two-column walkthrough on tablets; keep the description
+   below the frame, without adding an inner scrollbar. */
+@media(min-width:761px) and (max-width:999px){
+  #how .workflow-shell{grid-template-columns:148px minmax(0,1fr);gap:24px}
+  #how .workflow-demo .demo-main{grid-template-columns:minmax(0,1fr)}
+  #how .demo-summary{display:none}
+  #how .demo-context{padding-top:0}
+}
+@media(max-width:760px){
+  #how .demo-summary{display:none}
+  #how .workflow-shell{gap:20px;padding-inline:22px}
+  #how .workflow-steps{gap:4px 12px}
+  #how .workflow-steps button{align-items:flex-start;min-height:62px;font-size:12px;line-height:1.5;gap:7px}
+  #how .workflow-steps button span{font-size:10px;padding-top:2px;flex-shrink:0}
+  #how .demo-context h4{margin-bottom:10px}
+  #how #demoRequirements{font-size:16px;min-height:148px}
+  #how #stylePicker button{min-height:44px}
+  #how .source-grid{gap:12px 8px}
+  #how .source-grid figcaption{font-size:11px}
+  #how .scene-insight-overlay{padding:12px}
+  #how .scene-location{display:none}
+  .application-page :is(input,textarea,select){font-size:16px}
+  .application-page .choice-options label{min-height:44px;display:flex;align-items:center}
+}
+@media(max-width:600px){
+  .travel-hero .hero-intro{padding-top:116px;padding-bottom:28px}
+  .hero-intro .travel-lead{line-height:1.7}
+  .hero-bottom .film-selector{gap:10px 16px}
+  .hero-bottom .film-selector a{min-height:60px;gap:9px}
+  .hero-bottom .film-selector a img{width:48px;height:36px}
+  .hero-bottom .film-selector a span{font-size:12px}
+  .hero-bottom .film-selector a small{font-size:10px}
+  .hero-bottom .film-selector a::before{font-size:14px}
+  .hero-bottom .hero-playback{margin-bottom:12px;line-height:1.5}
+  .travel-hero{gap:28px}
+  .travel-faq-list summary{padding-right:28px}
+  .case-heading h1{text-wrap:balance}
+  .case-main .shot-card strong{margin-inline:10px}
+  .case-main .shot-card small{margin-inline:10px;font-variant-numeric:tabular-nums}
+}
+@media(max-width:360px){
+  #how .workflow-shell{padding-inline:16px}
+  #how .workflow-steps{gap:4px 7px}
+  #how .workflow-steps button{font-size:11px;gap:5px}
+  .hero-bottom .film-selector a img{width:40px;height:32px}
+  .hero-bottom .film-selector a{gap:6px}
+}
+@media(prefers-reduced-motion:reduce){
+  :is(.film-selector a,.film-selector a img,.film-selector a::before,.shot-card,.shot-image img,#otherCases a,#otherCases img,.playback-note button,.choice-options label,#applySubmit,.return-link,.travel-faq-list summary::after,#how .workflow-steps button,.application-page input,.application-page textarea,.application-page select){transition:none!important;transform:none!important}
+}
