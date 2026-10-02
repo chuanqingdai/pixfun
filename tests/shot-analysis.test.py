@@ -9,12 +9,95 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('agent_tests',ROOT/'tests/agent.test.py')
 base=importlib.util.module_from_spec(spec); spec.loader.exec_module(base)
-from shot_analysis import validate_shot, stamp, seconds, ShotAnalyses, SHOT_PROMPT, summarize_video
+from shot_analysis import validate_shot, normalize_shot_response, single_shot_prompt, stamp, seconds, ShotAnalyses, SHOT_PROMPT, summarize_video
+
+def shot_fixture():
+    return {'shot_id':'shot_001','start_time':stamp(0),'end_time':stamp(2.92),
+            'description':'A traveler walks across a wooden bridge.', 'shot_size':'Medium shot',
+            'capture_type':'Tracking','camera_motion':'Following','story_role':['Action'],
+            'dialogue':'','reaction':'','audio':[],'importance_score':78,
+            'duplicate_candidate':False,'unusable_candidate':False,
+            'edit_recommendation':{'level':'Recommended','recommended_duration_sec':3,'reason':'Keep the complete crossing.'}}
+
+class ShotResponseTests(unittest.TestCase):
+    def test_equivalent_single_shot_shapes_and_rounding(self):
+        shot=shot_fixture()
+        shapes=[shot, {'shots':[shot]}, {'video_summary':'Crossing','shots':[shot]},
+                {'shot':shot}, {'EDITORIAL_SHOT':{'shots':[shot]}}, {'result':{'shot':shot}},
+                {**shot,'video_summary':'Crossing'}, {'shots':[shot],'confidence':.9}]
+        for value in shapes:
+            with self.subTest(keys=list(value)):
+                clean=normalize_shot_response(value,0,2.92,[])
+                self.assertEqual(clean['description'],shot['description'])
+                self.assertEqual(clean['edit_recommendation']['recommended_duration_sec'],2.92)
+        self.assertEqual(shot['edit_recommendation']['recommended_duration_sec'],3,'Do not mutate raw model evidence')
+
+    def test_multiple_or_missing_shots_are_not_silently_discarded(self):
+        shot=shot_fixture()
+        for value in ({'shots':[shot,shot]},{'shots':[]},{'shot':shot,'shots':[shot]},
+                      {'video_summary':'No shot'},{'shots':'invalid'},[],None):
+            with self.subTest(value=type(value)):
+                with self.assertRaises(ValueError): normalize_shot_response(value,0,2.92,[])
+
+    def test_real_ranges_and_material_overages_stay_strict(self):
+        for key,value in [('start_time',stamp(.1)),('end_time',stamp(3)),('importance_score',False),('description','')]:
+            with self.assertRaises(ValueError): normalize_shot_response({**shot_fixture(),key:value},0,2.92,[])
+        for duration in (4, True, '3', float('nan'), -1):
+            shot=shot_fixture(); shot['edit_recommendation']['recommended_duration_sec']=duration
+            with self.assertRaises(ValueError): normalize_shot_response(shot,0,2.92,[])
+
+    def test_prompt_uses_one_actual_interval_not_example_duration(self):
+        prompt=single_shot_prompt(6,8.92)
+        self.assertNotIn('Split on significant changes',prompt)
+        self.assertIn('SAME shot',prompt)
+        self.assertIn('"start_time":"00:00:06.000"',prompt)
+        self.assertIn('"end_time":"00:00:08.920"',prompt)
+        self.assertIn('"recommended_duration_sec":2.92',prompt)
+        self.assertNotIn('00:00:08.200',prompt)
 
 class ShotTests(unittest.TestCase):
     # Use the existing isolated library/model fixture without inheriting its tests.
     setUp=base.AgentTests.setUp
     tearDown=base.AgentTests.tearDown
+    def test_direct_shot_output_completes_without_model_retry(self):
+        original=self.models.ask
+        responses=[]
+        def flat(prompt,*args,**kwargs):
+            result=original(prompt,*args,**kwargs)
+            if 'EDITORIAL_SHOT' in prompt:
+                responses.append(prompt)
+                return result['shots'][0]
+            return result
+        self.models.ask=flat
+        _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        self.assertEqual(len(responses),len(result['output']['shots']))
+
+    def test_multiple_shots_receive_bounded_correction_not_first_shot_selection(self):
+        original=self.models.ask; responses=[]
+        def malformed(prompt,*args,**kwargs):
+            result=original(prompt,*args,**kwargs)
+            if 'EDITORIAL_SHOT' in prompt:
+                responses.append(prompt)
+                if len(responses)==1: return {'shots':[result['shots'][0],result['shots'][0]]}
+            return result
+        self.models.ask=malformed
+        _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        self.assertEqual(len(responses),len(result['output']['shots'])+1)
+        self.assertIn('exactly one shot',responses[1])
+        self.assertIn('Previous response',responses[1])
+
+    def test_json_parse_error_can_be_corrected_and_invalid_shape_still_fails(self):
+        original=self.models.ask; attempts=[]
+        def malformed(prompt,*args,**kwargs):
+            if 'EDITORIAL_SHOT' in prompt:
+                attempts.append(prompt)
+                if len(attempts)==1: raise ValueError('Model did not return a valid structured result.')
+                return {'video_summary':'Missing shot'}
+            return original(prompt,*args,**kwargs)
+        self.models.ask=malformed
+        with self.assertRaisesRegex(ValueError,'Shot output failed validation'):
+            self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        self.assertEqual(len(attempts),3)
     def test_audio_without_subtitles_transcribes_and_reuses_speech_cache(self):
         record, _ = self.library.get(self.asset)
         record['metadata']['hasAudio'] = True

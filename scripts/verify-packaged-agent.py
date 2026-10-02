@@ -21,8 +21,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('app', type=Path)
 parser.add_argument('--replay-library', type=Path)
 parser.add_argument('--replay-run')
+parser.add_argument('--source', type=Path, action='append', help='Use only these original files for a focused analysis or source-video regression')
 parser.add_argument('--workspace', type=Path, help='Reuse an isolated packaged-agent test library and its analysis cache')
 parser.add_argument('--cases', default='photos,mixed,videos')
+parser.add_argument('--timeout', type=float, default=1800, help='Per-task local inference deadline in seconds')
+parser.add_argument('--repeat', action='store_true', help='Repeat the request to measure analysis/render cache reuse')
 args = parser.parse_args()
 resources = args.app.resolve()/'Contents/Resources'
 workspace = args.workspace.resolve() if args.workspace else Path(tempfile.mkdtemp(prefix='pixfun-packaged-agent-'))
@@ -49,6 +52,8 @@ if args.replay_library:
         photos = [Path(db.execute('SELECT source FROM media WHERE id=?',(mid,)).fetchone()[0]) for mid in failed['mediaIds']]
         report['replayedSourceRun'] = failed['id']
         assert photos, 'Failed task has no material'
+if args.source:
+    photos = [source.resolve() for source in args.source]
 
 log = (workspace/'service.log').open('w')
 service = subprocess.Popen([str(resources/'backend/pixfun-service/pixfun-service')], env=env,
@@ -62,7 +67,7 @@ try:
         with urlopen(request, timeout=30) as response: return json.load(response)
     report['health'] = api('health')
     def wait(run):
-        deadline, previous = time.monotonic()+900, None
+        deadline, previous = time.monotonic()+args.timeout, None
         while run['status'] in ('queued','running'):
             assert time.monotonic()<deadline, 'Packaged agent timed out'
             if run['message'] != previous:
@@ -82,23 +87,62 @@ try:
         media('ffmpeg','-v','error','-xerror','-i',preview['path'],'-f','null','-')
         return {'preview':preview['path'],'duration':probe['format']['duration'],'streams':probe['streams']}
     for case in args.cases.split(','):
-        paths = photos if case=='photos' else [ROOT/'public/media/travel/story/rest.mp4']
-        if case=='mixed': paths = [photos[0], *paths]
+        short=case.startswith('short-'); kind=case.removeprefix('short-')
+        paths = photos if kind in ('photos', 'analysis', 'source-video') else [ROOT/'public/media/travel/story/rest.mp4']
+        if kind=='mixed': paths = [photos[0], *paths]
+        if kind=='quick-video':
+            fixture=workspace/'quick-video.mp4'
+            media('ffmpeg','-v','error','-y','-i',paths[0],'-t','5','-an','-c:v','mpeg4','-q:v','3',fixture)
+            paths=[fixture]
         print('CASE '+case, flush=True)
         before = {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
         ids = [i['id'] for i in api('desktop/register',{'paths':list(map(str,paths))})['items']]
-        prompt = '编辑成一个视频，使用全部素材，不加配乐、旁白或字幕。' if case=='photos' else 'Create a travel video using every attached photo and video. Use original sound, no music, narration or text.'
-        run = wait(api('desktop/agent/start',{'prompt':prompt,'mediaIds':ids,'requestId':uuid.uuid4().hex,'mode':'local'})['run'])
-        entry = {'case':case,'run':run}; report['cases'].append(entry)
+        prompt = '编辑成一个视频，使用全部素材，不加配乐、旁白或字幕。' if kind=='photos' else 'Create a travel video using every attached photo and video. Use original sound, no music, narration or text.'
+        payload={'prompt':prompt,'mediaIds':ids,'requestId':uuid.uuid4().hex,'mode':'local'}
+        if kind == 'source-video':
+            payload['prompt'] = 'Make a short travel highlight reel from the best moments.'
+        if kind == 'analysis':
+            payload['prompt'] = 'Summarize each video and suggest the best moments to use.'
+        if short:
+            payload.update(prompt='Create a 12-second travel short using every attached photo and video, with animated short English titles and Editorial Postcard packaging. No music or narration.',
+                           skill={'id':'visionflow-travel-short','title':'Travel Short','strategy':'Use the installed short-film strategy.'})
+        started=time.monotonic()
+        run = wait(api('desktop/agent/start',payload)['run'])
+        entry = {'case':case,'run':run,'elapsedSeconds':round(time.monotonic()-started,2)}; report['cases'].append(entry)
+        if kind == 'analysis':
+            assert run['status'] == 'completed', run['message']
+            assert run['mode'] == 'local' and run['intent'] == 'analyze'
+            assert not run.get('question')
+            assert any(a['type'] == 'analysis' for a in run['artifacts']), 'No source analysis'
+            result = run['analysisReport']
+            assert result['overview'].strip() and run['resultText'].strip()
+            assert {row['mediaId'] for row in result['materials']} == set(ids)
+            assert all(row['content'].strip() and row['suggestion'].strip() for row in result['materials'])
+            assert not any(a['type'] == 'preview' for a in run['artifacts']), 'Analysis must not render'
+            assert before == {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}, 'Source was modified'
+            entry['pass'] = True
+            print('PASS '+case, flush=True)
+            continue
         entry.update(check(run, ids))
         image_ids = {i['id'] for i in api('desktop/library')['items'] if i['kind']=='image'}
         assert all(s['end']-s['start'] <= 5 for s in run['timeline'] if s['mediaId'] in image_ids), 'Default still is too long'
         # The same action endpoints used by the editor: save a photo hold, render revision.
-        if case=='photos':
+        if short:
+            assert abs(float(entry['duration'])-12)<.15, 'Explicit 12-second duration was not honored'
+            manifest=json.loads((workspace/'agent'/run['id']/'packaging-v1.json').read_text())
+            assert any(c['text'] for c in manifest['components']), 'No actual title components'
+            entry['packaging']=manifest
+        if kind=='photos':
             shots = json.loads(json.dumps(run['timeline'])); shots[0]['end'] += .5
             revised = api('desktop/agent/action',{'id':run['id'],'action':'timeline','version':run['version'],'timeline':shots})['run']
             revised = wait(api('desktop/agent/action',{'id':run['id'],'action':'approve'})['run'])
             entry['revision'] = check(revised, ids)
+            entry['revisionStats']=revised.get('renderStats')
+        if args.repeat:
+            payload['requestId']=uuid.uuid4().hex
+            started=time.monotonic()
+            repeated=wait(api('desktop/agent/start',payload)['run'])
+            entry['repeat']={'elapsedSeconds':round(time.monotonic()-started,2), 'renderStats':repeated.get('renderStats'), **check(repeated,ids)}
         assert before == {str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}, 'Source was modified'
         entry['pass'] = True
         print('PASS '+case, flush=True)

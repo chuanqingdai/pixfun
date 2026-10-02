@@ -15,7 +15,7 @@
       handling:['Photos only: use safe framing, readable titles, and gentle layout changes. Do not require video or fabricate movement.', 'Mixed formats: adapt the canvas and template to the subjects. Skip unsupported or unsuitable effects and explain alternatives.'],
       example:'Create a short travel video from these photos and clips, with safe framing and a clear visual story.',
       source:'visionflow-travel-short/SKILL.md', version:'1.1',
-      capabilityNote:'Create an edit preview from photos, videos, or both. Photos use adjustable display durations and safe framing. Animated titles, photo motion, multi-image layouts, and the six packaging templates are not connected rendering presets yet.',
+      capabilityNote:'Create a short film from photos, videos, or both. Editorial Postcard and City Notes single-panel layouts support animated titles, gentle full-photo motion and graphic reveals. The other four recipes, multi-image collages and cross-dissolves are not yet rendering presets. Original framing is preserved; music and narration remain optional.',
       highlights:[
         {title:'Start small',body:'Three photos, a few clips, or a mix—choose a format that suits what you have.'},
         {title:'Designed, not crowded',body:'Short titles, graphic reveals, and selective transitions share one visual language.'},

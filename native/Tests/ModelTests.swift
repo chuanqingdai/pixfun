@@ -17,7 +17,11 @@ import Foundation
         check(example.applying(to: "Keep my instruction") == "Keep my instruction", "custom draft stays intact until replacement is confirmed")
         check(example.requiresReplacementConfirmation(for: "Keep my instruction"), "custom draft requires confirmation")
         check(example.applying(to: AgentExample.starters[2].prompt) == example.prompt, "switching starters replaces conflicting instructions")
-        check(AgentExample.starters.first(where: { $0.id == "create" })!.prompt.contains("original sound"), "rough-cut example stays within renderer capabilities")
+        check(AgentExample.starters[0].prompt == "Summarize my media and suggest what to use.", "analysis starter covers photos and videos")
+        check(AgentExample.starters.allSatisfy { example in
+            let text = "\(example.title) \(example.outcome) \(example.prompt)".lowercased()
+            return !["original sound", "original audio", "each video", "no music", "no narration", "16:9", "9:16"].contains { text.contains($0) }
+        }, "starter copy does not impose source audio, video-only inputs or skill-specific finishing choices")
         let raw = #"{"id":"a","file":{"name":"trip.mov","size":123},"kind":"video","status":"ready","metadata":{"width":1080,"height":1920,"duration":690,"hasAudio":true},"favorite":true,"context":{"location":"Glacier","device":"iPhone"},"description":"A mountain walk","result":{"analysis":{"segments":[{"id":"seg-1","label":"Chapter 1","start":0,"end":86.25,"boundary":{"type":"time_split"}}],"subtitleCues":[{"start":0.2,"end":3,"text":"Complete spoken sentence"}]}}}"#
         let item = try JSONDecoder().decode(MediaItem.self, from: Data(raw.utf8))
         check(item.aspect == 1080.0 / 1920.0, "portrait aspect retained")
@@ -411,6 +415,9 @@ import Foundation
         check(activityRun.activityNotice == "A local processing error stopped this task. Try again to continue.", "internal errors have a readable recovery message")
         check(activityRun.failureTitle == "Couldn't finish analyzing your footage", "failure heading identifies the affected step")
         check(activityRun.message.contains("has no attribute"), "original diagnostics remain available in technical details")
+        activityRun.message = "Shot output failed validation: Return video_summary and exactly one shot."
+        check(activityRun.activityNotice == "The model couldn't produce a valid shot description. Retry to continue from saved results.", "model schema failures show a recovery action, not raw JSON field requirements")
+        check(activityRun.activityNotice != activityRun.message, "technical model error remains available in collapsed details")
         activityRun.status = "consent"; activityRun.question = "Allow this task to send selected frames to the cloud?"
         check(activityRun.activityNotice == nil && !activityRun.question.isEmpty, "consent question is preserved without duplicate notices")
         workspace.agentRuns = [legacyRun]

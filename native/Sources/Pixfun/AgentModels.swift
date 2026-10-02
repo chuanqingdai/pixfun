@@ -14,9 +14,9 @@ struct AgentExample: Identifiable {
         }
     }
     static let starters: [AgentExample] = [
-        .init(id: "analyze", title: "Summarize my footage", outcome: "Summarize my footage.", prompt: "Summarize each video and suggest the best moments to use."),
-        .init(id: "create", title: "Create a travel video", outcome: "Create a travel video.", prompt: "Create a travel video with a clear story and original sound."),
-        .init(id: "highlights", title: "Make a short highlight reel", outcome: "Make a short highlight reel.", prompt: "Make a short travel highlight reel from the best moments, with original sound.")
+        .init(id: "analyze", title: "Summarize my media", outcome: "Summarize my media.", prompt: "Summarize my media and suggest what to use."),
+        .init(id: "create", title: "Create a travel video", outcome: "Create a travel video.", prompt: "Create a travel video with a clear story."),
+        .init(id: "highlights", title: "Make a short highlight reel", outcome: "Make a short highlight reel.", prompt: "Make a short travel highlight reel from the best moments.")
     ]
     func applying(to draft: String) -> String {
         requiresReplacementConfirmation(for: draft) ? draft : prompt
@@ -217,6 +217,9 @@ struct AgentRun: Codable, Identifiable {
         guard !busy else { return nil }
         switch status {
         case "failed":
+            if message.hasPrefix("Shot output failed validation:") {
+                return "The model couldn't produce a valid shot description. Retry to continue from saved results."
+            }
             if message.contains("has no attribute") || message.contains("Traceback") || message.contains("NoneType") {
                 return "A local processing error stopped this task. Try again to continue."
             }

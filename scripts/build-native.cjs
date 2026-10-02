@@ -14,6 +14,7 @@ if (process.platform !== 'darwin') throw new Error('Build Pixfun Native on macOS
 const required = ['build-desktop/backend/pixfun-service/pixfun-service', 'build-desktop/media/bin/ffmpeg', 'build-desktop/media/bin/ffprobe', 'build-desktop/Pixfun.icns'];
 for (const file of required) if (!fs.existsSync(path.join(root,file))) throw new Error(`Missing ${file}. Run desktop:backend and desktop:media first.`);
 require('./verify-bundled-media.cjs')(path.join(root, 'build-desktop/media/bin'));
+run('swiftc', ['-O', '-target', 'arm64-apple-macosx13.0', '-module-cache-path', path.join(cache, 'swift'), 'scripts/render-title.swift', '-o', 'build-desktop/media/bin/pixfun-title']);
 const scratch = path.join(root, 'build-native');
 run('swift', ['build', '--package-path', 'native', '--scratch-path', scratch, '--cache-path', cache, '-c', 'release', '--disable-sandbox']);
 const output = path.join(root, 'dist-native');

@@ -17,17 +17,25 @@ test('starter requests explain outcomes and fill the composer without sending', 
   assert.match(view, /No matching moments found/);
   assert.match(view, /No usable speech was found/);
 });
-test('analysis answers are visible in both latest and earlier turns; evidence stays folded', () => {
+test('analysis answers remain visible in latest and earlier turns without report downloads', () => {
   const view = read('native/Sources/Pixfun/AgentView.swift');
   assert.equal((view.match(/AgentAnalysisResults\(run: run, report: report\)/g) || []).length, 2);
   const report = view.split('struct AgentAnalysisResults: View')[1].split('struct AgentSettingsView')[0];
   assert.ok(report.indexOf('Text(report.overview)') < report.indexOf('AgentMaterialSummaryCard('));
   assert.match(report, /summary: material.content, mediaID: material.mediaId/);
-  assert.match(report, /AgentReportDownloads\(artifacts: run.artifacts\)/);
-  const card = view.split('struct AgentMaterialSummaryCard: View')[1].split('struct AgentReportDownloads')[0];
+  assert.doesNotMatch(view, /AgentReportDownloads|Download reports|Export report|Results & reports/);
+  const card = view.split('struct AgentMaterialSummaryCard: View')[1].split('struct AgentEvidenceResults')[0];
   assert.match(card, /store.openMedia\(item\)/);
+  assert.match(card, /store.items.first \{ \$0.id == mediaID \}/);
+  assert.match(card, /ServiceImage\(path: item\?\.cover, fit: \.fit\)/);
+  assert.match(card, /HStack\(alignment: \.top, spacing: 14\)/);
+  assert.match(card, /frame\(width: 96, height: 76\)/);
+  assert.match(card, /item\?\.kind == "audio"/);
   assert.match(card, /Text\(summary\).*lineLimit\(3\)/);
-  assert.match(view, /DisclosureGroup\("Download reports/);
+  assert.match(view, /run.artifacts.contains\(where: \{ \["analysis", "observation", "subtitle", "match", "notice"\]/);
+  assert.match(view, /run.artifacts.contains\(where: \{ \["analysis", "observation", "subtitle", "match", "notice", "finishing", "credits", "skill"\]/);
+  assert.match(view, /Label\("Export", systemImage: "square.and.arrow.up"\)/);
+  assert.match(view, /hasSuffix\("\.srt"\) == true/);
 });
 test('composer contains model settings and uses consistent attachment toolbar labels', () => {
   const home = read('native/Sources/Pixfun/HomeView.swift');
@@ -64,6 +72,8 @@ test('editor keeps scoped chat, recoverable drafts, linked original audio and va
 test('Agent is one conversation with inline videos, actual activity and a persistent composer', () => {
   const agent = read('native/Sources/Pixfun/AgentView.swift');
   assert.doesNotMatch(agent, /HSplitView/);
+  assert.doesNotMatch(agent, /Button\("New project"/);
+  assert.match(read('native/Sources/Pixfun/PixfunApp.swift'), /Button\("New project"\)/);
   assert.match(agent, /AgentPreviousResults\(run: entry\)/);
   assert.match(agent, /AgentActivityView\(run: entry\)/);
   assert.match(agent, /AgentVideoMessage\(artifact: preview, aspect: run.aspect\)/);
@@ -77,8 +87,24 @@ test('Agent is one conversation with inline videos, actual activity and a persis
   assert.match(agent, /createdAt \?\?/);
   assert.match(agent, /onDisappear \{ playback.player\?\.pause\(\) \}/);
   assert.match(agent, /item.status == \.failed/);
-  assert.match(agent, /Export report/);
+  assert.doesNotMatch(agent, /Export report/);
   assert.match(read('scripts/build-desktop-backend.cjs'), /--add-data.*creator-skills/);
+});
+test('analysis activity is prominent, honest about queued work, and respects reduced motion', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  const activity = agent.split('struct AgentActivityView: View')[1].split('struct AgentFailureCard')[0];
+  assert.match(activity, /if run.busy/);
+  assert.match(activity, /PixfunActivityIndicator\(queued: run.status == "queued"\)/);
+  assert.match(activity, /semibold: true/);
+  assert.match(activity, /background\(Color.pixfunGold.opacity/);
+  const theme = read('native/Sources/Pixfun/Theme.swift');
+  assert.match(theme, /accessibilityReduceMotion/);
+  assert.match(theme, /paused: reduceMotion/);
+  assert.match(theme, /if queued \{\s*Image\(systemName: "clock"\)/);
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  assert.match(media, /if let status = item.processingLabel/);
+  assert.match(media, /PixfunActivityIndicator\(queued: status == "Queued…"/);
+  assert.match(media, /PixfunActivityIndicator\(queued: queued, size: 20\)/);
 });
 test('default desktop is native; Electron remains an explicit legacy fallback', () => {
   const pkg = JSON.parse(read('package.json'));

@@ -18,6 +18,30 @@ struct AgentResultLayoutTests {
         ]
         let folder = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // Keep source matching independent of display order or duplicate filenames.
+        let photos = try JSONDecoder().decode([MediaItem].self, from: Data(#"[{"id":"portrait","file":{"name":"IMG_0002.heic"},"kind":"image","status":"ready","coverUrl":"/fixture/portrait.jpg"},{"id":"landscape","file":{"name":"IMG_0002.heic"},"kind":"image","status":"ready","coverUrl":"/fixture/landscape.jpg"},{"id":"audio","file":{"name":"Mountain ambience.wav"},"kind":"audio","status":"ready"}]"#.utf8))
+        store.items += photos.reversed()
+        let mapped = AgentMaterialSummaryCard(title: "IMG_0002.heic", summary: "Portrait", mediaID: "portrait")
+        // The source contract test checks ID matching; renders below check narrow layouts
+        // and unavailable-cover placeholders without starting the service or model.
+        for width in [760.0, 380.0] {
+            let content = VStack(alignment: .leading, spacing: 16) {
+                mapped
+                AgentMaterialSummaryCard(title: "A long descriptive filename from the mountain trip.heic", summary: "A traveler stands at a scenic viewpoint, with green hills and distant water behind him. Open this material to see the complete analysis.", mediaID: "landscape")
+                AgentMaterialSummaryCard(title: "Mountain ambience.wav", summary: "Birdsong and a gentle breeze recorded along the trail.", mediaID: "audio")
+                AgentMaterialSummaryCard(title: "Unavailable.heic", summary: "A previously analyzed photo whose source is no longer in the library.", mediaID: "missing")
+            }.padding(24).frame(width: width).background(Color.pixfunBackground)
+                .foregroundStyle(Color.pixfunInk).environmentObject(store).environment(\.colorScheme, .dark)
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 2
+            guard let tiff = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+                fatalError("Could not render material summaries")
+            }
+            let path = folder.appendingPathComponent("material-summaries-\(Int(width)).png")
+            try png.write(to: path)
+            print(path.path)
+        }
         for width in [760.0, 380.0] {
             let content = VStack(alignment: .leading, spacing: 8) {
                 Text("Layout fixture · no model inference").font(.system(size: 12)).foregroundStyle(Color.pixfunMuted)
@@ -55,6 +79,30 @@ struct AgentResultLayoutTests {
             status: "failed", stage: "understand", message: "'VideoDescriptions' object has no attribute 'library'",
             summary: "", intent: "analyze", question: "", resultText: "", events: [], artifacts: [], timeline: [],
             version: 1, completed: 0, total: 2, duration: 30, aspect: "16:9", updatedAt: 0)
+        var activeRun = failedRun
+        activeRun.status = "running"
+        var queuedRun = activeRun
+        queuedRun.status = "queued"
+        var renderingRun = activeRun
+        renderingRun.stage = "render"
+        for width in [760.0, 380.0] {
+            let content = VStack(alignment: .leading, spacing: 20) {
+                Text("Activity states · layout fixture").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                AgentActivityView(run: activeRun)
+                AgentActivityView(run: queuedRun)
+                AgentActivityView(run: renderingRun)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(24).frame(width: width)
+                .background(Color.pixfunBackground).environment(\.colorScheme, .dark)
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 2
+            guard let tiff = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+                fatalError("Could not render activity states")
+            }
+            let path = folder.appendingPathComponent("activity-\(Int(width)).png")
+            try png.write(to: path)
+            print(path.path)
+        }
         for width in [760.0, 380.0] {
             let content = VStack(alignment: .leading, spacing: 18) {
                 Label("Pixfun", systemImage: "sparkles").foregroundStyle(Color.pixfunGold)

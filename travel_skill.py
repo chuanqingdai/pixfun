@@ -1,5 +1,6 @@
 """Versioned adapter for the imported creator skill, not a claim of full post-production."""
 import hashlib
+import re
 from pathlib import Path
 
 SKILL_ID = 'visionflow-travel-director'
@@ -21,7 +22,7 @@ def resolve_skill(chosen):
                 'sourceSHA256':hashlib.sha256(source.encode()).hexdigest(), 'editorialRules':'\n'.join(passages),
                 'defaults':{'aspect':'9:16','duration':None,'coverage':'selected'},
                 'executionScope':'photo_video_edit_preview',
-                'pending':['Animated typography and photo motion', 'Multi-image layouts and graphic transitions',
+                'pending':['Multi-image layouts and the other four packaging recipes',
                            'Full audiovisual review and delivery package']}
     if not chosen or chosen.get('id') != SKILL_ID:
         return None
@@ -41,8 +42,7 @@ def resolve_skill(chosen):
             'editorialRules': '\n\n'.join(passages),
             'defaults': {'aspect': '16:9', 'duration': None, 'coverage': 'all_usable_unique'},
             'executionScope': 'photo_video_story_and_rough_cut',
-            'pending': ['Photo motion and portrait backgrounds',
-                        'Advanced transitions, typography and location titles', 'Full audiovisual review and delivery package']}
+            'pending': ['Multi-image layouts, cross-dissolves and tracked typography', 'Full audiovisual review and delivery package']}
 
 
 ROUTING_RULE = '''选中的 Travel Vlog 是叙事策略，不改变用户本次任务类型。
@@ -67,6 +67,18 @@ coverageMode=all_usable_unique 时每个输入文件都必须在正文有清楚�
 没有执行标签、照片、调色或全片听审，不能称完整技能验收通过。
 每个shot增加section（intro|body|outro），intro不计正文覆盖，缺省为body。
 '''
+
+def normalize_short_sequence(shots, prompt):
+    """A single-pass short film's opening is body, not a repeated intro montage.
+
+    Do not turn a bookkeeping label into another confirmation when all visual
+    material is already meaningfully shown. Explicit/repeated intros are intact.
+    This changes only section metadata, never source ranges or shot order.
+    """
+    if re.search(r'片头|intro|montage|prologue',prompt,re.I): return shots
+    if not shots or len(shots)>8 or sum(s['end']-s['start'] for s in shots)>29: return shots
+    if len({s['mediaId'] for s in shots})!=len(shots): return shots
+    return [{**s,'section':'body'} if s.get('section')=='intro' and s['end']-s['start']>=1.2 else s for s in shots]
 
 
 def coverage_report(shots, records, mode='all_usable_unique'):

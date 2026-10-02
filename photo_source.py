@@ -8,6 +8,25 @@ import uuid
 PHOTO_HOLD_LIMIT = 60.0
 DEFAULT_PHOTO_HOLD = 5.0
 
+def fit_photo_duration(shots, records, target):
+    """Honor explicit total duration for a new still-only film, at frame precision.
+
+    Preserve the proposed relative pacing and shot order. Never lengthen video
+    ranges, duplicate photos, or use this for manual/scoped timeline edits.
+    """
+    if target is None or not shots or any(records[s['mediaId']]['kind']!='image' for s in shots): return shots
+    total_frames=round(float(target)*30)
+    current=sum(s['end']-s['start'] for s in shots)
+    if abs(current-target)<1/30: return shots
+    result=[]; assigned=0; cumulative=0.0
+    for index,shot in enumerate(shots):
+        cumulative+=shot['end']-shot['start']
+        endpoint=total_frames if index==len(shots)-1 else round(total_frames*cumulative/current)
+        frames=endpoint-assigned; assigned=endpoint
+        if not 8<=frames<=PHOTO_HOLD_LIMIT*30: raise ValueError('The requested photo-film duration needs different shot pacing.')
+        result.append({**shot,'start':0.0,'end':round(frames/30,3)})
+    return result
+
 def apply_default_photo_pacing(shots, records, content_led):
     """A technical safety ceiling is not a sensible default edit duration."""
     if not content_led or not isinstance(shots, list):
@@ -42,6 +61,21 @@ def prepare_photo(source, directory, command):
         if not temporary.is_file() or not temporary.stat().st_size:
             raise ValueError('Could not decode this photo. Try a JPEG or PNG copy.')
         os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
+
+def prepare_render_photo(source, directory, width, height, command):
+    """Decode/resize once, not a multi-megapixel PNG for every output frame."""
+    normalized = prepare_photo(source, directory, command)
+    target = normalized.parent / f'render-{width}x{height}.png'
+    if target.is_file() and target.stat().st_size: return target
+    temporary = target.parent / (uuid.uuid4().hex + '.png')
+    try:
+        command(['ffmpeg','-v','error','-y','-i',normalized,'-frames:v','1',
+                 '-vf',f'scale={width}:{height}:force_original_aspect_ratio=decrease',temporary])
+        if not temporary.is_file() or not temporary.stat().st_size: raise ValueError('Photo render proxy is empty.')
+        os.replace(temporary,target)
     finally:
         temporary.unlink(missing_ok=True)
     return target

@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -13,18 +14,48 @@ import uuid
 import wave
 
 from agent_models import ModelGateway, AgentCancelled, CapabilityMissing
+from analysis_frames import extract_frame
 from agent_tools import TOOL_RULE, tool_plan, ranked_evidence
 import agent_finishing as finishing
+import agent_packaging as packaging
 from music_library import catalog as music_catalog, credit as music_credit
 from transcript_quality import checked_cues
 from agent_report import summarize_report, report_text
 from product_language import explicitly_chinese
-from travel_skill import DEFAULT_SKILL, SHORT_ID, resolve_skill, ROUTING_RULE, PLANNING_RULE, coverage_report
+from travel_skill import DEFAULT_SKILL, SHORT_ID, resolve_skill, ROUTING_RULE, PLANNING_RULE, coverage_report, normalize_short_sequence
 from agent_conversation import capture_decision, answer_decision, requests_plan_review, requests_plan_only
-from photo_source import prepare_photo, PHOTO_HOLD_LIMIT, DEFAULT_PHOTO_HOLD, apply_default_photo_pacing
+from photo_source import prepare_photo, prepare_render_photo, PHOTO_HOLD_LIMIT, DEFAULT_PHOTO_HOLD, apply_default_photo_pacing, fit_photo_duration
 
 FINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
 INTENTS = {'analyze', 'search', 'plan', 'create', 'modify', 'subtitles', 'clarify'}
+
+def starter_brief(run, short=False):
+    """Known first-message product examples need no probabilistic re-routing.
+
+    Exact-match only: extra directions, history, edits and arbitrary prompts
+    still go to the model. Vision and editorial planning remain model-driven.
+    """
+    if run.get('previousTimeline') or run.get('context') or run.get('editScope'): return None
+    prompt=' '.join(run['prompt'].lower().split()).rstrip('.')
+    examples={
+        'summarize my media and suggest what to use':('analyze','all_usable_unique'),
+        'create a travel video with a clear story':('create','all_usable_unique'),
+        'make a short travel highlight reel from the best moments':('create','selected'),
+        # Retain recognition of earlier examples saved in conversation history.
+        'summarize each video and suggest the best moments to use':('analyze','all_usable_unique'),
+        'create a travel video with a clear story and original sound':('create','all_usable_unique'),
+        # Explicit batch-edit variant of the same supported first-film request.
+        'create a travel video using every attached photo and video. use original sound, no music, narration or text':('create','all_usable_unique')}
+    if prompt not in examples: return None
+    intent,coverage=examples[prompt]
+    brief={'intent':intent,'summary':run['prompt'],'question':'','unsupported':[],
+           'duration':18 if short or coverage=='selected' else 30,'durationSpecified':False,
+           'aspect':'9:16' if short else '16:9','coverageMode':coverage,'needsSpeech':False}
+    if prompt.endswith('no music, narration or text'):
+        brief.update(finishingRequest={'music':'remove','narration':'remove','transition':'keep','originalAudio':'keep'},
+                     packagingRequest={'style':'keep','text':'none','motion':'keep'})
+    return brief
+
 INTENT_PROMPT = '''You are Pixfun's task router. Understand Chinese and English. Return JSON only:
 {"intent":"analyze|search|plan|create|modify|subtitles|clarify","summary":"brief English response unless another output language is explicitly requested",
 "question":"one necessary clarification, or empty","duration":30,"aspect":"16:9|9:16|1:1",
@@ -48,8 +79,8 @@ voice cloning, publishing, deleting original files). Original sound and existing
 The renderer supports photos-only slideshows, mixed photos and videos, video trimming/reordering, original audio or muting, aspect-ratio letterboxing, and MP4 export.
 Photos have display durations, not source video durations or original sound. Use safe full-image framing, never invent motion or dialogue.
 It also supports uploaded or bundled-library background music with automatic ducking, local macOS standard-voice narration,
-and fade-through-black transitions. Burned-in captions, cross-dissolves, photo animation, other effects,
-and automatic subject-aware reframing are NOT implemented: flag these for create/modify requests.
+and fade-through-black transitions. Animated titles, safe photo motion, Postcard and City Notes layouts are supported.
+Dialogue captions, cross-dissolves, multi-image collages, 3D and automatic subject-aware reframing are NOT implemented.
 Negative requests such as no music/no captions/不要配乐 are constraints, NOT unsupported capabilities.
 For modify, preserve previousDuration and previousAspect unless explicitly changed; durationChanged is true only when
 the user requests a different total length or adds/removes time (calculate the new total, not a shot's duration).
@@ -278,6 +309,7 @@ class AgentEngine:
                                 'intent': r.get('intent', ''), 'status': r['status']} for r in history[:4]][::-1],
                    'previousAspect': old.get('aspect', '16:9') if old else '16:9',
                    'previousFinishing': old.get('finishing', {}) if old else {},
+                   'previousPackaging': old.get('packaging', {}) if old else {},
                    'duration': 30, 'aspect': '16:9', 'createdAt': time.time()*1000, 'updatedAt': time.time()*1000,
                    'cloudEndpoint': self.models.capabilities()['baseURL']}
             run['cloudApproved'] = False
@@ -337,7 +369,7 @@ class AgentEngine:
                         match = next((s for s in proposed if s['id'] == old['id']), None)
                         if not match or {k:v for k,v in match.items() if k != 'locked'} != {k:v for k,v in old.items() if k != 'locked'}:
                             raise ValueError('Unlock the shot before changing or removing it.')
-                run['timelineHistory'] = (run.get('timelineHistory', []) + [{'version':run['version'], 'shots':run['timeline'], 'finishing':run.get('finishing',{})}])[-30:]
+                run['timelineHistory'] = (run.get('timelineHistory', []) + [{'version':run['version'], 'shots':run['timeline'], 'finishing':run.get('finishing',{}), 'packaging':run.get('packaging',{})}])[-30:]
                 run['timeline'] = proposed
                 run['version'] += 1
                 run['editedAt'] = time.time() * 1000
@@ -393,6 +425,7 @@ class AgentEngine:
                     if time.monotonic() - start > timeout: raise TimeoutError('Media processing timed out')
         finally:
             if p.poll() is None: p.kill(); p.wait()
+            p.stdout.close(); p.stderr.close()
 
     def artifact(self, run, kind, title, text='', **fields):
         if kind == 'analysis':
@@ -452,7 +485,9 @@ class AgentEngine:
         model = self.models.capabilities().get('visionModel') if mode == 'cloud' else self.models.vision
         signature = hashlib.sha256(f'{source}:{source.stat().st_size}:{source.stat().st_mtime_ns}:{mode}:{model}:v6-english:{window_seconds}'.encode()).hexdigest()
         with self.library.connect() as db: cached = db.execute('SELECT record FROM agent_analysis WHERE signature=?', (signature,)).fetchone()
-        if cached: return record, json.loads(cached[0])
+        if cached:
+            report('Using saved understanding · ' + record['file']['name'])
+            return record, json.loads(cached[0])
         visual_source = prepare_photo(source, self.root / 'photos', lambda args: self.command(args, cancel, 60)) if record['kind'] == 'image' else source
         folder = self.root / 'analysis' / signature; folder.mkdir(parents=True, exist_ok=True)
         duration = float((record.get('metadata') or {}).get('duration') or 0)
@@ -464,13 +499,21 @@ class AgentEngine:
             motion = self.models.motion(source, cancel)
         notes = []
         for index, (start,end) in enumerate(windows):
+            # Commit each complete window, so cancellation/retry does not discard
+            # every finished local-model call in a long video.
+            checkpoint = folder / f'window-{index}.json'
+            if checkpoint.is_file():
+                note = json.loads(checkpoint.read_text(encoding='utf-8'))
+                notes.append(note)
+                self.publish_analysis_progress(run, record, note)
+                report(f'Using saved observations · {index+1}/{len(windows)}')
+                continue
             report('Understanding %s · window %s/%s' % (record['file']['name'],index+1,len(windows)))
             images = []
             for n, fraction in enumerate((.15,.5,.85) if end else (0,)):
                 frame = folder / f'{index}-{n}.jpg'
-                args = ['ffmpeg','-v','error','-y']
-                if end: args += ['-ss', str(start+(end-start)*fraction)]
-                self.command(args + ['-i',visual_source,'-frames:v','1','-vf','scale=768:768:force_original_aspect_ratio=decrease',frame], cancel)
+                extract_frame(self.command, visual_source, frame, cancel,
+                              start+(end-start)*fraction if end else None)
                 images.append(str(frame))
             if record['kind'] == 'image':
                 photo_prompt = 'Describe this ONE still photo for an editor. Return a compact JSON object with exactly these keys: {"summary":"visible content in at most 50 English words","tags":["up to five visible subjects"],"uncertainty":"one short sentence or empty"}. Describe only visible subjects and composition. A photo does not show a sequence of actions. Do not guess names, places, sounds or movements. No commentary outside JSON.'
@@ -491,6 +534,9 @@ class AgentEngine:
             notes.append({'mediaId': media_id, 'start': start, 'end': end, 'summary': value['summary'][:1200],
                           'tags': value.get('tags',[])[:15], 'uncertainty': str(value.get('uncertainty',''))[:500], 'framePath': images[len(images)//2], 'facts': facts})
             self.publish_analysis_progress(run, record, notes[-1])
+            temporary = checkpoint.with_suffix('.tmp')
+            temporary.write_text(json.dumps(notes[-1],ensure_ascii=False),encoding='utf-8')
+            temporary.replace(checkpoint)
         result = {'summary': '\n'.join(n['summary'] for n in notes), 'segments': notes,
                   'source': 'sampled-frames', 'model': str(model), 'windowSeconds': window_seconds, 'framesPerWindow': 3}
         with self.library.connect() as db: db.execute('INSERT OR REPLACE INTO agent_analysis VALUES (?,?)', (signature,json.dumps(result,ensure_ascii=False)))
@@ -515,15 +561,16 @@ class AgentEngine:
                 routing = routing.replace('use 30s and 16:9 defaults for unspecified creation.',
                                           'use 16:9 and content-led duration for unspecified creation.')
             if short_skill:
-                routing = routing.replace('INPUT: ', '\nTravel Short: photos-only, mixed photos/videos, and videos-only are supported. Default selected moments, under 30 seconds; use 9:16 unless landscape photos need 16:9 to protect framing. Only static photo holds, safe letterboxing, video edits, requested music/narration and fade-through-black are implemented. Advanced packaging is not yet rendered.\nINPUT: ')
+                routing = routing.replace('INPUT: ', '\nTravel Short: photos-only, mixed photos/videos, and videos-only are supported. Default selected moments, under 30 seconds; use 9:16 unless landscape photos need 16:9 to protect framing. Default Editorial Postcard single-panel packaging, animated titles and safe photo motion.\nINPUT: ')
             # The attachment choice resumes the same understood request, not a new ambiguous turn.
-            brief = run.get('confirmedBrief') or self.models.ask(TOOL_RULE + finishing.REQUEST_SCHEMA + routing + json.dumps({'request': run['prompt'], 'priorConversation':run['context'],
+            brief = run.get('confirmedBrief') or starter_brief(run,short_skill) or self.models.ask(TOOL_RULE + finishing.REQUEST_SCHEMA + packaging.ROUTING + routing + json.dumps({'request': run['prompt'], 'priorConversation':run['context'],
                 'localCapabilities': {key: self.models.capabilities().get(key, False) for key in ('localSpeech', 'localRetrieval')},
                 'installedSkill':run.get('skillExecution'), 'editScope':run.get('editScope'),
                 'attachedCount':len(run['mediaIds']), 'hasTimeline':bool(run['previousTimeline']),
                 'attachedMedia': [{'id':mid,'kind':self.library.get(mid)[0]['kind'],'name':self.library.get(mid)[0]['file']['name']} for mid in run['mediaIds']],
                 'previousDuration':sum(s['end']-s['start'] for s in run['previousTimeline']),
                 'previousAspect':run.get('previousAspect','16:9')},ensure_ascii=False), cancel, text_mode, max_tokens=1400)
+            (folder/'routing-decision.json').write_text(json.dumps(brief,ensure_ascii=False),encoding='utf-8')
             intent = brief.get('intent')
             if run.get('editScope') and intent == 'create': intent = 'modify'
             if intent not in INTENTS: raise ValueError('Model returned an unsupported task type.')
@@ -585,8 +632,9 @@ class AgentEngine:
                 self.save(run); return
             wanted = finishing.request(brief.get('finishingRequest')) if intent in ('create','modify','plan') else finishing.request(None)
             run['finishingRequest'] = wanted
-            if run.get('editScope') and any(v != 'keep' for v in wanted.values()):
-                run.update(status='clarify', question='Music, narration and transitions currently apply to the whole edit. Clear the shot selection to change these layers.', message='Confirm edit scope')
+            run['packaging'] = packaging.resolve(brief.get('packagingRequest'), run.get('previousPackaging'), short_skill, run['prompt'])
+            if run.get('editScope') and (any(v != 'keep' for v in wanted.values()) or run['packaging'] != packaging.resolve({},run.get('previousPackaging'),short_skill)):
+                run.update(status='clarify', question='Music, narration and packaging currently apply to the whole edit. Clear the shot selection to change these layers.', message='Confirm edit scope')
                 self.save(run); return
             if wanted['music'] == 'add' and not music_catalog() and not any(self.library.get(mid)[0]['kind']=='audio' for mid in run['mediaIds']):
                 run.update(status='clarify', question='Add a music file, then ask me to use it as background music.', message='Music needed')
@@ -722,7 +770,8 @@ class AgentEngine:
             instruction = '''Plan an edit using only the supplied footage evidence. Return one compact JSON object:
 {"story":"one or two sentences describing the actual story","shots":[{"mediaId":"exact input mediaId","start":0,"end":3,"label":"specific short title","reason":"one sentence explaining this selection","section":"body"}],"limitations":[]}.
 Replace the example with real values. Times are numeric source seconds, not timecodes or cumulative film positions.
-Every file starts at 0 independently: 0 <= start < end <= sourceDurations[mediaId]. Never extend beyond the source.
+For VIDEOS only, source positions satisfy 0 <= start < end <= sourceDurations[mediaId]. Never extend a video source.
+For PHOTOS, start=0 and end is the display duration. A missing video duration never excludes a photo.
 Do not reproduce input data.
 Use short English text by default. Do not invent subjects, events, locations or sounds. Prefer clear, stable, story-relevant footage.
 Use transcriptEvidence to preserve meaningful speech and reactions, not imagined dialogue. Respect evidenceLimits.
@@ -736,6 +785,9 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
                                      'sourceKind':'image', 'suggestedDisplayDuration':3}
                                     if records[c['mediaId']]['kind']=='image' else c for c in inputs['candidates']]
             inputs['sourceKinds'] = {mid: record['kind'] for mid, record in records.items()}
+            inputs['requiredMediaIds'] = [mid for mid,record in records.items() if record['kind'] in ('image','video')] if run.get('coverageMode')=='all_usable_unique' else []
+            instruction += 'Every requiredMediaId MUST have a body shot of at least 1.2 seconds (or the whole video if shorter). Photos are first-class visual shots and must not be omitted for lacking sourceDurations. '
+            instruction += 'A short film showing each source once is all body, including its opening. Section intro is ONLY a separate highlight montage, not the only appearance of a photo. '
             default_photo_pacing = bool(run.get('contentLedDuration') and intent in ('create','plan') and not run['previousTimeline'])
             inputs['photoDisplayLimit'] = DEFAULT_PHOTO_HOLD if default_photo_pacing else PHOTO_HOLD_LIMIT
             instruction += 'Photos (sourceKinds=image) are still frames: start MUST be 0 and end is their display duration, usually 2–5 seconds, at most photoDisplayLimit. They have no source video duration, motion or original sound. Include them in the story; do not request video replacements. sourceDurations applies ONLY to videos. '
@@ -744,8 +796,10 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
             instruction += 'Use editorial story roles and trim advice. Scores and duplicate/unusable flags are suggestions, not permission to discard files. Prefer ranges within reviewed shots; sampling is not frame-accurate observation. '
             if installed_skill: instruction += PLANNING_RULE
             if short_skill:
-                instruction += 'Travel Short overrides long-story pacing: use one concise theme, no repeated intro montage, normally 2–5 seconds per still, total at most 29 seconds. Respect the requested aspect. Deliver a photo/video edit preview, not a claim of completed typography, photo animation or packaging templates. '
-            instruction += 'Audio and transitions will be planned in a separate step. Return the video shots only. Every shot start/end is measured from the beginning of its OWN SOURCE FILE. Two 6-second clips can both use start=0,end=6; never use end=12 for a 9-second source. '
+                instruction += 'Travel Short overrides long-story pacing: use one concise theme, no repeated intro montage, normally 2–5 seconds per still, total at most 29 seconds. Respect the requested aspect. '
+            if run.get('packaging',{}).get('text') == 'auto':
+                instruction += 'Each shot label is its on-screen English title: 2–5 words about visible content, no unsupported places, dates or names. The renderer adds animated titles in a reserved margin, keeps full-image framing, and leaves the last shot without text. '
+            instruction += 'Audio is planned separately. Return visual timeline shots: BOTH PHOTOS AND VIDEOS, not audio items. Video start/end refer to its OWN SOURCE FILE. Photo start=0,end=display duration. Two 6-second videos can both use start=0,end=6; never use end=12 for a 9-second video. '
             records.update({k:v[0] for k,v in music_catalog().items()})
             inputs['editScope'] = run.get('editScope')
             inputs['requestedEdit'] = edit_constraint
@@ -763,6 +817,7 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
                 preserve_scoped_ids(answer.get('shots'),run['previousTimeline'],run.get('editScope'))
                 answer['shots']=apply_default_photo_pacing(answer.get('shots'), records, default_photo_pacing)
                 shots=validate_timeline(answer.get('shots'),records,[s for s in run['previousTimeline'] if s.get('locked')])
+                if not run['previousTimeline'] and intent in ('create','plan'): shots=normalize_short_sequence(shots,run['prompt'])
                 if short_skill and sum(s['end']-s['start'] for s in shots) > 29: raise ValueError('Travel Short must be at most 29 seconds.')
                 validate_edit_scope(shots,run['previousTimeline'],run.get('editScope'))
                 validate_requested_edit(shots, edit_constraint)
@@ -776,9 +831,12 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
                 preserve_scoped_ids(answer.get('shots'),run['previousTimeline'],run.get('editScope'))
                 answer['shots']=apply_default_photo_pacing(answer.get('shots'), records, default_photo_pacing)
                 shots=validate_timeline(answer.get('shots'),records,[s for s in run['previousTimeline'] if s.get('locked')])
+                if not run['previousTimeline'] and intent in ('create','plan'): shots=normalize_short_sequence(shots,run['prompt'])
                 if short_skill and sum(s['end']-s['start'] for s in shots) > 29: raise ValueError('Travel Short must be at most 29 seconds.')
                 validate_edit_scope(shots,run['previousTimeline'],run.get('editScope'))
                 validate_requested_edit(shots, edit_constraint)
+            if intent in ('create','plan') and explicit_duration and not run.get('previousTimeline'):
+                shots=fit_photo_duration(shots,records,run['duration'])
             finish_proposal = answer.get('finishing', {})
             if any(wanted[layer]=='add' and not finish_proposal.get(layer) for layer in ('music','narration')):
                 self.progress(key, 'Planning music and narration', 'plan')
@@ -859,6 +917,15 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
         finish=finishing.validate(run.get('finishing',{}),records,expected)
         width,height={'16:9':(1280,720),'9:16':(720,1280),'1:1':(720,720)}[run['aspect']]
         pieces=[]
+        render_started=time.monotonic(); reused=0
+        settings=run.get('packaging') or {'style':'none','text':'none','motion':'none'}
+        designs=[packaging.component(s,i,len(shots),records[s['mediaId']],settings,width,height) for i,s in enumerate(shots)]
+        if (run.get('finishingRequest') or {}).get('transition') == 'none':
+            for design in designs: design['reveal']=False
+        manifest={'version':packaging.VERSION,'settings':settings,'canvas':[width,height],'fps':30,'components':designs,
+                  'scope':'Single-panel layouts; no multi-image collage or AI-generated camera motion.'}
+        (folder/f'packaging-v{run["version"]}.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+        cache_folder=self.root/'render-cache'; cache_folder.mkdir(exist_ok=True)
         silence=folder/'silence.wav'
         with wave.open(str(silence),'wb') as wav:
             wav.setnchannels(2); wav.setsampwidth(2); wav.setframerate(48000); wav.writeframes(bytes(48000*4))
@@ -868,17 +935,30 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
         for i,shot in enumerate(shots):
             self.progress(run['id'],f'Rendering shot {i+1}/{len(shots)}','render',completed=i,total=len(shots))
             record,source=self.library.get(shot['mediaId']); target=folder/f'v{run["version"]}-shot-{i}.mp4'
+            stat=source.stat()
+            design=designs[i]
+            transition=finishing.transition_filters(finish,i,len(shots),shot['end']-shot['start'])
+            signature=hashlib.sha256(json.dumps([str(source),stat.st_size,stat.st_mtime_ns,
+                shot['start'],shot['end'],{k:v for k,v in design.items() if k not in ('id','shotId')},width,height,codec,transition,packaging.VERSION],sort_keys=True).encode()).hexdigest()
+            cached=cache_folder/(signature+'.mp4')
+            if cached.is_file():
+                shutil.copy2(cached,target); pieces.append(target); reused+=1
+                self.progress(run['id'],f'Reusing rendered shot {i+1}/{len(shots)}','render')
+                continue
             if record['kind'] == 'image':
-                source = prepare_photo(source, self.root / 'photos', lambda args: self.command(args, cancel, 60))
+                source = prepare_render_photo(source, self.root / 'photos', width, height, lambda args: self.command(args, cancel, 60))
                 args=['ffmpeg','-v','error','-y','-loop','1','-framerate','30','-i',source]
             else:
                 args=['ffmpeg','-v','error','-y','-ss',str(shot['start']),'-i',source]
             has_audio=record['kind'] == 'video' and (record.get('metadata') or {}).get('hasAudio')
             if not has_audio: args+=['-stream_loop','-1','-i',silence]
-            args+=['-t',str(shot['end']-shot['start']),'-map','0:v:0','-map','0:a:0' if has_audio else '1:a:0',
-                   '-vf',f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'+finishing.transition_filters(finish,i,len(shots),shot['end']-shot['start']),
+            extra,graph=packaging.filters(self,design,width,height,folder,cancel,1 if has_audio else 2)
+            graph+=';[picture]'+(transition.lstrip(',') or 'null')+'[finished]'
+            args+=extra+['-t',str(design['durationFrames']/30),'-filter_complex_threads','1',
+                   '-filter_complex',graph,'-map','[finished]','-map','0:a:0' if has_audio else '1:a:0',
                    *codec,'-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-movflags','+faststart',target]
             self.command(args,cancel,300); pieces.append(target)
+            shutil.copy2(target,cached)
         listing=folder/f'v{run["version"]}-concat.txt'; listing.write_text('\n'.join("file '"+p.name+"'" for p in pieces))
         preview=folder/f'preview-v{run["version"]}.mp4'
         needs_mix = finish.get('music') or finish['narration'] or finish['originalVolume'] != 1
@@ -893,11 +973,17 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
         if abs(measured-expected)>max(.5,len(shots)*.1): raise ValueError('Rendered duration failed validation. Preview is not marked complete.')
         if (run.get('skillExecution') or {}).get('id') == SHORT_ID and measured >= 30:
             raise ValueError('The rendered Travel Short must be shorter than 30 seconds.')
+        self.progress(run['id'],'Checking the finished video','render')
+        self.command(['ffmpeg','-v','error','-xerror','-i',preview,'-f','null','-'],cancel,300)
         run=self.get(run['id']); run['artifacts']=[a for a in run['artifacts'] if a['type']!='preview']
+        run['renderStats']={'seconds':round(time.monotonic()-render_started,2),'reusedShots':reused,'totalShots':len(shots)}
         audible = sum(bool((records[s['mediaId']].get('metadata') or {}).get('hasAudio')) for s in shots)
         sound = 'original sound' if audible == len(shots) else 'silent sources' if not audible else 'original sound where available'
         if needs_mix: sound = 'mixed audio' if finish.get('music') or finish['narration'] else 'muted'
-        self.artifact(run,'preview',f'Rough cut · v{run["version"]}',f'{measured:.1f}s · {run["aspect"]} · {sound} · letterboxed, not auto-cropped',path=str(preview))
+        look = ('Editorial Postcard' if settings['style']=='editorial-postcard' else 'City Notes') if settings['style']!='none' else 'full-image framing'
+        effects = (', animated titles' if settings['motion'] != 'none' else ', titles') if any(d['text'] for d in designs) else ''
+        if any(d['motion'] for d in designs): effects += ', gentle photo motion'
+        self.artifact(run,'preview',f'Travel film · v{run["version"]}',f'{measured:.1f}s · {run["aspect"]} · {sound} · {look}{effects}',path=str(preview))
         run.update(status='completed',message='Preview ready. Review pacing and sound before exporting.',completed=len(shots),total=len(shots)); self.save(run)
 
     def close(self):

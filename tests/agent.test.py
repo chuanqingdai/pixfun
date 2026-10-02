@@ -62,6 +62,15 @@ def wait(agent,key,timeout=40):
 
 
 class AgentTests(unittest.TestCase):
+    def test_highlight_starter_renders_even_when_model_router_would_plan(self):
+        self.models.intent='plan'
+        run=wait(self.agent,self.start('Make a short travel highlight reel from the best moments.')['id'])
+        self.assertEqual(run['status'],'completed',run['message'])
+        self.assertEqual(run['intent'],'create')
+        self.assertEqual(run['coverageMode'],'selected')
+        self.assertTrue(any(a['type']=='preview' for a in run['artifacts']))
+        self.assertFalse(any('task router' in prompt for prompt in self.models.requests))
+
     def test_create_with_audio_without_subtitles_reaches_preview(self):
         # Real audio stream, no sidecar; model responses alone are fixtures.
         source = Path(self.temp.name) / 'audio-without-subtitles.mp4'
@@ -295,12 +304,15 @@ class AgentTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(dir=TEMP.name)
         self.library=Library(self.temp.name); self.models=FakeModels(); self.agent=AgentEngine(self.library,self.models)
+        self.addCleanup(self.temp.cleanup)
+        self.addCleanup(self.library.close)
+        self.addCleanup(self.agent.close)
         result=self.library.register([str(ROOT/'qa/media-library/captioned-test.mp4')]); self.asset=result['items'][0]['id']
-        deadline=time.monotonic()+30
+        deadline=time.monotonic()+float(os.environ.get('PIXFUN_TEST_IMPORT_TIMEOUT','30'))
         while self.library.get(self.asset)[0]['status']!='ready':
             if time.monotonic()>deadline: self.fail('Basic analysis timeout')
             time.sleep(.05)
-    def tearDown(self): self.agent.close(); self.library.close(); self.temp.cleanup()
+    def tearDown(self): pass  # addCleanup also runs when setUp fails.
     def start(self,prompt='Analyze footage',**fields):
         return self.agent.start({'prompt':prompt,'mediaIds':[self.asset],'requestId':uuid.uuid4().hex,**fields})
     def test_analysis_only_overrides_generation_and_does_not_render(self):
@@ -392,7 +404,10 @@ class AgentTests(unittest.TestCase):
         original=self.models.ask
         def intro_only(*args,**kwargs):
             answer=original(*args,**kwargs)
-            if 'shots' in answer and 'mediaId' in answer['shots'][0]: answer['shots'][0]['section']='intro'
+            if 'shots' in answer and 'mediaId' in answer['shots'][0]:
+                # A normal three-second opening now counts as real coverage.
+                # Exercise genuinely insufficient exposure, not the repaired label.
+                answer['shots'][0].update(section='intro', end=.5)
             return answer
         self.models.ask=intro_only
         r=wait(self.agent,self.start('按旅行技能做粗剪',skill={'id':'visionflow-travel-director','title':'Travel Vlog','strategy':'summary'})['id'])

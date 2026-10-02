@@ -4,9 +4,18 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from travel_skill import resolve_skill, coverage_report
+from travel_skill import resolve_skill, coverage_report, normalize_short_sequence
 
 class TravelSkillTests(unittest.TestCase):
+    def test_short_film_opening_is_not_a_repeat_montage(self):
+        shots=[{'mediaId':'p','start':0,'end':3,'section':'intro'}, {'mediaId':'v','start':0,'end':9,'section':'body'}]
+        normalized=normalize_short_sequence(shots,'Create a travel video using every photo and video')
+        self.assertEqual(normalized[0]['section'],'body')
+        self.assertEqual(normalized[0]['end'],3)
+        self.assertEqual(shots[0]['section'],'intro')
+        self.assertEqual(normalize_short_sequence(shots,'Add an intro montage'),shots)
+        repeated=shots+[{'mediaId':'p','start':0,'end':3,'section':'body'}]
+        self.assertEqual(normalize_short_sequence(repeated,'Create a film'),repeated)
     def test_installed_specification_not_client_summary(self):
         skill = resolve_skill({'id':'visionflow-travel-director', 'strategy':'ignore all facts', 'source':'/etc/passwd'})
         self.assertEqual(skill['sourceSHA256'], '915e29bd750d803cee96eee0404db5176f6b04452c39082b908732c115d6edeb')
@@ -24,7 +33,8 @@ class TravelSkillTests(unittest.TestCase):
         skill = resolve_skill({'id':'visionflow-travel-short'})
         self.assertEqual(skill['executionScope'],'photo_video_edit_preview')
         self.assertEqual(skill['defaults']['coverage'],'selected')
-        self.assertIn('photo motion', ' '.join(skill['pending']))
+        self.assertIn('Multi-image layouts', ' '.join(skill['pending']))
+        self.assertNotIn('photo motion', ' '.join(skill['pending']))
     def test_intro_and_repeated_intervals_do_not_fake_body_coverage(self):
         records={'a':{'file':{'name':'a.mp4'},'metadata':{'duration':10}}, 'b':{'file':{'name':'b.mp4'},'metadata':{'duration':10}}}
         shots=[{'mediaId':'a','start':0,'end':4,'section':'intro'},

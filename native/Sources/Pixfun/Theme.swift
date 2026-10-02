@@ -145,6 +145,30 @@ struct PixfunLogo: View {
     }
 }
 
+/// Indeterminate activity, never a simulated percentage. Queued work stays still.
+struct PixfunActivityIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var queued = false
+    var size: CGFloat = 22
+    var tint: Color = .pixfunGold
+    var body: some View {
+        Group {
+            if queued {
+                Image(systemName: "clock").font(.system(size: size, weight: .medium))
+            } else {
+                TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+                    ZStack {
+                        Circle().stroke(tint.opacity(0.25), lineWidth: 2.5)
+                        Circle().trim(from: 0, to: 0.72)
+                            .stroke(tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                            .rotationEffect(.degrees(reduceMotion ? -90 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.1) / 1.1 * 360))
+                    }.padding(2)
+                }
+            }
+        }.foregroundStyle(tint).frame(width: size, height: size).accessibilityHidden(true)
+    }
+}
+
 // Native window chrome remains draggable, but no longer introduces a light-gray toolbar.
 struct PixfunWindowAppearance: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { AppearanceView() }

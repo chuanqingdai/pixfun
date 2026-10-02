@@ -136,11 +136,12 @@ struct MediaCard: View {
                     ServiceImage(path: item.cover).aspectRatio(item.aspect, contentMode: .fit)
                         .overlay(alignment: .bottomLeading) {
                             if let status = item.processingLabel {
-                                HStack(spacing: 6) {
-                                    ProgressView().controlSize(.small).colorScheme(.dark)
+                                HStack(spacing: 7) {
+                                    PixfunActivityIndicator(queued: status == "Queued…", size: 18, tint: .pixfunBackground)
                                     Text(status).font(.pixfun(12, semibold: true))
-                                }.foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 5)
-                                    .background(.black.opacity(0.75), in: Capsule())
+                                }.foregroundStyle(Color.pixfunBackground).padding(.horizontal, 10).padding(.vertical, 7)
+                                    .background(Color.pixfunGold, in: Capsule())
+                                    .overlay(Capsule().strokeBorder(Color.black.opacity(0.25)))
                                     .padding(8).allowsHitTesting(false).accessibilityLabel(status)
                             }
                         }
@@ -391,8 +392,8 @@ struct MediaDetailView: View {
                 Text("\(item.segments.count)").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 Spacer()
                 if item.shotAnalysis?.busy == true {
-                    ProgressView().controlSize(.small)
-                    Button("Stop") { store.stopShots(item) }.buttonStyle(PixfunButtonStyle(kind: .quiet))
+                    analysisActivity(queued: item.shotAnalysis?.status == "queued")
+                    Button(item.shotAnalysis?.status == "queued" ? "Cancel" : "Stop") { store.stopShots(item) }.buttonStyle(PixfunButtonStyle(kind: .quiet))
                 } else {
                     Button(item.shotAnalysis?.segments == nil ? "Analyze shots" : "Reanalyze") { store.analyzeShots(item, force: true) }
                         .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(item.missing == true)
@@ -430,8 +431,8 @@ struct MediaDetailView: View {
                 Text(item.kind == "video" ? "Video description" : "Description").font(.pixfun(16, semibold: true))
                 Spacer()
                 if item.videoDescription?.busy == true {
-                    ProgressView().controlSize(.small)
-                    Button("Stop") { store.stopDescription(item) }.buttonStyle(PixfunButtonStyle(kind: .quiet))
+                    analysisActivity(queued: item.videoDescription?.status == "queued")
+                    Button(item.videoDescription?.status == "queued" ? "Cancel" : "Stop") { store.stopDescription(item) }.buttonStyle(PixfunButtonStyle(kind: .quiet))
                 } else if item.kind == "video" {
                     Button(item.videoDescription?.status == "ready" ? "Regenerate" : "Generate") { store.describeVideo(item, force: true) }
                         .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(item.missing == true)
@@ -451,6 +452,19 @@ struct MediaDetailView: View {
                     .textSelection(.enabled)
             }
         }
+    }
+    func analysisActivity(queued: Bool) -> some View {
+        HStack(spacing: 8) {
+            PixfunActivityIndicator(queued: queued, size: 20)
+            if queued {
+                Text("Waiting for local analysis")
+            } else {
+                Text("Analyzing locally")
+            }
+        }.font(.pixfun(12, semibold: true)).foregroundStyle(Color.pixfunGold)
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Color.pixfunGold.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .combine)
     }
     @ViewBuilder var sourceFolderLink: some View {
         if let source {

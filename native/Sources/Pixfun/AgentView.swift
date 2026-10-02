@@ -15,14 +15,12 @@ struct AgentWorkspaceView: View {
     @State private var confirmReplacement = false
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if !compact { HStack {
+            if !compact {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(store.currentProject?.title ?? "Project").font(.pixfun(18, semibold: true)).lineLimit(1)
                     if !run.busy { Text(run.statusLabel).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted) }
-                }
-                Spacer()
-                Button("New project", action: store.newProject).buttonStyle(PixfunButtonStyle(kind: .quiet))
-            } }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
             conversation
         }.padding(.horizontal, compact ? 16 : 28).padding(.top, 16).padding(.bottom, 18)
             .sheet(isPresented: $modelSettings) { AgentSettingsView() }.navigationTitle("Project")
@@ -80,10 +78,9 @@ struct AgentWorkspaceView: View {
                         ForEach(run.artifacts.filter { $0.type == "skill" }) { artifact in
                             DisclosureGroup(artifact.title) {
                                 Text(artifact.text).font(.pixfun(13)).textSelection(.enabled)
-                                Button("Export report…") { store.exportArtifact(artifact) }
                             }
                         }
-                        if !run.artifacts.filter({ !["preview", "previous_preview", "finishing", "credits", "skill"].contains($0.type) }).isEmpty {
+                        if run.artifacts.contains(where: { ["analysis", "observation", "subtitle", "match", "notice"].contains($0.type) }) {
                           if run.status == "failed" {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("Saved results").font(.pixfun(14, semibold: true))
@@ -410,10 +407,14 @@ struct AgentActivityView: View {
     let run: AgentRun
     var body: some View {
         if run.busy {
-            HStack(spacing: 10) {
-                ProgressView().controlSize(.small).accessibilityHidden(true)
-                Text(run.stageLabel).font(.pixfun(14)).foregroundStyle(Color.pixfunMuted)
-            }.accessibilityElement(children: .combine)
+            HStack(spacing: 12) {
+                PixfunActivityIndicator(queued: run.status == "queued")
+                Text(run.stageLabel).font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunGold)
+                    .fixedSize(horizontal: false, vertical: true)
+            }.padding(.horizontal, 16).padding(.vertical, 13)
+                .background(Color.pixfunGold.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.pixfunGold.opacity(0.35)))
+                .accessibilityElement(children: .combine)
         } else if let notice = run.activityNotice {
             Text(notice).font(.pixfun(13))
                 .foregroundStyle(run.status == "failed" ? .orange : Color.pixfunMuted)
@@ -589,8 +590,8 @@ struct AgentPreviousResults: View {
                     }
                 }
             }
-            if !run.artifacts.filter({ $0.type != "preview" }).isEmpty {
-                DisclosureGroup("Results & reports") {
+            if run.artifacts.contains(where: { ["analysis", "observation", "subtitle", "match", "notice", "finishing", "credits", "skill"].contains($0.type) }) {
+                DisclosureGroup("Source results") {
                     AgentSourceResults(artifacts: run.artifacts)
                 }
             }
@@ -645,7 +646,7 @@ struct AgentTimelineResult: View {
     }
 }
 
-/// One layout for current and historical evidence; reports never interrupt source findings.
+/// One layout for current and historical evidence, without report downloads.
 struct AgentSourceResults: View {
     let artifacts: [AgentArtifact]
     var body: some View {
@@ -670,7 +671,6 @@ struct AgentSourceResults: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)
                 }.font(.pixfun(13))
             }
-            AgentReportDownloads(artifacts: artifacts)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)
     }
 }
@@ -684,17 +684,32 @@ struct AgentMaterialSummaryCard: View {
     var item: MediaItem? { store.items.first { $0.id == mediaID } }
     var body: some View {
         Button { if let item { store.openMedia(item) } } label: {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 12) {
-                    Text(title).font(.pixfun(14, semibold: true)).lineLimit(1).truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(hovering ? Color.pixfunGold : Color.pixfunMuted)
-                }.foregroundStyle(Color.pixfunInk)
-                Text(summary).font(.pixfun(14)).lineSpacing(4).lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true).foregroundStyle(Color.pixfunMuted)
-                    .multilineTextAlignment(.leading)
-                if item == nil { Text("Source unavailable").font(.pixfun(11)).foregroundStyle(Color.pixfunSubtle) }
+            HStack(alignment: .top, spacing: 14) {
+                Group {
+                    if item?.kind == "audio" {
+                        ZStack {
+                            Color.white.opacity(0.045)
+                            Image(systemName: "waveform").foregroundStyle(Color.pixfunMuted)
+                        }
+                    } else {
+                        ServiceImage(path: item?.cover, fit: .fit)
+                    }
+                }
+                .frame(width: 96, height: 76)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 12) {
+                        Text(title).font(.pixfun(14, semibold: true)).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(hovering ? Color.pixfunGold : Color.pixfunMuted)
+                    }.foregroundStyle(Color.pixfunInk)
+                    Text(summary).font(.pixfun(14)).lineSpacing(4).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true).foregroundStyle(Color.pixfunMuted)
+                        .multilineTextAlignment(.leading)
+                    if item == nil { Text("Source unavailable").font(.pixfun(11)).foregroundStyle(Color.pixfunSubtle) }
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 .background(hovering ? Color.pixfunRaised : Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(hovering ? Color.pixfunGold : Color.pixfunLine))
@@ -707,29 +722,7 @@ struct AgentMaterialSummaryCard: View {
     }
 }
 
-struct AgentReportDownloads: View {
-    @EnvironmentObject var store: WorkspaceStore
-    let artifacts: [AgentArtifact]
-    var files: [AgentArtifact] { artifacts.filter { $0.path != nil && !["preview", "previous_preview"].contains($0.type) } }
-    var body: some View {
-        if !files.isEmpty {
-            DisclosureGroup("Download reports · \(files.count)") {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(files) { artifact in
-                        HStack(spacing: 12) {
-                            Image(systemName: "doc.text").foregroundStyle(Color.pixfunMuted)
-                            Text(artifact.title).font(.pixfun(13)).fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
-                            Button("Export…") { store.exportArtifact(artifact) }.buttonStyle(PixfunButtonStyle(kind: .quiet))
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)
-            }.font(.pixfun(13)).frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-/// The answer is visible; only supporting shot evidence and downloads are folded.
+/// The answer is visible; additional evidence is folded and transcripts can be exported.
 struct AgentEvidenceResults: View {
     @EnvironmentObject var store: WorkspaceStore
     let run: AgentRun
@@ -748,7 +741,7 @@ struct AgentEvidenceResults: View {
             ForEach(run.artifacts.filter { $0.type == "notice" }) { item in
                 Text(item.text).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
             }
-            ForEach(run.artifacts.filter { $0.type == "file" && $0.path != nil }) { item in
+            ForEach(run.artifacts.filter { $0.type == "file" && $0.path?.lowercased().hasSuffix(".srt") == true }) { item in
                 Button("Export \(item.title)…") { store.exportArtifact(item) }
                     .buttonStyle(PixfunButtonStyle(kind: .secondary))
             }
@@ -783,7 +776,6 @@ struct AgentAnalysisResults: View {
             ForEach(run.artifacts.filter { $0.type == "notice" }) { notice in
                 Text("\(notice.title): \(notice.text)").font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).textSelection(.enabled)
             }
-            AgentReportDownloads(artifacts: run.artifacts)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

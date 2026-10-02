@@ -30,7 +30,8 @@ test('Travel Short is second without a badge and exposes the planning specificat
  assert.equal(skill.version,'1.1');assert.equal(skill.workflow.length,9);assert.equal(skill.templates.length,6);
  assert.equal(new Set(skill.templates.map(t=>t.title)).size,6);
  assert.equal(skill.materialCases.length,3);assert(skill.materialCases[0].title.includes('3 photos'));
- assert.equal(skill.actionTitle,'Use this skill');assert(skill.capabilityNote.includes('not connected'));
+ assert.equal(skill.actionTitle,'Use this skill');assert(skill.capabilityNote.includes('single-panel layouts'));
+ assert(skill.capabilityNote.includes('not yet rendering presets'));
  assert(buildBrief(skill,'').includes('Honor the requested outcome'));
  const path=require('node:path'),root=path.join('creator-skills',path.dirname(skill.source));
  const source=fs.readFileSync(path.join('creator-skills',skill.source),'utf8');

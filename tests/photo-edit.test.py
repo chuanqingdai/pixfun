@@ -1,6 +1,7 @@
 """Real import/decode/render tests; model descriptions and edit choices are fixtures."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import threading
 import unittest
@@ -17,15 +18,19 @@ class PhotoEditTests(unittest.TestCase):
     tearDown = base.AgentTests.tearDown
     start = base.AgentTests.start
 
-    def planner(self):
+    def planner(self, opening=False):
         original = self.models.ask
         self.models.intent = 'create'
         def ask(prompt, cancel, *args, **kwargs):
             if 'Plan an edit using only' in prompt:
                 data = json.loads(prompt.split('INPUT: ')[-1])
+                self.assertNotIn('Return the video shots only', prompt)
+                self.assertIn('BOTH PHOTOS AND VIDEOS', prompt)
                 ids = list(dict.fromkeys(c['mediaId'] for c in data['candidates']))
+                if data.get('coverageMode')=='all_usable_unique': self.assertEqual(set(data['requiredMediaIds']),set(ids))
                 return {'story':'Fixture picture sequence', 'shots':[
-                    {'mediaId':mid,'start':0,'end':3,'label':'Travel view','reason':'Fixture complementary view'} for mid in ids]}
+                    {'mediaId':mid,'start':0,'end':3,'label':'Travel view','reason':'Fixture complementary view',
+                     'section':'intro' if opening and index==0 else 'body'} for index,mid in enumerate(ids)]}
             return original(prompt, cancel, *args, **kwargs)
         return patch.object(self.models, 'ask', side_effect=ask)
 
@@ -37,7 +42,7 @@ class PhotoEditTests(unittest.TestCase):
         before = {mid:self.library.get(mid)[1].read_bytes() for mid in ids}
         with self.planner():
             run = base.wait(self.agent, self.start(f'Create a {len(ids)*3}-second travel video {aspect}',
-                mediaIds=ids, skill={'id':skill, 'title':'Travel', 'strategy':'Use the installed travel strategy.'})['id'], timeout=90)
+                mediaIds=ids, skill={'id':skill, 'title':'Travel', 'strategy':'Use the installed travel strategy.'})['id'], timeout=float(os.environ.get('PIXFUN_TEST_RENDER_TIMEOUT','90')))
         self.assertEqual(run['status'], 'completed', run['message'])
         self.assertEqual({s['mediaId'] for s in run['timeline']}, set(ids))
         self.assertEqual(run['question'], '')
@@ -63,6 +68,14 @@ class PhotoEditTests(unittest.TestCase):
         self.assertEqual(sum(s['end']-s['start'] for s in done['timeline']),10)
 
     def test_mixed_photos_and_video(self): self.verify([self.asset, self.photos()[0]])
+    def test_short_mixed_opening_does_not_reconfirm_existing_material(self):
+        ids=[self.photos()[0],self.asset]
+        with self.planner(opening=True):
+            run=base.wait(self.agent,self.start('Create a travel video using every photo and video',mediaIds=ids)['id'],timeout=90)
+        self.assertEqual(run['status'],'completed',run['message'])
+        self.assertEqual(run['question'],'')
+        self.assertEqual(run['timeline'][0]['section'],'body')
+        self.assertFalse(any('Adjusting the edit' in event for event in run['events']))
     def test_video_only(self): self.verify([self.asset])
     def test_travel_short_photos_portrait(self):
         run = self.verify(self.photos(), 'visionflow-travel-short', '9:16')
