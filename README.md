@@ -8,13 +8,21 @@ build outputs and new QA captures are intentionally excluded. Existing historica
 QA files remain tracked.
 
 The 199 MB offline Mac sample
-`native/Examples/wild-alaska/wild-alaska.mp4` is also excluded from ordinary Git.
-Its thumbnails, manifest and source attribution are included. Before packaging
-on a new machine, copy the sample from an existing checkout into that exact path,
-or obtain the credited NPS source and captions and run
-`scripts/build-native-example.py` using the input paths documented in that script.
-The native packager checks for this file and stops if it is missing. Website
-case studies do not depend on this file.
+`native/Examples/wild-alaska/wild-alaska.mp4` is versioned with **Git LFS**.
+Its thumbnails, manifest and source attribution remain ordinary Git files.
+Install Git LFS before cloning (`brew install git-lfs` on macOS). In an existing
+checkout, download the full sample before packaging:
+
+```sh
+git lfs install --local
+git lfs pull
+git lfs fsck
+```
+
+The MP4 must be the real video, not the small LFS pointer included in some ZIP
+downloads. The native packager rejects a missing or incomplete sample. Website
+case studies do not depend on this file. To regenerate the sample from its
+credited source, see the input paths in `scripts/build-native-example.py`.
 
 ## Native Mac client
 

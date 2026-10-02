@@ -28,7 +28,3 @@ native/.build/
 !/data/outputs/
 /qa/
 .DS_Store
-
-# This 199 MB offline sample exceeds GitHub's ordinary Git file limit.
-# Keep it locally; see README.md before building the native app elsewhere.
-/native/Examples/wild-alaska/wild-alaska.mp4

@@ -57,7 +57,11 @@ for (const font of ['dm-sans-regular.ttf', 'dm-sans-semibold.ttf', 'DM-Sans-OFL.
 fs.mkdirSync(path.join(resources, 'public'), {recursive:true});
 const example = path.join(root, 'native/Examples/wild-alaska');
 if (!fs.existsSync(path.join(example, 'manifest.json')) || !fs.existsSync(path.join(example, 'wild-alaska.mp4'))) {
-  throw new Error('Missing native example. Run python3 scripts/build-native-example.py first.');
+  throw new Error('Missing native example. Run git lfs install --local && git lfs pull first.');
+}
+const exampleManifest = JSON.parse(fs.readFileSync(path.join(example, 'manifest.json'), 'utf8'));
+if (fs.statSync(path.join(example, 'wild-alaska.mp4')).size !== exampleManifest.record.file.size) {
+  throw new Error('Native example is incomplete or still an LFS pointer. Run git lfs pull && git lfs fsck before packaging.');
 }
 fs.cpSync(example, path.join(resources, 'public/examples/wild-alaska'), {recursive:true});
 for (const skill of skills) fs.copyFileSync(path.join(root, `public/media/travel/${skill.image}.jpg`), path.join(resources, `SkillCovers/${skill.image}.jpg`));
