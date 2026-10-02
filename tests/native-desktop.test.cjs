@@ -21,11 +21,13 @@ test('analysis answers are visible in both latest and earlier turns; evidence st
   const view = read('native/Sources/Pixfun/AgentView.swift');
   assert.equal((view.match(/AgentAnalysisResults\(run: run, report: report\)/g) || []).length, 2);
   const report = view.split('struct AgentAnalysisResults: View')[1].split('struct AgentSettingsView')[0];
-  assert.ok(report.indexOf('Text(report.overview)') < report.indexOf('DisclosureGroup'));
-  assert.ok(report.indexOf('Text(material.content)') < report.indexOf('DisclosureGroup'));
-  assert.ok(report.indexOf('Text(material.suggestion)') < report.indexOf('DisclosureGroup'));
-  assert.match(report, /store.openMedia\(item, at: start\)/);
-  assert.match(report, /Download reports/);
+  assert.ok(report.indexOf('Text(report.overview)') < report.indexOf('AgentMaterialSummaryCard('));
+  assert.match(report, /summary: material.content, mediaID: material.mediaId/);
+  assert.match(report, /AgentReportDownloads\(artifacts: run.artifacts\)/);
+  const card = view.split('struct AgentMaterialSummaryCard: View')[1].split('struct AgentReportDownloads')[0];
+  assert.match(card, /store.openMedia\(item\)/);
+  assert.match(card, /Text\(summary\).*lineLimit\(3\)/);
+  assert.match(view, /DisclosureGroup\("Download reports/);
 });
 test('composer contains model settings and uses consistent attachment toolbar labels', () => {
   const home = read('native/Sources/Pixfun/HomeView.swift');
@@ -67,7 +69,9 @@ test('Agent is one conversation with inline videos, actual activity and a persis
   assert.match(agent, /AgentVideoMessage\(artifact: preview, aspect: run.aspect\)/);
   assert.doesNotMatch(agent, /Work log/);
   assert.match(agent, /Text\(run.stageLabel\)/);
-  assert.doesNotMatch(agent, /Text\(run.message\)/);
+  const activity = agent.split('struct AgentActivityView: View')[1].split('struct AgentFailureCard')[0];
+  assert.doesNotMatch(activity, /Text\(run.message\)/);
+  assert.match(agent, /DisclosureGroup\("Technical details"\)\s*\{\s*Text\(run.message\)/);
   assert.match(agent, /followingLatest/);
   assert.match(agent, /Latest ↓/);
   assert.match(agent, /createdAt \?\?/);
@@ -109,13 +113,15 @@ test('media detail is an in-window child page, with a copyable original path', (
   const media = read('native/Sources/Pixfun/MediaView.swift');
   assert.doesNotMatch(workspace,/\.sheet\(/);
   assert.match(workspace,/if let item = store.detail/);
-  assert.match(media,/Back to Media/);
+  assert.match(media,/Label\(store.mediaBackTitle/);
+  assert.match(read('native/Sources/Pixfun/WorkspaceStore.swift'), /mediaReturnProjectID == nil \? "Media" : "Conversation"/);
   assert.match(media,/source\?\.path/);
   assert.match(media,/Copy path/);
   assert.match(media,/textSelection\(\.enabled\)/);
   assert.match(media,/without copying or uploading originals/);
   assert.match(media,/Filter by folder/);
-  assert.match(media,/Search by name/);
+  assert.match(media,/MediaSearchControls\(\)/);
+  assert.match(read('native/Sources/Pixfun/MediaSearch.swift'), /Search names, scenes, dialogue/);
 });
 test('source folder is a quiet metadata link rather than a banner above the player', () => {
   const media = read('native/Sources/Pixfun/MediaView.swift');
@@ -148,7 +154,7 @@ test('circular place shortcuts and their hidden filter state are removed', () =>
   assert.doesNotMatch(read('native/Sources/Pixfun/WorkspaceStore.swift'), /mediaFocus|placeFacets|toggleFocus|showPlace/);
   assert.doesNotMatch(read('native/Sources/Pixfun/Models.swift'), /MediaFocus|PlaceFacet|placeKey/);
   assert.match(media, /Filter by folder/);
-  assert.match(media, /Search by name/);
+  assert.match(media, /MediaSearchControls\(\)/);
   assert.match(media, /Text\(location\)/);
   assert.doesNotMatch(media, /MediaPeopleSection|scanPeople|peopleScan/);
   assert.doesNotMatch(read('native/Sources/Pixfun/WorkspaceStore.swift'), /peopleScan|scanPeople|peopleIndex|mergePerson/);
@@ -252,7 +258,10 @@ test('conversation has a compact centered composer and guarded task actions', ()
   assert.match(agent, /minimumHeight: 36, maximumHeight: 128/);
   assert.match(agent, /onSubmit: send/);
   assert.match(editor, /modifierFlags.contains\(\.shift\)/);
-  assert.match(agent, /confirmationDialog\("Stop the current task/);
+  assert.doesNotMatch(agent, /confirmationDialog\("Stop the current task/);
+  assert.match(agent, /if confirmReplacement \{/);
+  assert.match(agent, /Button\("Stop & send"\)/);
+  assert.match(agent, /Button\("Keep working"\)/);
   assert.match(agent, /if run.busy \{ confirmReplacement = true \}/);
   assert.match(store, /guard !agentActionPending/);
   const timeline = read('native/Sources/Pixfun/EditorView.swift');
@@ -261,11 +270,14 @@ test('conversation has a compact centered composer and guarded task actions', ()
   assert.doesNotMatch(agent, /var timelineEditor/);
   assert.doesNotMatch(agent, /Text\(entry.summary\)/);
   assert.doesNotMatch(agent, /entry.taskDescription/);
-  assert.match(agent, /For your next message/);
+  assert.match(agent, /if !store.composerPendingAttachments.isEmpty/);
+  assert.match(agent, /ForEach\(store.composerPendingAttachments\)/);
+  assert.match(agent, /AgentMessageAttachments\(/);
   assert.doesNotMatch(agent, /run.events.enumerated|ProgressView\(value: Double\(min\(run.completed/);
   assert.match(agent, /else if let notice = run.activityNotice/);
   assert.match(agent, /What would you like to change\?/);
-  assert.match(agent, /else \{ store.composerDraft.prompt \+= "\\n" \+ value \}/);
+  assert.match(agent, /store.submitAgent\(prompt: value\)/);
+  assert.match(agent, /disabled\(!store.canApplyAgentOption\)/);
 });
 test('media selection is legible over bright and dark covers with non-color selection cues',()=>{
  const media=fs.readFileSync('native/Sources/Pixfun/MediaView.swift','utf8');

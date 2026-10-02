@@ -10,12 +10,19 @@ struct SkillsView: View {
                     HStack {
                         Button { selected = nil } label: { Label("All skills", systemImage: "chevron.left") }.buttonStyle(PixfunButtonStyle(kind: .quiet))
                         Spacer()
-                        Button("Use skill") { store.use(skill) }.buttonStyle(PixfunButtonStyle(kind: .primary))
+                        Button(skill.actionTitle ?? "Use skill") { store.use(skill) }.buttonStyle(PixfunButtonStyle(kind: .primary))
                     }
                     PageHeading(title: skill.title, subtitle: skill.copy)
                     HStack(alignment: .top, spacing: 30) {
                         skillImage(skill).aspectRatio(16.0 / 9.0, contentMode: .fit).frame(width: 290).clipShape(RoundedRectangle(cornerRadius: 12))
                         section("For creators", skill.value)
+                    }
+                    if let note = skill.capabilityNote {
+                        Label(note, systemImage: "info.circle")
+                            .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.pixfunGold.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                     }
                     Divider()
                     Text("Story framework").font(.pixfun(18, semibold: true))
@@ -37,6 +44,34 @@ struct SkillsView: View {
                         section("Material strategy", skill.handling.joined(separator: "\n\n"))
                     }
                     section("Keep it honest", skill.avoid)
+                    if let cases = skill.materialCases {
+                        Divider()
+                        Text("Made for your material").font(.pixfun(18, semibold: true))
+                        ForEach(cases, id: \.title) { point in section(point.title, point.body) }
+                    }
+                    if let templates = skill.templates {
+                        Divider()
+                        Text("Six packaging templates").font(.pixfun(18, semibold: true))
+                        Text("Choose one visual language. Adjust the intensity to your material.")
+                            .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), alignment: .topLeading)], alignment: .leading, spacing: 22) {
+                            ForEach(templates, id: \.title) { point in
+                                section(point.title, point.body).padding(18)
+                                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                                    .background(.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+                    }
+                    if let workflow = skill.workflow {
+                        Divider()
+                        Text("Nine-step workflow").font(.pixfun(18, semibold: true))
+                        ForEach(Array(workflow.enumerated()), id: \.offset) { index, point in
+                            HStack(alignment: .top, spacing: 18) {
+                                Text(String(format: "%02d", index + 1)).font(.pixfun(15, semibold: true).monospacedDigit()).foregroundStyle(Color.pixfunGold)
+                                section(point.title, point.body)
+                            }
+                        }
+                    }
                     section("Example brief", skill.example)
                     if skill.id == "visionflow-travel-director" {
                         section("Available in Agent", "Route-led storytelling, complete actions, content-led length and source coverage checks. Create a story plan or a video rough cut with original sound, then refine it in the conversation.")

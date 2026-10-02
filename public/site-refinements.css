@@ -17,7 +17,7 @@
 .travel-faq-list summary::-webkit-details-marker{display:none}
 .travel-faq-list summary::after{content:'+';position:absolute;right:4px;top:50%;margin-top:-12px;width:24px;height:24px;text-align:center;font:400 22px/24px 'DM Sans',sans-serif;color:var(--accent);transition:transform .25s var(--site-ease)}
 .travel-faq-list details[open] summary::after{transform:rotate(45deg)}
-#how .workflow-steps button{transition:color .2s,border-color .2s}
+#how .workflow-steps button{white-space:nowrap;transition:color .2s,border-color .2s}
 .application-page :is(input,textarea,select){transition:border-color .2s,box-shadow .2s}
 .application-page :is(input,textarea,select):focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:3px}
 .application-page .choice-options label:has(input:checked){background:#d7b58112;border-color:var(--accent)}
@@ -44,7 +44,7 @@
   #how .demo-summary{display:none}
   #how .workflow-shell{gap:20px;padding-inline:22px}
   #how .workflow-steps{gap:4px 12px}
-  #how .workflow-steps button{align-items:flex-start;min-height:62px;font-size:12px;line-height:1.5;gap:7px}
+  #how .workflow-steps button{align-items:center;min-height:48px;font-size:12px;line-height:1.5;gap:7px}
   #how .workflow-steps button span{font-size:10px;padding-top:2px;flex-shrink:0}
   #how .demo-context h4{margin-bottom:10px}
   #how #demoRequirements{font-size:16px;min-height:148px}
@@ -57,6 +57,7 @@
   .application-page .choice-options label{min-height:44px;display:flex;align-items:center}
 }
 @media(max-width:600px){
+  #how .workflow-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
   .travel-hero .hero-intro{padding-top:116px;padding-bottom:28px}
   .hero-intro .travel-lead{line-height:1.7}
   .hero-bottom .film-selector{gap:10px 16px}

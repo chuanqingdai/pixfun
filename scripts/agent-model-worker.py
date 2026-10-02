@@ -73,7 +73,8 @@ for line in sys.stdin:
                 model, processor, device = search._load()
                 scores = []
                 with torch.no_grad():
-                    text = search._txt_emb(model, processor(text=[job['query']],return_tensors='pt',padding='max_length',max_length=64).to(device))
+                    limit = getattr(model.config.text_config, 'max_position_embeddings', 64)
+                    text = search._txt_emb(model, processor(text=[job['query']],return_tensors='pt',padding='max_length',max_length=limit,truncation=True).to(device))
                     for i in range(0,len(job['images']),16):
                         images = [Image.open(p).convert('RGB') for p in job['images'][i:i+16]]
                         vectors = search._img_emb(model,processor(images=images,return_tensors='pt').to(device))
@@ -88,12 +89,14 @@ for line in sys.stdin:
                     word_timestamps=False, condition_on_previous_text=False)
                 value = {'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
                                   for s in result.get('segments', []) if s.get('text', '').strip()]}
-            else:
+            elif job['operation'] == 'ask':
                 if engine is None:
                     from vf_engine import Engine
                     engine = Engine('mlx', job['model'], max_tokens=1800)
                 engine.max_tokens = job.get('maxTokens', 1800)
                 value, usage = engine.ask(job['prompt'], job.get('images', []))
+            else:
+                raise ValueError('Unsupported local operation')
         print(json.dumps({'ok': True, 'value': value}, ensure_ascii=False), flush=True)
     except Exception as error:
         print(json.dumps({'ok': False, 'error': type(error).__name__ + ': ' + str(error)[:300]}), flush=True)

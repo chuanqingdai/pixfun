@@ -10,54 +10,12 @@ import app as media
 from agent_models import AgentCancelled
 from video_description import VideoDescriptions
 
-SHOT_PROMPT = '''你是一名资深影视剪辑师和分镜分析师。请从“后续可剪辑性”的角度，对视频进行分镜拆解和描述，而不是只做普通视觉识别。
-
-每个分镜需要描述：
-1. 主体、场景和正在发生的动作，包含的人物。
-2. 景别、机位、拍摄方式和运镜；
-3. 镜头内部发生的关键变化；
-4. 人物状态、Reaction 或重要对白。
-5. 有价值的同期声和环境声；
-6. 这个镜头在故事中的作用，如环境建立、行动、信息、转折、Reaction、高光、高潮、过渡或结尾；
-7. 剪辑价值：必留 / 推荐 / 可压缩 / 可删除，并给出建议使用时长；
-8. 如有必要，说明适合接什么镜头，或是否与其他镜头重复。
-
-描述必须具体、客观、简洁，重点回答：
-“这一镜发生了什么、为什么值得用、在故事里起什么作用、剪辑时应该怎么处理。”
-
-分镜切分原则：
-当镜头、场景、主体、机位、景别、行为阶段或画面语义明显变化时切分；不要因轻微运动、抖动或普通动作变化过度切分。以“这段能否被独立选择、删除、缩短或排序”为标准。
-
-输出只使用 JSON：
-
-{
-  "video_summary": "整条视频的一句话描述",
-  "shots": [
-    {
-      "shot_id": "shot_001",
-      "start_time": "00:00:00.000",
-      "end_time": "00:00:08.200",
-      "description": "人物沿山路向上徒步，背景出现雪山，人物明显疲惫。",
-      "shot_size": "全景",
-      "capture_type": "跟拍",
-      "camera_motion": "跟随",
-      "story_role": ["行动", "人物状态"],
-      "dialogue": "终于快到了",
-      "reaction": "疲惫",
-      "audio": ["脚步声", "呼吸声", "风声"],
-      "importance_score": 82,
-      "duplicate_candidate": false,
-      "unusable_candidate": false,
-      "edit_recommendation": {
-        "level": "推荐",
-        "recommended_duration_sec": 3,
-        "reason": "可用于交代徒步过程和人物状态"
-      }
-    }
-  ]
-}
-
-判断时始终优先考虑：这镜发生了什么、在故事里有什么作用、是否值得进入最终成片、应该保留多久。'''
+SHOT_PROMPT = '''You are a senior film editor and shot analyst. Analyze footage for editability, not ordinary object recognition. Write generated descriptions and advice in English. Preserve verbatim dialogue in its source language.
+Each shot must describe subjects including people, setting and action; shot size, viewpoint, capture method and movement; key changes within the shot; reactions and verified dialogue; supported sound evidence; story role (establishing, action, information, turning point, reaction, highlight, climax, transition or ending); editing value, recommended duration and reason; useful connections or possible repetition.
+Split on significant changes in camera shot, scene, subject, viewpoint, framing, behavior phase or semantics. Do not split ordinary motion or shake. Use independent selectability, removal, shortening or reordering as the criterion.
+Be concrete, objective and concise: what happens, why use it, what story role it plays and how to edit it.
+Return JSON only: {"video_summary":"One English sentence","shots":[{"shot_id":"shot_001","start_time":"00:00:00.000","end_time":"00:00:08.200","description":"Observed action and key change","shot_size":"Wide shot","capture_type":"Tracking","camera_motion":"Following","story_role":["Action"],"dialogue":"","reaction":"","audio":[],"importance_score":82,"duplicate_candidate":false,"unusable_candidate":false,"edit_recommendation":{"level":"Recommended","recommended_duration_sec":3,"reason":"Concrete editorial use"}}]}.
+Use edit levels Keep, Recommended, Shorten or Remove. Do not invent unknown information. Prioritize the event, story role, edit value and useful duration.'''
 
 def stamp(seconds):
     ms=round(seconds*1000); sec,ms=divmod(ms,1000); minute,sec=divmod(sec,60); hour,minute=divmod(minute,60)
@@ -86,8 +44,8 @@ def validate_shot(value,start,end,cues,has_audio=True):
     if not isinstance(edit,dict) or set(edit)!={'level','recommended_duration_sec','reason'}: raise ValueError('Invalid edit recommendation.')
     duration=edit['recommended_duration_sec']
     if isinstance(duration,bool) or not isinstance(duration,(int,float)) or not math.isfinite(duration) or not 0<=duration<=end-start+.001: raise ValueError('Recommended duration must fit the shot.')
-    if edit['level'] not in ('必留','推荐','可压缩','可删除') or not isinstance(edit['reason'],str) or not edit['reason'].strip(): raise ValueError('Give an edit level and concrete reason.')
-    if duration==0 and edit['level']!='可删除': raise ValueError('Only 可删除 may recommend zero seconds.')
+    if edit['level'] not in ('Keep','Recommended','Shorten','Remove','必留','推荐','可压缩','可删除') or not isinstance(edit['reason'],str) or not edit['reason'].strip(): raise ValueError('Give an edit level and concrete reason.')
+    if duration==0 and edit['level'] not in ('Remove','可删除'): raise ValueError('Only Remove may recommend zero seconds.')
     # Audio classification is not available. ASR is speech evidence, not proof of
     # footsteps/wind/music. Never pass the model's imagined sound into the result.
     value={**value,'audio':[]}
@@ -99,11 +57,11 @@ def validate_shot(value,start,end,cues,has_audio=True):
 def analysis_signature(agent,item,source,mode):
     payload=[str(source),source.stat().st_size,source.stat().st_mtime_ns,item.get('context'),
              ((item.get('result') or {}).get('analysis') or {}).get('subtitleCues'),
-             agent.models.vision,agent.models.speech,mode,agent.models.capabilities().get('visionModel') if mode=='cloud' else '',SHOT_PROMPT,'editorial-v1']
+             agent.models.vision,agent.models.speech,mode,agent.models.capabilities().get('visionModel') if mode=='cloud' else '',SHOT_PROMPT,'editorial-v2-english']
     return hashlib.sha256(json.dumps(payload,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
 
 def summarize_video(agent,evidence,cancel,mode):
-    prompt='用一句自然中文概括视频的事件演变，不写关键词列表。不要新增人数、人物身份、关系或地点，尤其不要把不同镜头中的人数相加。只输出JSON {"video_summary":"一句话"}。\n'+json.dumps(evidence,ensure_ascii=False)
+    prompt='VIDEO_SUMMARY: Summarize the event sequence in one natural English sentence, not tags.不要新增人数、人物身份、关系或地点，尤其不要把不同镜头中的人数相加。只输出JSON {"video_summary":"一句话"}。\n'+json.dumps(evidence,ensure_ascii=False)
     people_count=r'([一二两三四五六七八九十\d]+)(?:名|位|个)?(?:人物|人|徒步者|露营者)'
     supported={c.replace('两','二') for c in re.findall(people_count,json.dumps(evidence,ensure_ascii=False))}
     for attempt in range(2):
@@ -124,7 +82,7 @@ def analyze_shots(agent,run,media_id,cancel,progress):
     if not 0<duration<=3600: raise ValueError('Shot analysis supports videos up to 60 minutes.')
     progress('Reading visual changes across the video')
     item,observations=agent.observe(run,media_id,cancel,progress=progress,window_seconds=6)
-    helper=VideoDescriptions.__new__(VideoDescriptions); helper.agent=agent
+    helper=VideoDescriptions(agent.library, agent, recover_interrupted=False)
     progress('Checking speech evidence')
     cues,speech_source=helper.speech(item,source,cancel)
     progress('Detecting candidate visual cuts')
@@ -142,7 +100,7 @@ def analyze_shots(agent,run,media_id,cancel,progress):
             agent.command(['ffmpeg','-v','error','-y','-ss',str(max(0,min(duration-.03,t))),'-i',source,'-frames:v','1','-vf','scale=768:768:force_original_aspect_ratio=decrease',path],cancel)
             paths.append(str(path))
         return paths
-    boundaries=[{'time':0.,'type':'video_start','reason':'视频起点'}]
+    boundaries=[{'time':0.,'type':'video_start','reason':'Video start'}]
     for index,(t,kind) in enumerate(candidates):
         if t-boundaries[-1]['time']<.5 or duration-t<.5: continue
         progress(f'Reviewing edit boundaries · {index+1}/{len(candidates)}')
@@ -177,12 +135,15 @@ def analyze_shots(agent,run,media_id,cancel,progress):
         segments.append({'id':shot['shot_id'],'mediaId':media_id,'start':start,'end':end,'label':shot['description'],
                          'summary':shot['description'],'tags':shot['story_role'],'framePath':paths[1],
                          'thumbnailUrl':media.media_url('output',folder.name,Path(paths[1]).name),
-                         'boundary':{'type':boundary['type']},'note':boundary['reason']+('（语义抽样边界，约 ±3 秒，剪辑前核对）' if boundary['type']=='semantic_change' else ''),
+                         'boundary':{'type':boundary['type']},'note':boundary['reason']+(' (sampled semantic boundary, about ±3s; review before editing)' if boundary['type']=='semantic_change' else ''),
                          'editorial':shot})
+        publish = getattr(agent, 'publish_analysis_progress', None)
+        if publish: publish(run, item, segments[-1])
     overview=helper.compact([{'start':s['start_time'],'description':s['description']} for s in shots],cancel)
     summary=summarize_video(agent,overview,cancel,mode)
     output={'video_summary':summary,'shots':shots}
     result={'summary':output['video_summary'],'output':output,'segments':segments,'source':'reviewed-cuts-and-semantic-candidates',
+            'speechEvidence': {'cues': cues, 'source': speech_source},
             'limitations':['Visual analysis is sampled, not frame-exhaustive. Semantic boundaries need frame-level review.',
                             'Environmental sound classification is unavailable. Dialogue is transcript evidence, not speaker identification.',
                             'Importance and duplicate/unusable flags are editorial suggestions, not deletion actions.']}

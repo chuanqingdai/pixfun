@@ -56,7 +56,7 @@ class ModelGateway:
     def capabilities(self):
         runtime = Path(os.environ.get('PIXFUN_VF_ROOT', str(Path.home() / 'work/visionflow/vf-agent')))
         available = Path(self.python).is_file() and Path(self.worker).is_file() and (runtime / 'scripts/vf_engine.py').is_file()
-        tools = [('ask','Qwen3-VL · intent / vision / planning',bool(available and self.vision)),
+        tools = [('ask','Qwen3-VL · intent / tool selection / vision / planning',bool(available and self.vision)),
                  ('transcribe','Whisper · speech transcription',bool(available and self.speech)),
                  ('rank','SigLIP2 · semantic retrieval',bool(available and self.retrieval)),
                  ('inspect','OpenCV quality / Apple Vision OCR',available),
@@ -79,6 +79,8 @@ class ModelGateway:
             p.stdin.close(); p.stdout.close()
 
     def local(self, payload, cancel):
+        if payload.get('operation') not in {'ask', 'transcribe', 'inspect', 'rank', 'motion'}:
+            raise ValueError('Unsupported local operation')
         with self.lock:
             if cancel.is_set(): raise AgentCancelled()
             if not Path(self.python).is_file() or not payload.get('model'):
@@ -105,6 +107,8 @@ class ModelGateway:
             self.close(); raise TimeoutError('Local inference timed out; completed results are retained.')
 
     def ask(self, prompt, cancel, mode='local', images=None, max_tokens=1800):
+        from product_language import ENGLISH_DEFAULT
+        prompt = ENGLISH_DEFAULT + prompt
         if mode == 'local':
             result = self.local({'operation': 'ask', 'model': self.vision, 'prompt': prompt,
                                  'images': images or [], 'maxTokens': max_tokens}, cancel)

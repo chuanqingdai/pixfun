@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "tracks": [
+    {"id":"music-carefree","title":"Carefree","file":"Carefree.mp3","duration":205,"mood":"bright, lighthearted; departures, city walks and daytime travel","author":"Kevin MacLeod","source":"https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400037","license":"CC BY 4.0","licenseURL":"https://creativecommons.org/licenses/by/4.0/"},
+    {"id":"music-life-of-riley","title":"Life of Riley","file":"Life of Riley.mp3","duration":235,"mood":"warm, relaxed, uplifting; road trips, friends and family","author":"Kevin MacLeod","source":"https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400054","license":"CC BY 4.0","licenseURL":"https://creativecommons.org/licenses/by/4.0/"},
+    {"id":"music-with-the-sea","title":"With the Sea","file":"With the Sea.mp3","duration":163,"mood":"reflective, quiet piano; coastlines, landscapes and endings","author":"Kevin MacLeod","source":"https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100008","license":"CC BY 4.0","licenseURL":"https://creativecommons.org/licenses/by/4.0/"}
+  ]
+}

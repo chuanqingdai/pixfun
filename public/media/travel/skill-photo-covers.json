@@ -2,6 +2,14 @@
   "note": "Real footage stills only; no generated or composited main images.",
   "covers": [
     {
+      "id": "visionflow-travel-short",
+      "image": "skill-visionflow-travel-short-photo-v3",
+      "source": "public/media/travel/story/vista.jpg",
+      "url": "https://mixkit.co/free-stock-video/landscape-with-mountains-and-a-lake-seen-from-above-42490/",
+      "kind": "real stock footage still",
+      "license": "Mixkit Stock Video Free License"
+    },
+    {
       "id": "visionflow-travel-director",
       "image": "skill-visionflow-travel-director-photo-v3",
       "source": "public/media/travel/hiking.jpg",

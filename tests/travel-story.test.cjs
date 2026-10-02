@@ -143,7 +143,7 @@ test('second step explains AI understanding and separates observation from editi
  const html=fs.readFileSync(path.resolve(__dirname,'../public/index.html'),'utf8');
  const script=fs.readFileSync(path.resolve(__dirname,'../public/travel.js'),'utf8');
  const panel=html.split('<div id="demoUnderstanding"')[1].split('<div id="demoStyle"')[0];
- assert(html.includes('<span>02</span> Analyze with AI'));
+ assert(html.includes('<span>02</span> AI analysis'));
  assert(html.includes('AI UNDERSTANDING · EXAMPLE'));
  assert(panel.includes('AI models describe the action, suggest shot boundaries'));
  for(const label of ['Content','Framing','Use']) assert(panel.includes('<dt>'+label+'</dt>'));
@@ -154,7 +154,7 @@ test('second step explains AI understanding and separates observation from editi
 test('workflow labels use clear actions without implying a live export control',()=>{
  const html=fs.readFileSync(path.resolve(__dirname,'../public/index.html'),'utf8');
  const nav=html.split('<nav class="workflow-steps"')[1].split('</nav>')[0];
- const labels=['Import footage','Analyze with AI','Describe your idea','Build your story','Refine your edit','Review your film'];
+ const labels=['Import','AI analysis','Your idea','Build story','Refine','Review'];
  labels.forEach((label,index)=>assert(nav.includes(`<span>0${index+1}</span> ${label}</button>`)));
  assert.equal((nav.match(/data-stage=/g)||[]).length,6);
 });

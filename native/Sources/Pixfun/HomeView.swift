@@ -20,6 +20,8 @@ struct BriefComposer: View {
     @State private var writing = false
     @State private var editorHeight: CGFloat = 120
     @State private var modelSettings = false
+    @State private var pendingExample: AgentExample?
+    @State private var confirmReplacement = false
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
                 VStack(alignment: .leading, spacing: 16) {
@@ -40,16 +42,17 @@ struct BriefComposer: View {
                         }.font(.callout).foregroundStyle(Color.pixfunGold)
                     }
                     PromptEditor(text: $store.composerDraft.prompt, height: $editorHeight, requestFocus: $writing,
-                                 placeholder: "Ask about your footage, find a moment, or make a rough cut…").frame(height: editorHeight)
+                                 placeholder: "Add videos, then ask me to analyze or edit…").frame(height: editorHeight)
                     HStack(spacing: 4) {
                         Button { store.pick(folder: true, attach: true) } label: { ComposerToolLabel(title: "Folder", symbol: "folder") }
                         Button { store.pick(attach: true) } label: { ComposerToolLabel(title: "Files & audio", symbol: "paperclip") }
+                            .modifier(ComposerAttachmentHint(active: store.needsComposerMaterials && !store.importing && !store.saving))
                         Button(action: store.beginSelection) { ComposerToolLabel(title: "From Media", symbol: "photo.on.rectangle") }
                         Spacer(minLength: 8)
                         Button { modelSettings = true } label: { ComposerToolLabel(title: "Models", symbol: "slider.horizontal.3") }
                             .help("Model settings")
                         if store.importing || store.saving { ProgressView().controlSize(.small) }
-                        Button(action: store.submitAgent) { Image(systemName: "arrow.up").font(.system(size: 20, weight: .medium)).frame(width: 16, height: 40) }.buttonStyle(PixfunButtonStyle(kind: .primary)).accessibilityLabel("Send to Agent").help("Send to Agent")
+                        Button(action: store.submitAgent) { Image(systemName: "arrow.up").font(.system(size: 20, weight: .medium)).frame(width: 16, height: 40) }.buttonStyle(PixfunButtonStyle(kind: .primary)).accessibilityLabel("Send to Agent").help(store.needsComposerMaterials ? "Add files or choose From Media first" : "Send to Agent")
                             .disabled(!store.canSubmitAgent)
                             .keyboardShortcut(.return, modifiers: .command)
                     }.buttonStyle(PixfunButtonStyle(kind: .quiet)).padding(.horizontal, -10).disabled(store.importing)
@@ -57,29 +60,45 @@ struct BriefComposer: View {
                     .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.pixfunLine))
 
             ComposerNotice()
-            if store.composerDraft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Add your files, then try a request").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), alignment: .leading)], alignment: .leading, spacing: 8) {
-                        ForEach(AgentExample.starters) { example in
-                            Button {
-                                store.composerDraft.prompt = example.applying(to: store.composerDraft.prompt)
-                                writing = true
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(example.title).font(.pixfun(13, semibold: true))
-                                    Text(example.outcome).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
-                                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5)
-                            }.buttonStyle(PixfunButtonStyle(kind: .quiet))
-                                .help("Insert an editable example; nothing is sent yet.")
-                                .accessibilityLabel("\(example.title). \(example.outcome). Insert example request.")
-                                .disabled(store.saving)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(AgentExample.starters) { example in
+                    Button {
+                        if example.requiresReplacementConfirmation(for: store.composerDraft.prompt) {
+                            pendingExample = example
+                            confirmReplacement = true
+                        } else {
+                            store.composerDraft.prompt = example.applying(to: store.composerDraft.prompt)
+                            writing = true
                         }
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
-            }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: example.symbol)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(Color.pixfunGold)
+                                .frame(width: 18)
+                                .accessibilityHidden(true)
+                            Text(example.outcome).font(.pixfun(13))
+                                .lineLimit(1).minimumScaleFactor(0.9)
+                            Spacer(minLength: 8)
+                            Image(systemName: "arrow.up.left")
+                                .font(.system(size: 11, weight: .medium))
+                                .accessibilityHidden(true)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }.buttonStyle(PixfunButtonStyle(kind: .quiet))
+                        .help("Insert an editable example; nothing is sent yet.")
+                        .accessibilityLabel("\(example.outcome) Insert example request.")
+                        .disabled(store.saving)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
         }.onChange(of: store.composerDraft.skill) { _ in writing = true }
             .sheet(isPresented: $modelSettings) { AgentSettingsView() }
+            .alert("Replace your draft?", isPresented: $confirmReplacement) {
+                Button("Cancel", role: .cancel) { pendingExample = nil }
+                Button("Use example") {
+                    if let example = pendingExample { store.composerDraft.prompt = example.prompt; writing = true }
+                    pendingExample = nil
+                }
+            } message: { Text("This example will replace your text. Your attached files will stay.") }
     }
 }
 
@@ -92,6 +111,20 @@ struct ComposerToolLabel: View {
             Image(systemName: symbol).font(.system(size: 14, weight: .regular)).frame(width: 16, height: 16)
             Text(title).lineLimit(1)
         }.fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+/// Draw attention to the existing entry point, without adding another prompt or button.
+struct ComposerAttachmentHint: ViewModifier {
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .background(active ? Color.pixfunGold.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(active ? Color.pixfunGold.opacity(0.55) : .clear))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: active)
+            .help(active ? "Add your material to continue. Your message will stay here." : "Attach files or audio")
+            .accessibilityHint(active ? "Add material before sending. Your message is kept." : "Attach files or audio")
     }
 }
 

@@ -56,6 +56,7 @@ final class LocalService {
         env["PIXFUN_DATA_DIR"] = dataDirectory.path
         env["PIXFUN_PUBLIC_DIR"] = resources.appendingPathComponent("public").path
         env["PIXFUN_EXAMPLE_DIR"] = resources.appendingPathComponent("public/examples/wild-alaska").path
+        env["PIXFUN_MUSIC_DIR"] = resources.appendingPathComponent("Music").path
         env["PIXFUN_AGENT_WORKER"] = resources.appendingPathComponent("agent-model-worker.py").path
         env["PIXFUN_SERVICE_TOKEN"] = token
         env["PIXFUN_NATIVE_TOKEN"] = nativeToken

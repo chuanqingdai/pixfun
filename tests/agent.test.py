@@ -17,7 +17,7 @@ ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT))
 TEMP=tempfile.TemporaryDirectory(prefix='pixfun-agent-contracts-')
 os.environ['PIXFUN_DATA_DIR']=TEMP.name
 from desktop_service import Library
-from agent_engine import AgentEngine, validate_timeline, validate_edit_scope, preserve_scoped_ids
+from agent_engine import AgentEngine, validate_timeline, validate_edit_scope, preserve_scoped_ids, requested_total_duration, selected_duration_constraint, validate_requested_edit
 from agent_models import AgentCancelled, ModelGateway
 
 
@@ -39,8 +39,8 @@ class FakeModels:
         if 'EDITORIAL_SHOT' in prompt:
             start,end=re.search(r'start_time=(\d+:\d+:\d+\.\d+)，end_time=(\d+:\d+:\d+\.\d+)',prompt).groups()
             from shot_analysis import seconds
-            return {'video_summary':'Fixture event','shots':[{'shot_id':'shot_001','start_time':start,'end_time':end,'description':'Fixture visible event','shot_size':'全景','capture_type':'','camera_motion':'','story_role':['环境建立'],'dialogue':'','reaction':'','audio':[],'importance_score':70,'duplicate_candidate':False,'unusable_candidate':False,'edit_recommendation':{'level':'推荐','recommended_duration_sec':min(2,seconds(end)-seconds(start)),'reason':'Fixture editorial reason'}}]}
-        if '概括视频的事件演变' in prompt: return {'video_summary':'Fixture full video summary'}
+            return {'video_summary':'Fixture event','shots':[{'shot_id':'shot_001','start_time':start,'end_time':end,'description':'Fixture visible event','shot_size':'Wide shot','capture_type':'','camera_motion':'','story_role':['Establishing'],'dialogue':'','reaction':'','audio':[],'importance_score':70,'duplicate_candidate':False,'unusable_candidate':False,'edit_recommendation':{'level':'Recommended','recommended_duration_sec':min(2,seconds(end)-seconds(start)),'reason':'Fixture editorial reason'}}]}
+        if 'VIDEO_SUMMARY:' in prompt: return {'video_summary':'Fixture full video summary'}
         if images: return {'summary':'Fixture description','tags':['fixture']}
         data=json.loads(prompt.split('INPUT: ')[1]); c=data['candidates'][0]
         if 'matches' in prompt:return {'matches':[{'index':0,'reason':'Fixture match'}],'summary':'Fixture retrieval'}
@@ -62,6 +62,174 @@ def wait(agent,key,timeout=40):
 
 
 class AgentTests(unittest.TestCase):
+    def test_create_with_audio_without_subtitles_reaches_preview(self):
+        # Real audio stream, no sidecar; model responses alone are fixtures.
+        source = Path(self.temp.name) / 'audio-without-subtitles.mp4'
+        self.agent.command(['ffmpeg','-v','error','-y','-i',ROOT/'qa/media-library/captioned-test.mp4',
+            '-f','lavfi','-i','sine=frequency=440:duration=3','-t','3','-map','0:v:0','-map','1:a:0',
+            '-c:v','copy','-c:a','aac',source], threading.Event())
+        asset = self.library.register([str(source)])['items'][0]['id']
+        self.models.intent = 'create'
+        with patch.object(self.models, 'capabilities', return_value={**self.models.capabilities(), 'localSpeech':True}), \
+             patch.object(self.models, 'transcribe', return_value={'cues':[]}) as transcribe:
+            from video_description import VideoDescriptions
+            def legacy_helper(*args, **kwargs):
+                helper = VideoDescriptions(*args, **kwargs)
+                del helper.library  # Reproduce the old incomplete helper initialization.
+                return helper
+            with patch('shot_analysis.VideoDescriptions', side_effect=legacy_helper):
+                failed = wait(self.agent, self.start('Create a 3-second travel video', mediaIds=[asset])['id'])
+            self.assertEqual(failed['status'], 'failed')
+            self.assertIn("has no attribute 'library'", failed['message'])
+            run = wait(self.agent, self.agent.action({'id':failed['id'], 'action':'retry'})['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertTrue(any(a['type']=='preview' for a in run['artifacts']))
+        self.assertEqual(transcribe.call_count, 1)
+
+    def test_clear_create_ignores_redundant_router_confirmation_and_renders(self):
+        self.models.intent = 'create'; self.models.routerPatch = {'question':'Shall I create this video?'}
+        run = wait(self.agent, self.start('Create a 3-second travel video')['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertEqual(run['question'], '')
+        self.assertTrue(any(a['type']=='preview' for a in run['artifacts']))
+        self.assertFalse(run.get('conversationHistory'))
+
+    def test_explicit_plan_approval_is_respected_and_only_once(self):
+        self.models.intent = 'create'
+        run = wait(self.agent, self.start('Create a 3-second video. Show me the plan for approval before rendering.')['id'])
+        self.assertEqual(run['status'], 'review', run['message'])
+        self.assertFalse(any(a['type']=='preview' for a in run['artifacts']))
+        done = wait(self.agent, self.agent.action({'id':run['id'], 'action':'approve'})['id'])
+        self.assertEqual(done['status'], 'completed', done['message'])
+        self.assertEqual(sum(item.get('selected')=='approve' for item in done['conversationHistory']), 1)
+
+    def test_first_edit_does_not_ask_to_create_missing_timeline(self):
+        self.models.intent = 'modify'
+        self.models.routerPatch = {'question':'Create a rough cut first?'}
+        run = wait(self.agent, self.start('编辑成一个视频')['id'])
+        self.assertEqual(run['intent'], 'create')
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertEqual(run['question'], '')
+        self.assertTrue(any(a['type']=='preview' for a in run['artifacts']))
+
+    def test_plan_only_cannot_render_even_when_router_says_create(self):
+        self.models.intent = 'create'
+        run = wait(self.agent, self.start('Give me a plan only; do not render a video.')['id'])
+        self.assertEqual(run['intent'], 'plan')
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertFalse(any(a['type']=='preview' for a in run['artifacts']))
+
+    def test_partial_findings_are_published_before_completion_without_duplicate_shots(self):
+        self.models.intent = 'clarify'
+        run = wait(self.agent, self.start()['id'])
+        run.update(status='running', question='')
+        self.agent.save(run)
+        record = self.library.get(self.asset)[0]
+        segment = dict(mediaId=self.asset, start=0, end=2, summary='Visible trail and walker')
+        self.agent.publish_analysis_progress(run, record, segment)
+        current = self.agent.get(run['id'])
+        self.assertEqual(current['status'], 'running')
+        self.assertEqual(current['artifacts'][0]['type'], 'observation')
+        segment['editorial'] = {'edit_recommendation': {'level':'Recommended','recommended_duration_sec':2,'reason':'Establish the trail'}}
+        self.agent.publish_analysis_progress(run, record, segment)
+        current = self.agent.get(run['id'])
+        self.assertEqual([a['type'] for a in current['artifacts']], ['analysis'])
+        self.agent.artifact(current,'analysis',record['file']['name'],'Final description',mediaId=self.asset,start=0,end=2)
+        self.agent.save(current)
+        self.assertEqual(len(self.agent.get(run['id'])['artifacts']),1)
+        self.agent.publish_analysis_progress({'mode':'local'},record,segment)
+
+    def test_follow_up_preserves_old_message_files_and_accepts_new_uploads(self):
+        self.models.intent = 'clarify'
+        first = wait(self.agent, self.start()['id'])
+        second = wait(self.agent, self.start('Explain more', id=first['projectId'], messageMediaIds=[])['id'])
+        self.assertEqual(second['messageAttachments'], [])
+        self.assertEqual(second['mediaIds'], [self.asset])
+        old = self.agent.get(first['id'])
+        self.assertEqual(old['messageAttachments'][0]['id'], self.asset)
+        self.assertEqual(old['conversationHistory'][0]['response'], 'Explain more')
+        photo = self.library.register([str(ROOT/'public/media/travel/story/coffee.jpg')])['items'][0]['id']
+        third = wait(self.agent, self.start('Also use this photo', id=first['projectId'], mediaIds=[self.asset,photo],messageMediaIds=[photo])['id'])
+        self.assertEqual([a['id'] for a in third['messageAttachments']],[photo])
+        self.assertEqual(len(self.agent.get(first['id'])['conversationHistory']),1)
+
+    def test_model_selected_retrieval_informs_story_without_dropping_sources(self):
+        self.models.intent = 'plan'
+        self.models.routerPatch = {'tools': ['rank'], 'query': 'mountain view'}
+        ranked = []
+        self.models.rank = lambda images, query, cancel: ranked.append(query) or {'scores': [.7] * len(images)}
+        run = wait(self.agent, self.start('Plan a mountain story')['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertEqual(ranked, ['mountain view'])
+        planning = next(p for p in self.models.requests if p.startswith('Plan an edit using only'))
+        inputs = json.loads(planning.split('INPUT: ')[1])
+        self.assertTrue(all(c['similarity'] == .7 for c in inputs['candidates']))
+        self.assertEqual(run['toolPlan']['scope'], 'attached-media-only')
+
+    def test_story_reuses_shot_speech_without_second_transcription(self):
+        self.models.intent = 'plan'
+        original = self.agent.understand
+        def understand(*args, **kwargs):
+            record, result = original(*args, **kwargs)
+            result = dict(result, speechEvidence={'source': 'local ASR', 'cues': [{'start': 0, 'end': 1, 'text': 'We made it to the summit.'}]})
+            return record, result
+        self.agent.understand = understand
+        self.models.transcribe = lambda *args: self.fail('Speech already checked; must not transcribe twice')
+        run = wait(self.agent, self.start('Plan a travel story')['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        planning = next(p for p in self.models.requests if p.startswith('Plan an edit using only'))
+        self.assertEqual(json.loads(planning.split('INPUT: ')[1])['transcriptEvidence'][0]['text'], 'We made it to the summit.')
+
+    def test_unsupported_tool_proposal_cannot_execute(self):
+        self.models.intent = 'create'; self.models.routerPatch = {'tools': ['shell']}
+        run = wait(self.agent, self.start('Make a rough cut')['id'])
+        self.assertEqual(run['status'], 'failed')
+        self.assertIn('unsupported tool', run['message'])
+        self.assertFalse(run['timeline'])
+
+    def test_invalid_source_range_explains_exact_repair_without_clamping(self):
+        records = {'video': {'id': 'video', 'kind': 'video', 'metadata': {'duration': 9}}}
+        for start, end in [(6, 12), (-1, 3), (0, None)]:
+            with self.assertRaisesRegex(ValueError, '0 <= start < end <= 9.0'):
+                validate_timeline([{'mediaId': 'video', 'start': start, 'end': end}], records)
+        valid = validate_timeline([{'mediaId': 'video', 'start': 6, 'end': 9}], records)
+        self.assertEqual((valid[0]['start'], valid[0]['end']), (6, 9))
+    def test_total_duration_is_not_confused_with_each_shot_duration(self):
+        for prompt in ('A 6-second story, each video appearing for 3 seconds.',
+                       '每段3秒，总时长6秒', 'each clip 3 seconds, total duration of 6 seconds'):
+            self.assertEqual(requested_total_duration(prompt)[1], '6')
+        self.assertIsNone(requested_total_duration('Use each clip for 3 seconds'))
+        self.assertEqual(requested_total_duration('Make a 2-minute video')[2], 'minute')
+    def test_selected_duration_requires_a_real_timeline_change(self):
+        shots=[{'id':'a','start':0,'end':3}, {'id':'b','start':3,'end':6}]
+        scope={'shotIds':['b']}
+        for prompt in ('Shorten only the selected final shot to 2 seconds.', '选中镜头缩短到2秒'):
+            constraint=selected_duration_constraint(prompt,scope,shots)
+            self.assertEqual(constraint['totalDuration'],5)
+            with self.assertRaisesRegex(ValueError,'actually last'): validate_requested_edit(shots,constraint)
+            validate_requested_edit([shots[0],{**shots[1],'end':5}],constraint)
+        self.assertIsNone(selected_duration_constraint('Do not shorten the selected shot to 2 seconds',scope,shots))
+    def test_model_cannot_claim_trim_without_changing_timeline(self):
+        self.models.intent='create'; first=wait(self.agent,self.start('Create 3 seconds')['id'])
+        self.models.intent='modify'
+        run=wait(self.agent,self.start('Shorten the selected shot to 2 seconds',id=first['projectId'],
+            editScope={'runId':first['id'],'version':first['version'],'shotIds':[first['timeline'][0]['id']]})['id'])
+        self.assertEqual(run['status'],'failed')
+        self.assertIn('actually last 2',run['message'])
+        self.assertFalse(run['timeline'])
+    def test_malformed_story_response_gets_one_bounded_repair(self):
+        self.models.intent='plan'
+        original=self.models.ask; planning=[]
+        def malformed_once(prompt,*args,**kwargs):
+            if prompt.startswith('Plan an edit using only'):
+                planning.append(prompt)
+                if len(planning)==1: raise ValueError('Model did not return a valid structured result.')
+            return original(prompt,*args,**kwargs)
+        self.models.ask=malformed_once
+        run=wait(self.agent,self.start('Plan 3 seconds')['id'])
+        self.assertEqual(run['status'],'completed',run['message'])
+        self.assertEqual(len(planning),2)
+        self.assertIn('Repair the invalid proposal',planning[-1])
     def test_scoped_trim_keeps_stable_identity_but_split_is_not_guessed(self):
         previous=[{'id':'first','mediaId':'a'},{'id':'last','mediaId':'b'}]
         trimmed=[previous[0],{'mediaId':'b','start':1,'end':3}]
@@ -144,17 +312,17 @@ class AgentTests(unittest.TestCase):
         self.assertIn('Fixture use suggestion', r['resultText'])
         self.assertNotIn('no video', r['message'])
     def test_unsupported_request_offers_supported_next_steps_without_asset_workaround(self):
-        self.models.intent='create'; self.models.routerPatch={'unsupported':['generated voiceover']}
-        r=wait(self.agent,self.start('必须添加配音')['id'])
+        self.models.intent='create'; self.models.routerPatch={'unsupported':['voice cloning']}
+        r=wait(self.agent,self.start('Clone a celebrity voice for the narration')['id'])
         self.assertEqual(r['status'],'clarify')
-        self.assertIn('原声粗剪',r['question'])
+        self.assertIn('standard-voice narration',r['question'])
         self.assertNotIn('provide',r['question'])
         self.assertFalse(r['timeline'])
     def test_travel_skill_reaches_router_planner_and_preserves_content_led_length(self):
         self.models.intent='create'
         skill={'id':'visionflow-travel-director','title':'Travel Vlog','strategy':'Untrusted client summary'}
         r=wait(self.agent,self.start('按旅行技能编排原声粗剪，长度按内容决定',skill=skill)['id'])
-        self.assertEqual(r['status'],'review',r['message'])
+        self.assertEqual(r['status'],'completed',r['message'])
         self.assertTrue(r['contentLedDuration']); self.assertEqual(r['duration'],3)
         planner=[p for p in self.models.requests if 'installedSkill' in p and 'task router' not in p][-1]
         data=json.loads(planner.split('INPUT: ')[1])
@@ -163,7 +331,7 @@ class AgentTests(unittest.TestCase):
         self.assertNotIn('Untrusted client summary',planner)
         report=json.loads(Path(next(a['path'] for a in r['artifacts'] if a['type']=='skill')).read_text())
         self.assertEqual(report['coverage']['status'],'NEEDS_REVIEW')
-        self.assertFalse(any(a['type']=='preview' for a in r['artifacts']))
+        self.assertTrue(any(a['type']=='preview' for a in r['artifacts']))
         self.models.intent='modify'
         follow=wait(self.agent,self.start('总时长改成6秒',id=r['projectId'])['id'])
         self.assertEqual(follow['skillExecution']['version'],'5.4')
@@ -172,6 +340,48 @@ class AgentTests(unittest.TestCase):
         updated_report=json.loads(Path(next(a['path'] for a in changed['artifacts'] if a['type']=='skill')).read_text())
         self.assertEqual(updated_report['timelineVersion'],2)
         self.assertEqual(updated_report['coverage']['mode'],'selected')
+    def test_default_travel_skill_and_explicit_alternative(self):
+        self.models.intent='create'
+        r=wait(self.agent,self.start('Make a travel edit')['id'])
+        self.assertEqual(r['skillExecution']['id'],'visionflow-travel-director')
+        self.assertIn('Using Travel Vlog',r['skillNotice'])
+        self.assertTrue(r['contentLedDuration'])
+        other=wait(self.agent,self.start('Make an edit',skill={'id':'food-tour','title':'Food tour','strategy':'Food'})['id'])
+        self.assertNotIn('skillNotice',other)
+    def test_mixed_media_reaches_planning_without_type_confirmation(self):
+        photo=self.library.register([str(ROOT/'public/media/travel/story/coffee.jpg')])['items'][0]['id']
+        self.models.intent='plan'
+        r=wait(self.agent,self.start('Plan a 3-second story',mediaIds=[self.asset,photo])['id'])
+        self.assertNotEqual(r.get('clarificationKind'),'video_only')
+        self.assertIn(photo,r['mediaIds'])
+        self.assertEqual(r['intent'],'plan')
+        self.assertTrue(any(a.get('mediaId')==photo and a['type']=='analysis' for a in r['artifacts']))
+        self.assertEqual([a['id'] for a in r['messageAttachments']], [self.asset, photo])
+        self.assertTrue(self.library.get(photo)[1].is_file())
+        with self.library.connect() as db:
+            project=json.loads(db.execute('SELECT record FROM projects WHERE id=?',(r['projectId'],)).fetchone()[0])
+        self.assertEqual([a['id'] for a in project['attachments']],[self.asset,photo])
+        with self.assertRaisesRegex(ValueError,'pending'):
+            self.agent.action({'id':r['id'],'action':'use_videos'})
+    def test_legacy_mixed_task_can_resume(self):
+        photo=self.library.register([str(ROOT/'public/media/travel/story/coffee.jpg')])['items'][0]['id']
+        self.models.intent='create'
+        r=wait(self.agent,self.start(mediaIds=[self.asset,photo])['id'])
+        r.pop('clarificationKind',None); r.pop('confirmedBrief',None); r['status']='clarify'
+        r['question']='This rough-cut workflow currently uses video and its original sound only. Remove separate audio/photos to continue; music mixing and photo slideshows are not connected.'
+        self.agent.save(r)
+        resumed=wait(self.agent,self.agent.action({'id':r['id'],'action':'use_videos'})['id'])
+        self.assertEqual(resumed['status'],'completed',resumed['message'])
+        self.assertEqual(resumed['mediaIds'],[self.asset])
+    def test_photo_only_creates_a_real_preview(self):
+        photo=self.library.register([str(ROOT/'public/media/travel/story/coffee.jpg')])['items'][0]['id']
+        self.models.intent='create'
+        r=wait(self.agent,self.start(mediaIds=[photo])['id'])
+        self.assertEqual(r['status'],'completed',r['message'])
+        self.assertTrue(r['timeline'])
+        self.assertTrue(any(a['type']=='preview' for a in r['artifacts']))
+        with self.assertRaisesRegex(ValueError,'pending'):
+            self.agent.action({'id':r['id'],'action':'use_videos'})
     def test_travel_skill_analysis_stays_analysis_and_generates_no_story(self):
         self.models.intent='create'
         r=wait(self.agent,self.start('只分析，不要生成视频',skill={'id':'visionflow-travel-director','title':'Travel Vlog','strategy':'Make a finished film'})['id'])
@@ -187,7 +397,7 @@ class AgentTests(unittest.TestCase):
         self.models.ask=intro_only
         r=wait(self.agent,self.start('按旅行技能做粗剪',skill={'id':'visionflow-travel-director','title':'Travel Vlog','strategy':'summary'})['id'])
         self.assertEqual(r['status'],'clarify',r['message'])
-        self.assertIn('保留全部文件',r['question'])
+        self.assertIn('include every file',r['question'])
         with self.assertRaises(ValueError): self.agent.action({'id':r['id'],'action':'approve'})
         self.assertFalse(list(self.agent.root.glob('*/preview*')))
     def test_clarification_does_not_analyze(self):
@@ -203,7 +413,7 @@ class AgentTests(unittest.TestCase):
     def test_modify_respects_new_total_and_preserves_aspect(self):
         self.models.intent='create'; first=wait(self.agent,self.start('Create 3 seconds 9:16')['id'])
         self.models.intent='modify'; follow=wait(self.agent,self.start('总时长改成6秒，其他保持不变',id=first['projectId'])['id'])
-        self.assertEqual(follow['status'],'review',follow['message'])
+        self.assertEqual(follow['status'],'completed',follow['message'])
         self.assertEqual(follow['duration'],6)
         self.assertEqual(follow['aspect'],'9:16')
         self.models.routerPatch={'durationChanged':True,'duration':7}
@@ -237,8 +447,11 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(done['status'],'completed',done['message']); self.assertTrue(self.models.calls)
     def test_create_preview_and_version_guard(self):
         self.models.intent='create'; r=wait(self.agent,self.start('Create 3 seconds')['id'])
-        self.assertEqual(r['status'],'review',r['message'])
-        self.assertFalse(list(self.agent.root.glob('*/preview*')))
+        self.assertEqual(r['status'],'completed',r['message'])
+        self.assertTrue(list(self.agent.root.glob('*/preview*')))
+        self.assertFalse(any(item['status']=='review' for item in r.get('conversationHistory', [])))
+        with self.assertRaisesRegex(ValueError, 'pending'):
+            self.agent.action({'id':r['id'],'action':'approve'})
         with self.assertRaises(ValueError): self.agent.action({'id':r['id'],'action':'timeline','version':99,'timeline':r['timeline']})
         r = self.agent.action({'id':r['id'],'action':'timeline','version':r['version'],'timeline':r['timeline']})
         self.assertGreater(r['editedAt'], 0)
@@ -247,6 +460,28 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(result['status'],'completed',result['message'])
         self.assertEqual(result['editedAt'], edited_at, 'background progress must not change the user edit time')
         self.assertTrue(Path(next(a['path'] for a in result['artifacts'] if a['type']=='preview')).is_file())
+    def test_renderer_preserves_audible_source_not_just_an_empty_audio_track(self):
+        # Synthetic tone is QA evidence only; never added to user footage or deliverables.
+        import array
+        import math
+        source=Path(self.temp.name)/'test-tone-video.mp4'; cancel=threading.Event()
+        self.agent.command(['ffmpeg','-v','error','-y','-i',ROOT/'qa/media-library/captioned-test.mp4',
+            '-f','lavfi','-i','sine=frequency=440:duration=3','-t','3','-map','0:v:0','-map','1:a:0',
+            '-c:v','copy','-c:a','aac',source],cancel)
+        asset=self.library.register([str(source)])['items'][0]['id']
+        self.models.intent='create'
+        run=wait(self.agent,self.start('Create 3 seconds',mediaIds=[asset])['id'])
+        rendered=run
+        self.assertEqual(rendered['status'],'completed',rendered['message'])
+        preview=next(a for a in rendered['artifacts'] if a['type']=='preview')
+        self.assertIn('original sound',preview['text'])
+        samples=array.array('f')
+        samples.frombytes(self.agent.command(['ffmpeg','-v','error','-ss','0.5','-i',preview['path'],
+            '-t','1','-vn','-ac','1','-ar','16000','-f','f32le','-'],cancel))
+        self.assertGreater(len(samples),15000)
+        self.assertGreater(math.sqrt(sum(x*x for x in samples)/len(samples)),.03)
+        frequency=sum(a<=0<b for a,b in zip(samples,samples[1:]))/(len(samples)/16000)
+        self.assertAlmostEqual(frequency,440,delta=3)
     def test_plan_search_and_subtitles_are_not_render_tasks(self):
         for intent in ('plan','search','subtitles'):
             self.models.intent=intent; r=wait(self.agent,self.start(intent)['id'])

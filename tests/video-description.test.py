@@ -15,7 +15,7 @@ from desktop_service import Library
 from video_description import VideoDescriptions, DESCRIPTION_PROMPT, validate_description, validate_grounding
 from agent_models import AgentCancelled
 
-DESCRIPTION='两人在林间营地的野餐桌旁相对而坐，桌上摆着杯子和露营用品，后方可见帐篷。人物先端起杯子，随后面对彼此交流，动作集中在桌边，环境保持安静的视觉氛围。画面的价值在于交代同行者、营地生活和两人互动，可作为旅行故事的日常过程或休息段落，与行进中的镜头形成节奏对比。未提供可靠对白，不能判断具体谈话内容。'
+DESCRIPTION='Two travelers sit across from each other at a picnic table in a wooded campsite. Cups and camping equipment sit on the table, with a tent visible behind them. One person lifts a cup before the pair turn toward each other and continue their exchange. The action stays close to the table, creating a contained moment of everyday camp life. This material can establish the travelers and their surroundings or offer a quiet pause between walking scenes. Keep the cup movement and shared glance as the main editing beats, shortening similar holds where appropriate. No verified dialogue is supplied, so the content of their conversation should not be inferred.'
 
 class Models:
     vision='fixture'; speech='fixture'
@@ -27,7 +27,7 @@ class Models:
             self.block.set()
             while not cancel.wait(.01): pass
             raise AgentCancelled()
-        return {'title':'两人在林间营地喝饮料交流','full_description':'太短' if self.invalid else DESCRIPTION}
+        return {'title':'Two travelers share drinks at camp','full_description':'Too short' if self.invalid else DESCRIPTION}
 
 class Agent:
     def __init__(self,library): self.library=library; self.models=Models(); self.pool=concurrent.futures.ThreadPoolExecutor(max_workers=1)

@@ -13,6 +13,7 @@ const run = (command, args) => {
 if (process.platform !== 'darwin') throw new Error('Build Pixfun Native on macOS with Xcode Command Line Tools.');
 const required = ['build-desktop/backend/pixfun-service/pixfun-service', 'build-desktop/media/bin/ffmpeg', 'build-desktop/media/bin/ffprobe', 'build-desktop/Pixfun.icns'];
 for (const file of required) if (!fs.existsSync(path.join(root,file))) throw new Error(`Missing ${file}. Run desktop:backend and desktop:media first.`);
+require('./verify-bundled-media.cjs')(path.join(root, 'build-desktop/media/bin'));
 const scratch = path.join(root, 'build-native');
 run('swift', ['build', '--package-path', 'native', '--scratch-path', scratch, '--cache-path', cache, '-c', 'release', '--disable-sandbox']);
 const output = path.join(root, 'dist-native');
@@ -23,6 +24,7 @@ const app = path.join(staging, 'Pixfun.app');
 const contents = path.join(app, 'Contents'), resources = path.join(contents, 'Resources');
 fs.mkdirSync(path.join(contents, 'MacOS'), {recursive:true});
 fs.mkdirSync(resources, {recursive:true});
+fs.cpSync(path.join(root, 'native/Music'), path.join(resources, 'Music'), {recursive:true});
 fs.copyFileSync(path.join(scratch, 'release/Pixfun'), path.join(contents, 'MacOS/Pixfun'));
 fs.chmodSync(path.join(contents, 'MacOS/Pixfun'), 0o755);
 for (const [source, destination] of [
@@ -47,6 +49,8 @@ for (const skill of skills.filter(skill => skill.source)) {
   const destination = path.join(resources, 'CreatorSkills', skill.source);
   fs.mkdirSync(path.dirname(destination), {recursive:true});
   fs.copyFileSync(path.join(root, 'creator-skills', skill.source), destination);
+  const references = path.join(root, 'creator-skills', path.dirname(skill.source), 'references');
+  if (fs.existsSync(references)) fs.cpSync(references, path.join(path.dirname(destination), 'references'), {recursive:true});
 }
 fs.mkdirSync(path.join(resources, 'Fonts'), {recursive:true});
 fs.mkdirSync(path.join(resources, 'Brand'), {recursive:true});

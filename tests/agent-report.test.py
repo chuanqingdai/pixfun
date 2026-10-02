@@ -61,6 +61,10 @@ class ReportTests(unittest.TestCase):
         cancel=threading.Event(); cancel.set(); model=Models(self.answer)
         with self.assertRaises(AgentCancelled): self.report(model,cancel)
         self.assertEqual(model.calls,[])
+    def test_known_wrapper_is_validated_without_losing_the_written_report(self):
+        self.assertTrue(self.report(Models({'ANALYSIS_REPORT':self.answer}))['synthesized'])
+        self.assertFalse(self.report(Models({'ANALYSIS_REPORT':{'materials':[]}}))['synthesized'])
+        self.assertFalse(self.report(Models({'ANALYSIS_REPORT':None}))['synthesized'])
     def test_large_report_preserves_all_evidence_without_model_truncation(self):
         self.summaries['camp']='内容'*13000
         model=Models(self.answer); report=self.report(model)
@@ -73,6 +77,12 @@ class ReportTests(unittest.TestCase):
     def test_no_findings_does_not_invent_analysis(self):
         self.run['artifacts']=[]
         report=source_report(self.run,self.records,{})
-        self.assertTrue(all('暂未提取到' in r['content'] for r in report['materials']))
+        self.assertTrue(all('No usable content' in r['content'] for r in report['materials']))
+        self.assertIn('Here are the findings',report['overview'])
+    def test_chinese_input_does_not_request_chinese_output(self):
+        model=Models(self.answer);self.report(model)
+        self.assertIn('Write in English by default',model.calls[0][0])
+        self.run['prompt']='请用中文输出分析结果';self.run['artifacts']=[]
+        self.assertIn('暂未提取到',source_report(self.run,self.records,{})['materials'][0]['content'])
 
 if __name__=='__main__': unittest.main()

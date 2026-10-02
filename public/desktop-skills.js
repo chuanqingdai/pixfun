@@ -1,6 +1,52 @@
 /* Creator skills describe editorial strategies, not steps in a processing pipeline. */
 (() => {
   'use strict';
+  const travelShort = {
+      id:'visionflow-travel-short', title:'Travel Short', image:'skill-visionflow-travel-short-photo-v3',
+      actionTitle:'Use this skill',
+      copy:'Turn a few photos or clips into a thoughtfully designed travel short under 30 seconds.',
+      materials:['Photos, videos, or both','Fewer clips · Under 30 seconds'],
+      value:'Start with as little as three travel photos. Build one clear moment with considered framing, short titles, graphic transitions, and music—not a compressed version of a long trip.',
+      structure:['Find one memorable moment','Design around your material','Leave room for the view'],
+      beats:['Choose complementary views and a clear theme. Photos alone are enough to plan a short.', 'Adapt titles, layouts, and transitions to real content. Keep people and important details visible.', 'Balance designed moments with a clean hero image, then let the picture and sound resolve.'],
+      pacing:'Usually 12–24 seconds, always under 30. Use a shorter edit when the material is limited; never loop to fill time.',
+      sound:'Use one licensed instrumental track when requested and available. Preserve useful original sound; photos do not have location audio.',
+      avoid:'Do not invent places, dates, movement, or voices. Check every requested effect before promising a finished video.',
+      handling:['Photos only: use safe framing, readable titles, and gentle layout changes. Do not require video or fabricate movement.', 'Mixed formats: adapt the canvas and template to the subjects. Skip unsupported or unsuitable effects and explain alternatives.'],
+      example:'Create a short travel video from these photos and clips, with safe framing and a clear visual story.',
+      source:'visionflow-travel-short/SKILL.md', version:'1.1',
+      capabilityNote:'Create an edit preview from photos, videos, or both. Photos use adjustable display durations and safe framing. Animated titles, photo motion, multi-image layouts, and the six packaging templates are not connected rendering presets yet.',
+      highlights:[
+        {title:'Start small',body:'Three photos, a few clips, or a mix—choose a format that suits what you have.'},
+        {title:'Designed, not crowded',body:'Short titles, graphic reveals, and selective transitions share one visual language.'},
+        {title:'Protect the picture',body:'Keep faces and details visible, with a clean moment free from added text.'},
+        {title:'Review before creating',body:'Approve the timing, copy, style, and any effect limitations before rendering.'}
+      ],
+      materialCases:[
+        {title:'3 photos → a 15-second plan',body:'Give each photo five seconds: introduce the first, reveal a detail in the second, and finish on a clean third image. Add brief titles and one layout reveal where supported.'},
+        {title:'A few video clips',body:'Keep complete actions, alternate wide views and details, and preserve useful original sound. Let the content set the length.'},
+        {title:'Photos + video',body:'Use photos for setting and detail, and video for real action. Adapt portrait and landscape framing without stretching or cropping people.'}
+      ],
+      templates:[
+        {title:'Editorial Postcard',body:'Serif titles, fine rules, and moving picture windows for quiet scenery or just a few photos.'},
+        {title:'City Notes',body:'Clean captions and directional color wipes for streets, cafés, and everyday discoveries.'},
+        {title:'Type in Motion',body:'Bold short titles, masked reveals, and selective freeze frames for action-led clips.'},
+        {title:'Split Stories',body:'Two complementary views share the frame, then return to a full-screen highlight.'},
+        {title:'Travel Contact Sheet',body:'Photo-led layouts, small annotations, and gentle reveals. A natural starting point for three photos.'},
+        {title:'Coastal Light',body:'Airy typography, soft window reveals, and gentle dissolves for calm natural scenes.'}
+      ],
+      workflow:[
+        {title:'Set up your short',body:'Confirm the material, length, format, and anything to keep or avoid.'},
+        {title:'Check editing tools',body:'Verify decoding, fonts, effects, audio, and export support with a real test.'},
+        {title:'Find the best moments',body:'Read each photo or clip; identify useful details, safe framing, and reliable facts.'},
+        {title:'Shape your story',body:'Choose one theme, a suitable length, a clear order, and a music direction.'},
+        {title:'Design titles and transitions',body:'Adapt one template, write the on-screen text, and test its most complex effect.'},
+        {title:'Review your plan',body:'Approve the timing, text, layout, music, and any alternatives before rendering.'},
+        {title:'Balance the sound',body:'Mix music and usable original sound; skip source-audio steps for photos.'},
+        {title:'Create the video',body:'Build one editable timeline and render only the effects that are actually supported.'},
+        {title:'Check and refine',body:'Review the exported file, report any gaps, and keep the project ready for changes.'}
+      ]
+    };
   const skills=[
     {
       "id": "visionflow-travel-director",
@@ -72,6 +118,7 @@
     {id:'scenic-escape',title:'Scenic escape',image:'skill-scenic-escape-photo-v3',copy:'Give drone views and quiet landscapes a visual rhythm.',materials:['Drone footage','Landscape shots'],structure:['Reveal a sense of place','Move between scale and detail','Land on a quiet final view'],pacing:'Group compatible movement and light; let long scenic shots breathe.',sound:'Use natural sound as the base; add music only when supplied or explicitly requested.',avoid:'Do not join unrelated places into a false continuous journey or imply unrecorded events.'},
     {id:'travel-guide',title:'Travel guide',image:'skill-travel-guide-photo-v3',copy:'Turn long explanations into a clear, useful travel story.',materials:['On-camera speech','Supporting B-roll'],structure:['State what the viewer will learn','Build clear topic chapters','Recap the useful takeaways'],pacing:'Keep complete explanations; use relevant B-roll during longer spoken passages.',sound:'Treat supplied speech as the source of truth. Keep sentence meaning and qualifications intact.',avoid:'Do not invent facts, opening hours, directions, or accessibility claims.'},
   ];
+  skills.splice(1, 0, travelShort);
   const details={
     'city-walk':{value:'Turn hours of walking footage into a route viewers can follow. The strategy gives repeated street shots a purpose and keeps the small discoveries that make a neighborhood feel distinct.',beats:['Start with a wide street view and a clear arrival point. Establish where the walk begins using only recorded context.','Group nearby discoveries into stops. Connect each wide view to a sign, storefront, or human-scale detail.','Finish with a destination or a final street moment. Let the atmosphere resolve instead of adding an unrelated highlight.'],handling:['Many similar street clips: choose complementary wide and detail shots instead of repeating the same view.','No spoken narration: let recorded street sound and visual continuity carry the route.'],example:'Make a 4-minute city walk from my street clips. Follow the route, keep café and market sounds, and avoid fast music-driven cuts.'},
     'food-tour':{value:'Help viewers experience a dish rather than just see a plate. This strategy connects preparation, texture, sound, and reactions so a food review has anticipation and a clear payoff.',beats:['Introduce the venue through a street view, counter, or menu when available. Establish the dish without invented background.','Build anticipation with preparation, plating, and texture close-ups. Match each detail to its natural sound when available.','Hold on the first taste and complete spoken reaction. End on a useful recorded observation or the final dish.'],handling:['No preparation footage: build the middle from serving, texture, and tasting; do not imply unseen cooking steps.','Talking clips mixed with food close-ups: keep the reaction as the audio anchor and cover pauses with relevant dish footage.'],example:'Create a 3-minute food tour. Start outside the restaurant, build up through the cooking shots, and keep my full first-bite reaction.'},
@@ -83,7 +130,7 @@
     'travel-guide':{value:'Make long, information-rich recordings easier to follow without losing the speaker’s meaning. Organize speech into useful chapters and use supporting footage to illustrate, not replace, the explanation.',beats:['Start with the speaker’s actual topic or a concise recorded introduction. Make the scope clear without adding unverified claims.','Group complete explanations by topic. Place relevant place or object footage over speech while keeping qualifications intact.','Close with recorded takeaways or a concise recap based strictly on the supplied content.'],handling:['A single long talk: preserve complete ideas and remove repetition only when the meaning remains unchanged.','B-roll without a clear match: leave the speaker visible rather than implying a place or object they did not discuss.'],example:'Turn this 10-minute guided walk into a 6-minute travel guide. Keep the factual explanations, group related topics, and use my location shots as B-roll.'},
   };
   skills.forEach(skill=>Object.assign(skill,details[skill.id]));
-  function buildBrief(skill,direction){return `${skill.title}${skill.source ? `\nFull specification: CreatorSkills/${skill.source} (v${skill.version}). This brief is a summary; consult the bundled specification when execution is connected.` : ''}\n\nStory framework:\n${skill.structure.map((beat,i)=>`${i+1}. ${beat}: ${skill.beats[i]}`).join('\n')}\nPacing: ${skill.pacing}\nSound: ${skill.sound}\nMaterial handling: ${skill.handling.join(' ')}\nGuardrails: ${skill.avoid}\n\nCreator direction: ${direction.trim()||'Use the strategy above with the selected footage.'}`;}
+  function buildBrief(skill,direction){return `${skill.title}${skill.source ? `\nFull specification: CreatorSkills/${skill.source} (v${skill.version}). This brief is a summary; consult the bundled specification.` : ''}${skill.capabilityNote ? `\nAvailability: ${skill.capabilityNote}\nHonor the requested outcome; create a supported edit preview when asked. Do not claim unimplemented packaging has been rendered.` : ''}\n\nStory framework:\n${skill.structure.map((beat,i)=>`${i+1}. ${beat}: ${skill.beats[i]}`).join('\n')}\nPacing: ${skill.pacing}\nSound: ${skill.sound}\nMaterial handling: ${skill.handling.join(' ')}\nGuardrails: ${skill.avoid}\n\nCreator direction: ${direction.trim()||'Use the strategy above with the selected footage.'}`;}
   if(typeof document==='undefined'){module.exports={skills,buildBrief};return;}
   if(!window.PixfunDesktop)return;
   const library=window.PixfunLibrary,root=document.getElementById('workspaceSkills');
@@ -105,14 +152,23 @@
     sourceButton=trigger;catalog.hidden=true;detail.hidden=false;detail.replaceChildren();
     const backButton=node('button','← All skills','text-button skill-back');backButton.type='button';backButton.onclick=back;
     const head=node('header'),title=node('h2',task.title);title.tabIndex=-1;head.append(title,node('p',task.copy));
-    const action=node('button','Use skill','button primary');action.type='button';action.onclick=()=>window.PixfunWorkspace.useSkill({id:task.id,title:task.title,strategy:buildBrief(task,'')});
+    const action=node('button',task.actionTitle||'Use skill','button primary');action.type='button';action.onclick=()=>window.PixfunWorkspace.useSkill({id:task.id,title:task.title,strategy:buildBrief(task,'')});
     const top=node('div',null,'creator-skill-actions');top.append(backButton,action);
     const value=node('section',null,'creator-skill-value');value.append(node('h3','Why creators use it'),node('p',task.value));
     const story=node('section',null,'creator-story-structure');story.append(node('h3','Story framework'));const beats=node('ol');task.structure.forEach((beat,index)=>{const li=node('li');li.append(node('strong',beat),node('p',task.beats[index]));beats.append(li);});story.append(beats);
     const strategy=node('dl',null,'creator-strategy');for(const [label,value]of [['Works with',task.materials.join(' · ')],['Pacing',task.pacing],['Sound',task.sound],['Keep it honest',task.avoid]]){const row=node('div');row.append(node('dt',label),node('dd',value));strategy.append(row);}
     const handling=node('section',null,'creator-material-handling');handling.append(node('h3','Make the most of your footage'));const tips=node('ul');task.handling.forEach(tip=>tips.append(node('li',tip)));handling.append(tips);
     const example=node('section',null,'creator-skill-example');example.append(node('h3','Example brief'),node('p',task.example));
-    detail.append(top,head,value,story,strategy,handling,example,node('p','Use this strategy in your Home brief. Automatic editing is not connected yet.','skill-capability-note'));
+    detail.append(top,head);
+    if(task.capabilityNote)detail.append(node('p',task.capabilityNote,'skill-capability-note'));
+    detail.append(value,story,strategy,handling);
+    for(const [label,points] of [['Made for your material',task.materialCases],['Six packaging templates',task.templates],['Nine-step workflow',task.workflow]]){
+      if(!points)continue;
+      const section=node('section',null,'creator-material-handling');section.append(node('h3',label));
+      const list=node(label==='Nine-step workflow'?'ol':'ul');points.forEach(point=>{const li=node('li');li.append(node('strong',point.title),node('p',point.body));list.append(li);});section.append(list);detail.append(section);
+    }
+    detail.append(example);
+    if(!task.capabilityNote)detail.append(node('p','Use this strategy in your Home brief. Automatic editing is not connected yet.','skill-capability-note'));
     title.focus({preventScroll:true});root.scrollIntoView({block:'start',behavior:'instant'});
   }
   document.addEventListener('pixfun:workspacepage',event=>{if(event.detail==='skills'){detail.hidden=true;catalog.hidden=false;}});

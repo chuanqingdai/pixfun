@@ -8,4 +8,11 @@ assert(!section.includes('not customer reviews'));assert(!section.includes('Shar
 assert(section.includes('href="/mac-early-access"'));
 assert(html.indexOf('id="creators"')<html.indexOf('id="creatorVoices"'));
 assert(html.indexOf('id="creatorVoices"')<html.indexOf('id="faq"'));
+assert(section.includes('Understand your footage with AI. Analyze large collections, find useful moments'));
+const scenarios=html.split('<section class="creator-section')[1].split('</section>')[0];
+assert.equal(scenarios.split('<article>').length-1,4);
+assert(scenarios.includes('More footage. Less searching.'));
+assert(scenarios.includes('Let AI help you understand'));
+const faq=html.split('<section class="travel-faq')[1].split('</section>')[0];
+for(const copy of ['large footage library','AI models','Search by what happens','Processing time depends','without making a video','creating a video is a separate step'])assert(faq.includes(copy));
 console.log('PASS: Audience section describes travelers, platform creators and studios without invented testimonials.');

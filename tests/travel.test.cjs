@@ -83,10 +83,10 @@ for (const file of ['index.html', 'pixfun.js', 'app.js', 'travel.js', 'polish.js
   assert.doesNotMatch(fs.readFileSync(path.join(root, file), 'utf8'), /\p{Script=Han}/u, `${file} keeps built-in website copy in English`);
 }
 assert.match(html,/AI that understands your scenes, actions, and key moments\./);
-assert.match(html,/Find the shots worth keeping\. Give every clip a place in your story\./);
+assert.match(html,/Break footage into editable shots\. Find the story in what you see and hear\./);
 const example = html.split('id="stories"')[1].split('<section class="travel-workflow"')[0];
 assert.match(example,/Turn a trip’s worth of footage into one complete travel film\./);
-for(const [id,copy] of Object.entries({workflowTitle:'See how your footage becomes a finished travel film.',creatorsTitle:'Create travel videos that match the way you explore.',voicesTitle:'Who is Pixfun for?',faqTitle:'A few things to know.',closingTitle:'Help shape Pixfun for Mac.'})) {
+for(const [id,copy] of Object.entries({workflowTitle:'See how your footage becomes a finished travel film.',creatorsTitle:'More footage. Less searching.',voicesTitle:'Who is Pixfun for?',faqTitle:'A few things to know.',closingTitle:'Help shape Pixfun for Mac.'})) {
   assert.ok(html.includes(`<h2 id="${id}">${copy}</h2>`),`${id} uses the approved complete sentence without forced italic fragments`);
 }
 assert.match(example,/>INPUT</);
@@ -119,7 +119,7 @@ assert.doesNotMatch(html,/speaker-|case-ai-|AI VIDEO CREATION|viral video format
 assert.equal([...html.matchAll(/data-film="/g)].length,5,'Exactly five independent cases');
 const previewHashes = heroNames.map(name=>require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root,'media/cases',name+'-preview.mp4'))).digest('hex'));
 assert.equal(new Set(previewHashes).size,5,'Every case must be a different actual video file');
-assert.equal((html.match(/<small>View breakdown<\/small>/g)||[]).length,5,'Five cases link to the full-video breakdown');
+assert.equal((html.match(/<a href="\/stories\/[^"\n]+"[^\n]*data-film="[^\n]+<small>\d+ shots<\/small>/g)||[]).length,5,'Five cases link to full-video breakdowns and show shot counts');
 const imageNames = section => [...section.matchAll(/<img[^>]*src="([^"]+)"/g)].map(m=>m[1]).filter(s=>s.includes('/media/travel/'));
 const sourceImages = imageNames(html.split('class="source-grid"')[1].split('</div></div>')[0]);
 assert.equal(new Set(sourceImages).size,12,'Twelve source cards show twelve genuinely different images');

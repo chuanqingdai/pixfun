@@ -40,7 +40,7 @@ struct EditorialShot: Codable {
     // Editorial recommendation, not a claim of verified technical image quality.
     var isHighlight: Bool {
         importance_score.isFinite && importance_score >= 80 && importance_score <= 100
-            && ["必留", "推荐"].contains(edit_recommendation.level)
+            && ["Keep", "Recommended", "必留", "推荐"].contains(edit_recommendation.level)
             && edit_recommendation.recommended_duration_sec > 0
             && !duplicate_candidate && !unusable_candidate
     }
@@ -67,15 +67,26 @@ struct MediaItem: Codable, Identifiable {
     var shotAnalysis: ShotAnalysis?
     var isExample: Bool?
     var coverUrl: String?
-    var name: String { videoDescription?.title ?? (title?.isEmpty == false ? title : nil) ?? file.name }
+    var sampleCopy: VideoDescription?
+    var name: String {
+        if isExample == true, let curated = sampleCopy?.title ?? title, !curated.isEmpty { return curated }
+        return videoDescription?.title ?? (title?.isEmpty == false ? title : nil) ?? file.name
+    }
+    var displayVideoDescription: VideoDescription? {
+        guard isExample == true, let sampleCopy else { return videoDescription }
+        let text = videoDescription?.full_description ?? ""
+        // A legacy Chinese result must not replace authored English sample copy.
+        // Keep the original result and its running status for analysis controls.
+        if text.isEmpty || text.range(of: "\\p{Han}", options: .regularExpression) != nil { return sampleCopy }
+        return videoDescription
+    }
     var segments: [Segment] { shotAnalysis?.segments ?? result?.analysis?.segments ?? [] }
     var cues: [Cue] { result?.analysis?.subtitleCues ?? [] }
     var transcriptCues: [Cue] { cues.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } }
     var processing: Bool { ["queued", "analyzing"].contains(status) }
     var processingLabel: String? {
-        if status == "queued" { return "Queued" }
-        if status == "analyzing" { return "Processing" }
-        if shotAnalysis?.busy == true || videoDescription?.busy == true { return "Analyzing" }
+        if status == "analyzing" || shotAnalysis?.status == "running" || videoDescription?.status == "running" { return "Analyzing…" }
+        if status == "queued" || shotAnalysis?.status == "queued" || videoDescription?.status == "queued" { return "Queued…" }
         return nil
     }
     var aspect: CGFloat {
@@ -84,12 +95,7 @@ struct MediaItem: Codable, Identifiable {
     }
     var cover: String? { coverUrl ?? segments.first?.thumbnailUrl ?? (kind == "image" ? url : nil) }
     func matches(_ query: String) -> Bool {
-        let metadata = [name, file.name, videoDescription?.full_description ?? description ?? "", context?["location"] ?? "", context?["device"] ?? ""]
-        let shotText: [String] = segments.flatMap { segment in
-            [segment.label, segment.editorial?.reaction ?? "", segment.editorial?.story_role.joined(separator: " ") ?? ""]
-        }
-        let text = (metadata + cues.map(\.text) + shotText).joined(separator: " ")
-        return query.isEmpty || text.localizedCaseInsensitiveContains(query)
+        MediaSearchDocument(self).match(MediaSearchQuery(query), scope: .all, location: nil) != nil
     }
 }
 struct Attachment: Codable, Identifiable, Equatable { var id: String; var name: String; var kind: String }
@@ -113,6 +119,8 @@ struct CreatorSkill: Codable, Identifiable {
     var materials: [String]; var structure: [String]; var pacing: String; var sound: String; var avoid: String
     var value: String; var beats: [String]; var handling: [String]; var example: String; var strategy: String
     var source: String?; var version: String?; var highlights: [SkillHighlight]?
+    var actionTitle: String?; var capabilityNote: String?
+    var materialCases: [SkillHighlight]?; var templates: [SkillHighlight]?; var workflow: [SkillHighlight]?
     var specificationURL: URL? {
         guard let source, let root = Bundle.main.resourceURL else { return nil }
         let url = root.appendingPathComponent("CreatorSkills").appendingPathComponent(source)
@@ -143,28 +151,37 @@ struct MediaFolder: Identifiable {
     var id: String { path }
     var name: String { URL(fileURLWithPath: path).lastPathComponent }
 }
-enum MediaSearchScope: String, CaseIterable { case name = "Name", all = "All information" }
 enum MediaSort: String, CaseIterable {
-    case original = "Library order", nameAscending = "Name A–Z", nameDescending = "Name Z–A", longest = "Longest first"
+    case original = "Newest first", nameAscending = "Name A–Z", nameDescending = "Name Z–A", longest = "Longest first"
 }
 struct MediaFilter {
     var category = MediaCategory.all
     var query = ""
-    var scope = MediaSearchScope.name
+    var scope = MediaSearchScope.all
     var folder = ""
     var sort = MediaSort.original
     func apply(_ items: [MediaItem], locations: [String: MediaLocation]) -> [MediaItem] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = items.filter { item in
-            guard item.kind != "audio" else { return false }
+        results(items, locations: locations).map(\.item)
+    }
+    func results(_ items: [MediaItem], locations: [String: MediaLocation], documents: [String: MediaSearchDocument] = [:]) -> [MediaSearchResult] {
+        let query = MediaSearchQuery(query)
+        let filtered: [MediaSearchResult] = items.compactMap { item in
+            guard item.kind != "audio" else { return nil }
             guard category == .all || (category == .favorites && item.favorite == true) ||
-                    (category == .video && item.kind == "video") || (category == .image && item.kind == "image") else { return false }
-            guard folder.isEmpty || locations[item.id]?.isInside(folder) == true else { return false }
-            if scope == .all { return item.matches(query) || item.file.name.localizedStandardContains(query) }
-            return query.isEmpty || item.file.name.localizedStandardContains(query) || item.name.localizedStandardContains(query)
+                    (category == .video && item.kind == "video") || (category == .image && item.kind == "image") else { return nil }
+            guard folder.isEmpty || locations[item.id]?.isInside(folder) == true else { return nil }
+            guard let hits = (documents[item.id] ?? MediaSearchDocument(item)).match(query, scope: scope, location: locations[item.id]) else { return nil }
+            return MediaSearchResult(item: item, hits: hits)
         }
-        if sort == .original { return filtered.filter { $0.isExample == true } + filtered.filter { $0.isExample != true } }
-        return filtered.sorted { left, right in
+        // The library API returns stable insertion order (SQLite rowid ascending).
+        // Reverse it for browsing; analysis updates must not move cards or pin samples.
+        if sort == .original && query.isEmpty { return Array(filtered.reversed()) }
+        return filtered.enumerated().sorted { lhs, rhs in
+            if sort == .original {
+                if lhs.element.score != rhs.element.score { return lhs.element.score > rhs.element.score }
+                return lhs.offset < rhs.offset
+            }
+            let left = lhs.element.item, right = rhs.element.item
             if sort == .longest {
                 let a = left.metadata?.duration ?? -1, b = right.metadata?.duration ?? -1
                 if a != b { return a > b }
@@ -172,7 +189,7 @@ struct MediaFilter {
             let comparison = left.file.name.localizedStandardCompare(right.file.name)
             if comparison == .orderedSame { return left.id < right.id }
             return sort == .nameDescending ? comparison == .orderedDescending : comparison == .orderedAscending
-        }
+        }.map(\.element)
     }
 }
 func timestamp(_ seconds: Double) -> String {

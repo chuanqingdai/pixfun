@@ -15,6 +15,8 @@ if(digest!=='8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e')t
 run('xz',['--test',archive]);
 if(!fs.existsSync(source))run('tar',['-xf',archive,'-C',build]);
 const flags=[`--prefix=${prefix}`,'--disable-autodetect','--disable-gpl','--disable-nonfree','--disable-network','--disable-doc','--disable-debug','--disable-shared','--enable-static','--disable-ffplay','--disable-indevs','--disable-outdevs','--extra-cflags=-mmacosx-version-min=12.0','--extra-ldflags=-mmacosx-version-min=12.0'];
+// PNG decoding/encoding needs zlib even with dependency autodetection disabled.
+flags.push('--enable-zlib');
 run('./configure',flags,source);
 run('make',['-j',String(Math.max(2,Math.min(6,os.cpus().length))),'install'],source);
 fs.mkdirSync(path.join(prefix,'licenses'),{recursive:true});

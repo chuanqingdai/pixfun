@@ -6,6 +6,13 @@
 - Existing website fonts and visual media retain their original licenses and credits in the repository's ASSETS.md and media source records. No user library, user footage, downloaded test collection, model cache or credentials are included in the app.
 
 This is a local development preview, not a signed/notarized public release. Release engineering must review all component notices, supported OS versions and codec distribution obligations before public distribution.
+
+## Starter music library
+
+Carefree, Life of Riley, and With the Sea by Kevin MacLeod (incompetech.com) are distributed unmodified under Creative Commons Attribution 4.0 International: https://creativecommons.org/licenses/by/4.0/ . Track sources and credits are included in `Contents/Resources/Music/ATTRIBUTION.txt` and `catalog.json`. These recordings remain separately licensed CC BY assets, without additional application-license restrictions or an implied endorsement. The app displays publishing credits, embeds them in rendered MP4 metadata, and offers a credits export. Users must retain attribution when publishing; video platforms may remove metadata.
+
+Standard narration uses voices installed with macOS through the system speech service. Pixfun does not bundle or clone third-party reference voices, and does not download voice models automatically.
+
 # Local people recognition
 
 YuNet (2023mar), Copyright Shiqi Yu, MIT; SFace (2021dec), OpenCV Zoo contributors, Apache-2.0. Unmodified ONNX weights are bundled in `PeopleModels` with their full licenses. Source: https://github.com/opencv/opencv_zoo/tree/main/models . Models are used offline for face grouping, not identity lookup. OpenCV Python headless 4.11.0.86 and NumPy 1.26.4 are bundled through PyInstaller with their package licenses.

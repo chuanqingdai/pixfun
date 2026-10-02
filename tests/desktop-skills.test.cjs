@@ -3,7 +3,7 @@ const {skills,buildBrief}=require('../public/desktop-skills.js');
 test('all skill covers use distinct real photography with recorded sources',()=>{
  const crypto=require('node:crypto');
  const provenance=require('../public/media/travel/skill-photo-covers.json');
- assert.equal(new Set(skills.map(skill=>skill.image)).size,9);
+ assert.equal(new Set(skills.map(skill=>skill.image)).size,skills.length);
  const hashes=skills.map(skill=>{
   assert.match(skill.image,/^skill-.+-photo-v3$/);
   const cover=provenance.covers.find(cover=>cover.id===skill.id);
@@ -14,15 +14,30 @@ test('all skill covers use distinct real photography with recorded sources',()=>
   assert(data.length>20000,'Cover must not be an empty placeholder');
   return crypto.createHash('sha256').update(data).digest('hex');
  });
- assert.equal(new Set(hashes).size,9);
+ assert.equal(new Set(hashes).size,skills.length);
 });
-test('nine creator skills carry material-specific editorial strategies',()=>{
- assert.equal(skills.length,9);assert.equal(new Set(skills.map(t=>t.id)).size,9);
+test('ten creator skills carry material-specific editorial strategies',()=>{
+ assert.equal(skills.length,10);assert.equal(new Set(skills.map(t=>t.id)).size,10);
  for(const skill of skills){assert(skill.structure.length>=3);assert.equal(skill.materials.length,2);assert(skill.sound&&skill.pacing&&skill.avoid);assert(fs.existsSync(`public/media/travel/${skill.image}.jpg`));assert(!skill.stage);}
  const food=skills.find(skill=>skill.id==='food-tour');
  const brief=buildBrief(food,'Keep it under 3 minutes.');assert(brief.includes('Food tour'));assert(brief.includes(food.sound));assert(brief.includes(food.beats[0]));assert(brief.includes('Keep it under 3 minutes.'));
  assert(buildBrief(skills[0],'').includes('Use the strategy above'));
  for(const skill of skills){assert(skill.value&&skill.example);assert.equal(skill.beats.length,skill.structure.length);assert.equal(skill.handling.length,2);assert(buildBrief(skill,'').length<=4000);assert(buildBrief(skill,'x'.repeat(2500)).length<=5000);}
+});
+test('Travel Short is second without a badge and exposes the planning specification',()=>{
+ assert.equal(skills[0].id,'visionflow-travel-director');
+ const skill=skills[1];assert.equal(skill.id,'visionflow-travel-short');assert(!skill.featured);
+ assert.equal(skill.version,'1.1');assert.equal(skill.workflow.length,9);assert.equal(skill.templates.length,6);
+ assert.equal(new Set(skill.templates.map(t=>t.title)).size,6);
+ assert.equal(skill.materialCases.length,3);assert(skill.materialCases[0].title.includes('3 photos'));
+ assert.equal(skill.actionTitle,'Use this skill');assert(skill.capabilityNote.includes('not connected'));
+ assert(buildBrief(skill,'').includes('Honor the requested outcome'));
+ const path=require('node:path'),root=path.join('creator-skills',path.dirname(skill.source));
+ const source=fs.readFileSync(path.join('creator-skills',skill.source),'utf8');
+ for(const ref of ['packaging-templates.md','material-adaptation.md']){
+  assert(source.includes(`references/${ref}`));assert(fs.statSync(path.join(root,'references',ref)).size>1000);
+ }
+ assert(fs.readFileSync('scripts/build-native.cjs','utf8').includes("path.join(path.dirname(destination), 'references')"));
 });
 test('travel Vlog preserves the full versioned specification separately from the concise brief',()=>{
  const skill=skills.find(skill=>skill.id==='visionflow-travel-director');

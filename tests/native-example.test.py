@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ class ExampleTests(unittest.TestCase):
         root = ROOT / 'native/Examples/wild-alaska'
         sample = json.loads((root/'manifest.json').read_text())
         record = sample['record']
+        self.assertFalse(re.search(r'[\u3400-\u9fff]', json.dumps(record, ensure_ascii=False)))
         self.assertTrue(record['isExample'])
         self.assertIn('Lakes and forest', record['videoDescription']['full_description'])
         self.assertIn('Text("Sample")', (ROOT/'native/Sources/Pixfun/MediaView.swift').read_text())
@@ -43,7 +45,8 @@ class ExampleTests(unittest.TestCase):
             first, moved = base/'bundle1', base/'bundle2'
             sample = {'filename': 'sample.mp4', 'record': {
                 'id': 'example-test-v1', 'isExample': True, 'kind': 'video', 'status': 'ready',
-                'file': {'name': 'sample.mp4'}, 'result': {'analysis': {'subtitleCues': [{'text': 'Sample'}]}}}}
+                'file': {'name': 'sample.mp4'}, 'videoDescription': {'status': 'ready', 'title': 'Wild Alaska', 'full_description': 'Prepared English sample.', 'model': 'Prepared editorial example'},
+                'result': {'analysis': {'subtitleCues': [{'text': 'Sample'}]}}}}
             for folder in [first, moved]:
                 folder.mkdir()
                 (folder/'sample.mp4').write_bytes(b'fixture-video')
@@ -59,6 +62,15 @@ class ExampleTests(unittest.TestCase):
                 self.assertEqual(source, moved/'sample.mp4')
                 self.assertTrue(record['favorite'])
                 self.assertEqual(record['videoDescription']['full_description'], 'User analysis')
+                self.assertEqual(record['sampleCopy']['title'], 'Wild Alaska')
+                library.patch('example-test-v1', videoDescription={'status': 'running', 'title': '湖岸至山地自然生态巡礼', 'full_description': '旧中文分析'}, shotAnalysis={'status': 'queued'})
+                library.install_example(moved)
+                record, _ = library.get('example-test-v1')
+                self.assertEqual(record['sampleCopy']['full_description'], 'Prepared English sample.')
+                self.assertEqual(record['videoDescription']['status'], 'running')
+                self.assertEqual(record['videoDescription']['full_description'], '旧中文分析')
+                self.assertEqual(record['shotAnalysis']['status'], 'queued')
+                self.assertTrue(record['favorite'])
                 with library.connect() as db:
                     db.execute('UPDATE media SET removed=1 WHERE id=?', ('example-test-v1',))
                 library.install_example(first)

@@ -20,6 +20,11 @@ class TravelSkillTests(unittest.TestCase):
     def test_other_skills_do_not_activate_travel(self):
         self.assertIsNone(resolve_skill(None))
         self.assertIsNone(resolve_skill({'id':'food-tour'}))
+    def test_short_adapter_supports_photo_video_preview_without_claiming_packaging(self):
+        skill = resolve_skill({'id':'visionflow-travel-short'})
+        self.assertEqual(skill['executionScope'],'photo_video_edit_preview')
+        self.assertEqual(skill['defaults']['coverage'],'selected')
+        self.assertIn('photo motion', ' '.join(skill['pending']))
     def test_intro_and_repeated_intervals_do_not_fake_body_coverage(self):
         records={'a':{'file':{'name':'a.mp4'},'metadata':{'duration':10}}, 'b':{'file':{'name':'b.mp4'},'metadata':{'duration':10}}}
         shots=[{'mediaId':'a','start':0,'end':4,'section':'intro'},

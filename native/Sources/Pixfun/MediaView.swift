@@ -3,19 +3,24 @@ import AVKit
 
 struct MediaView: View {
     @EnvironmentObject var store: WorkspaceStore
-    func columns(_ count: Int) -> [[MediaItem]] {
-        var columns = Array(repeating: [MediaItem](), count: count), heights = Array(repeating: 0.0, count: count)
-        for item in store.visibleItems {
+    @State private var knownMediaIDs: Set<String> = []
+    func columns(_ count: Int) -> [[MediaSearchResult]] {
+        var columns = Array(repeating: [MediaSearchResult](), count: count), heights = Array(repeating: 0.0, count: count)
+        for result in store.mediaSearchResults {
             let shortest = heights.enumerated().min { $0.element < $1.element }!.offset
-            columns[shortest].append(item); heights[shortest] += 1 / item.aspect + 0.34
+            columns[shortest].append(result); heights[shortest] += 1 / result.item.aspect + (result.hits.isEmpty ? 0.34 : 1.05)
         }
         return columns
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack {
-                PageHeading(title: "Media", subtitle: "\(store.visibleItems.count) local \(store.visibleItems.count == 1 ? "file" : "files")")
+                PageHeading(title: "Media", subtitle: store.mediaResultSummary)
                 Spacer()
+                if store.importing {
+                    ProgressView().controlSize(.small)
+                    Text("Adding files…").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                }
                 if store.selecting {
                     Button("Cancel", action: store.cancelSelection)
                     Button("Add \(store.selection.count) to brief", action: store.finishSelection).buttonStyle(PixfunButtonStyle(kind: .primary)).disabled(store.selection.isEmpty)
@@ -56,31 +61,21 @@ struct MediaView: View {
                         .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.pixfunLine))
                 }.menuStyle(.borderlessButton).menuIndicator(.visible).tint(.pixfunMuted).frame(width: 152).accessibilityLabel("Filter by folder").help(store.folder.isEmpty ? "Filter by original folder, including subfolders" : store.folder)
-                PixfunSearchField(placeholder: store.searchScope == .name ? "Search by name" : "Search all information", text: $store.query) {
-                    store.query = ""; store.searchScope = .name
-                }
+                MediaSearchControls()
                 Menu {
                     Picker("Sort by", selection: $store.sort) {
-                        ForEach(MediaSort.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    Divider()
-                    Picker("Search in", selection: $store.searchScope) {
-                        ForEach(MediaSearchScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach(MediaSort.allCases, id: \.self) { Text($0 == .original && store.isSearchingMedia ? "Best matches" : $0.rawValue).tag($0) }
                     }
                     if store.hasMediaFilters { Divider(); Button("Clear filters", action: store.resetMediaFilters) }
+                    if store.items.contains(where: \.processing) {
+                        Divider()
+                        Button("Stop analysis") { store.perform { try await store.service.update("/api/desktop/stop", [:]); try await store.refresh() } }.disabled(store.importing)
+                    }
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease").font(.system(size: 15)).foregroundStyle(Color.pixfunMuted)
                         .frame(width: 36, height: 36).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.pixfunLine))
-                }.menuStyle(.borderlessButton).menuIndicator(.hidden).tint(.pixfunMuted).frame(width: 36).accessibilityLabel("View options").help("Sort and search options")
-            }
-            if store.items.contains(where: \.processing) || store.importing {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text(store.importing ? "Importing originals…" : "Analyzing \(store.items.filter(\.processing).count) files on this Mac…").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Stop analysis") { store.perform { try await store.service.update("/api/desktop/stop", [:]); try await store.refresh() } }.disabled(store.importing)
-                }
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).tint(.pixfunMuted).frame(width: 36).accessibilityLabel("Sort options").help("Sort results")
             }
             if let removed = store.removed {
                 HStack { Text("Removed \(removed.name) from Media. Original kept.").font(.caption); Spacer(); Button("Undo", action: store.undoRemove) }
@@ -91,18 +86,33 @@ struct MediaView: View {
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 22) {
                             if store.visibleItems.isEmpty {
-                                EmptyWorkspace(symbol: "photo.on.rectangle.angled", title: store.items.isEmpty ? "Bring your footage" : "No matching footage", detail: store.items.isEmpty ? "Add local files or a folder. Originals stay in place; only the index and analysis cache are saved." : "Try another folder, category, or name.")
+                                EmptyWorkspace(symbol: "photo.on.rectangle.angled", title: store.items.isEmpty ? "Bring your footage" : "No matching footage", detail: store.items.isEmpty ? "Add local files or a folder. Originals stay in place; only the index and analysis cache are saved." : "Try fewer keywords or another search scope. Clips without saved analysis can still match their names and folders.")
                                     .frame(minHeight: 240)
+                                if store.hasMediaFilters {
+                                    HStack {
+                                        if store.searchScope != .all { Button("Search everything") { store.searchScope = .all } }
+                                        Button("Reset filters", action: store.resetMediaFilters)
+                                    }.buttonStyle(PixfunButtonStyle()).frame(maxWidth: .infinity)
+                                }
                             } else {
                                 HStack(alignment: .top, spacing: 16) {
                                     ForEach(columns.indices, id: \.self) { index in
-                                        LazyVStack(spacing: 16) { ForEach(columns[index]) { item in MediaCard(item: item).id(item.id) } }.frame(maxWidth: .infinity)
+                                        LazyVStack(spacing: 16) { ForEach(columns[index]) { result in MediaCard(item: result.item, matches: result.hits).id(result.id) } }.frame(maxWidth: .infinity)
                                     }
                                 }.padding(.bottom, 16)
                             }
                         }
                     }.onAppear {
+                        knownMediaIDs = Set(store.items.map(\.id))
                         if let id = store.lastOpenedMediaID { scroll.scrollTo(id, anchor: .center) }
+                    }.onChange(of: store.items.map(\.id)) { ids in
+                        let current = Set(ids), added = current.subtracting(knownMediaIDs)
+                        knownMediaIDs = current
+                        // Surface imports without disturbing manual sorting or active searches.
+                        if !added.isEmpty, store.sort == .original, !store.isSearchingMedia,
+                           let first = store.mediaSearchResults.first, added.contains(first.id) {
+                            scroll.scrollTo(first.id, anchor: .top)
+                        }
                     }
                 }
             }
@@ -114,6 +124,7 @@ struct MediaView: View {
 struct MediaCard: View {
     @EnvironmentObject var store: WorkspaceStore
     let item: MediaItem
+    var matches: [MediaSearchHit] = []
     @State private var hovered = false
     var isSelected: Bool { store.selecting && store.selection.contains(item.id) }
     var body: some View {
@@ -126,8 +137,8 @@ struct MediaCard: View {
                         .overlay(alignment: .bottomLeading) {
                             if let status = item.processingLabel {
                                 HStack(spacing: 6) {
-                                    ProgressView().controlSize(.mini)
-                                    Text(status).font(.pixfun(11))
+                                    ProgressView().controlSize(.small).colorScheme(.dark)
+                                    Text(status).font(.pixfun(12, semibold: true))
                                 }.foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 5)
                                     .background(.black.opacity(0.75), in: Capsule())
                                     .padding(8).allowsHitTesting(false).accessibilityLabel(status)
@@ -143,7 +154,7 @@ struct MediaCard: View {
                             }
                         }
                         .overlay(alignment: .bottomTrailing) {
-                            if let seconds = item.metadata?.duration, seconds > 0 {
+                            if item.kind == "video", let seconds = item.metadata?.duration, seconds > 0 {
                                 Text(timestamp(seconds)).font(.caption.monospacedDigit()).padding(5).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 5)).padding(8)
                             }
                         }
@@ -152,11 +163,23 @@ struct MediaCard: View {
                         if let location = item.context?["location"], !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(1) }
                         if let device = item.context?["device"], !device.isEmpty { Text(device).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(1) }
                         if item.status != "ready" && !item.processing { Text(item.missing == true ? "Original missing" : item.status.capitalized).font(.pixfun(12)).foregroundStyle(item.status == "error" ? Color.orange : .pixfunMuted) }
+                        if !matches.isEmpty {
+                            ForEach(Array(matches.prefix(2))) { hit in MediaSearchEvidence(hit: hit, query: store.query).padding(.top, 4) }
+                            if matches.count > 2 { Text("+\(matches.count - 2) more matching entries").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted) }
+                        }
                     }.padding(13)
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)
-                .accessibilityLabel("\(store.selecting ? (isSelected ? "Deselect" : "Select") : "Open") \(item.name)\(item.isExample == true ? " · Sample" : "")")
+                .accessibilityLabel("\(store.selecting ? (isSelected ? "Deselect" : "Select") : "Open") \(item.name)\(item.isExample == true ? " · Sample" : "")\(item.processingLabel.map { " · \($0)" } ?? "")")
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            if !store.selecting, let hit = matches.first(where: { $0.start != nil }), let seconds = hit.start {
+                Button { store.openMedia(item, at: seconds) } label: {
+                    Label("View match · \(timestamp(seconds))", systemImage: "play.circle")
+                        .font(.pixfun(12)).frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(PixfunButtonStyle(kind: .quiet)).foregroundStyle(Color.pixfunGold)
+                    .padding(.horizontal, 5).padding(.bottom, 8)
+                    .accessibilityLabel("Open matching moment at \(timestamp(seconds)) in \(item.name)")
+            }
         }
         .background(hovered ? Color.pixfunRaised : .pixfunSurface).clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(store.selecting && store.selection.contains(item.id) ? Color.pixfunGold : hovered ? .pixfunSubtle : .pixfunLine, lineWidth: store.selection.contains(item.id) && store.selecting ? 2 : 1))
@@ -213,7 +236,7 @@ struct MediaDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
-                Button(action: store.backToMedia) { Label("Media", systemImage: "chevron.left") }.buttonStyle(PixfunButtonStyle(kind: .quiet)).keyboardShortcut("[", modifiers: .command).accessibilityLabel("Back to Media")
+                Button(action: store.backToMedia) { Label(store.mediaBackTitle, systemImage: "chevron.left") }.buttonStyle(PixfunButtonStyle(kind: .quiet)).keyboardShortcut("[", modifiers: .command).accessibilityLabel("Back to \(store.mediaBackTitle)")
                 Text(item.name).font(.pixfun(20, semibold: true)).lineLimit(2).help(item.name)
                 Spacer()
                 Button { store.favorite(item) } label: { Image(systemName: item.favorite == true ? "star.fill" : "star") }.help("Favorite")
@@ -254,6 +277,10 @@ struct MediaDetailView: View {
                         }.frame(width: 190, alignment: .leading)
                     }
                     if let error = item.error { Text(error).font(.callout).foregroundStyle(.orange) }
+                    MediaDetailSearchMatches(item: item) { seconds in
+                        selectedSegment = item.segments.first { $0.start <= seconds && seconds < $0.end }?.id
+                        seek(seconds)
+                    }
                     if item.kind == "video" { shotBrowser }
                     editorialDescription
                     if let location = item.context?["location"], !location.isEmpty {
@@ -302,9 +329,11 @@ struct MediaDetailView: View {
                         if photo == nil { throw ServiceError(message: "This image could not be previewed. Open the original in Finder.") }
                     }
                     else {
+                        selectedSegment = item.segments.first { $0.start <= store.mediaSeekTime && store.mediaSeekTime < $0.end }?.id
                         playback.open(url, at: store.mediaSeekTime)
                         store.mediaSeekTime = 0
-                        if item.kind == "video" { store.describeVideo(item); store.analyzeShots(item) }
+                        // Opening a search result is navigation, not permission to start new model work.
+                        if item.kind == "video" && !store.isSearchingMedia { store.describeVideo(item); store.analyzeShots(item) }
                     }
                 } catch { playerError = error.localizedDescription }
             }.onDisappear { playback.stop() }
@@ -408,10 +437,10 @@ struct MediaDetailView: View {
                         .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(item.missing == true)
                 }
             }
-            if let description = item.videoDescription?.full_description, !description.isEmpty {
+            if let description = item.displayVideoDescription?.full_description, !description.isEmpty {
                 Text(description).font(.pixfun(14)).foregroundStyle(Color.pixfunInk).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .help(item.videoDescription?.coverage ?? "Generated from local video evidence")
+                    .help(item.displayVideoDescription?.coverage ?? "Generated from local video evidence")
             } else if item.kind != "video", let description = item.description, !description.isEmpty {
                 Text(description).foregroundStyle(Color.pixfunMuted).textSelection(.enabled)
             } else if item.videoDescription?.busy != true {

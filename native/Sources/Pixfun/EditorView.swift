@@ -15,14 +15,16 @@ struct EditorWorkspaceView: View {
     @StateObject private var sourcePlayer = PlaybackController()
     var run: AgentRun? { store.editorTimelineRun }
     var selected: AgentShot? { draft?.shots.first { $0.id == selectedID } }
+    var selectedPhoto: MediaItem? { store.items.first { $0.id == selected?.mediaId && $0.kind == "image" } }
     var busy: Bool { store.activeAgentRun?.busy == true || saving || store.agentActionPending || store.saving }
     var preview: AgentArtifact? {
         run?.lastPreview ?? store.agentRuns.filter { $0.projectId == projectID }.sorted { $0.updatedAt > $1.updatedAt }.compactMap(\.lastPreview).first
     }
     var stalePreview: Bool { draft?.dirty == true || run?.preview?.id != preview?.id }
     var conflict: Bool { draft != nil && run != nil && draft!.runID == run!.id && draft!.version != run!.version }
-    var durations: [String: Double] { Dictionary(uniqueKeysWithValues: store.items.compactMap { item in item.metadata?.duration.map { (item.id, $0) } }) }
-    var validation: String? { draft?.validation(durations: durations) }
+    var durations: [String: Double] { Dictionary(uniqueKeysWithValues: store.items.compactMap { item in item.kind == "image" ? (item.id, 60.0) : item.metadata?.duration.map { (item.id, $0) } }) }
+    var photoIDs: Set<String> { Set(store.items.filter { $0.kind == "image" }.map(\.id)) }
+    var validation: String? { draft?.validation(durations: durations, photoIDs: photoIDs) }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
@@ -89,7 +91,9 @@ struct EditorWorkspaceView: View {
                 if !sourceMode && stalePreview { Text("Previous render · rebuild after saving").font(.pixfun(12)).foregroundStyle(Color.pixfunGold) }
             }
             if sourceMode {
-                if let player = sourcePlayer.player {
+                if let photo = selectedPhoto {
+                    ServiceImage(path: photo.cover, fit: .fit).aspectRatio(photo.aspect, contentMode: .fit).frame(maxHeight: 300)
+                } else if let player = sourcePlayer.player {
                     NativeVideoPlayer(player: player).aspectRatio(16/9, contentMode: .fit).frame(maxHeight: 300)
                 } else {
                     Text(selected == nil ? "Select a timeline shot to inspect its original footage." : "Loading original…")
@@ -100,7 +104,8 @@ struct EditorWorkspaceView: View {
                     Button("Retry source") { Task { issue = nil; await loadSource() } }
                 }
                 if let selected {
-                    Text("Source \(timestamp(selected.start))–\(timestamp(selected.end)) · \(selected.label)").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(2)
+                    Text(selectedPhoto != nil ? "Photo · \(String(format: "%.2fs", selected.end)) display · \(selected.label)" : "Source \(timestamp(selected.start))–\(timestamp(selected.end)) · \(selected.label)").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(2)
+                    if selectedPhoto == nil {
                     Button("Split at playhead") {
                         if let seconds = sourcePlayer.player?.currentTime().seconds {
                             if seconds - selected.start >= 0.25 && selected.end - seconds >= 0.25 {
@@ -108,6 +113,7 @@ struct EditorWorkspaceView: View {
                             } else { issue = "Move the playhead at least 0.25 seconds from either edge." }
                         }
                     }.disabled(busy || selected.locked || sourcePlayer.player == nil)
+                    }
                 }
             } else if let preview {
                 AgentVideoMessage(artifact: preview, aspect: run?.aspect ?? "16:9")
@@ -128,13 +134,45 @@ struct EditorWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     track(audio: false)
                     track(audio: true)
+                    if let finish = run?.finishing {
+                        if finish.music != nil {
+                            finishingTrack("A2\nMusic", text: finish.music?.ducking == true ? "Background music · auto-ducking" : "Background music")
+                        }
+                        if !finish.narration.isEmpty {
+                            HStack(spacing: 3) {
+                                Text("A3\nVoice").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).frame(width: 56)
+                                ZStack(alignment: .leading) {
+                                    ForEach(Array(finish.narration.enumerated()), id: \.offset) { _, cue in
+                                        Text(cue.text).font(.pixfun(11)).lineLimit(1).padding(.horizontal, 6)
+                                            .frame(width: max(20, (cue.end-cue.start)*zoom), height: 28, alignment: .leading)
+                                            .background(Color.pixfunGold.opacity(0.18)).cornerRadius(4)
+                                            .offset(x: cue.start*zoom).help(cue.text)
+                                    }
+                                }.frame(width: max(40, (draft?.duration ?? 0)*zoom), height: 28, alignment: .leading)
+                            }
+                        }
+                    }
                 }.padding(2)
-            }.frame(height: 132)
+            }.frame(height: 132 + (run?.finishing?.music != nil ? 34 : 0) + (run?.finishing?.narration.isEmpty == false ? 34 : 0))
+            if run?.finishing?.transition.kind == "fade" {
+                Text("Fade through black · timing unchanged").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
+            }
+            if run?.finishing?.music != nil || run?.finishing?.narration.isEmpty == false {
+                Text("Clear the shot selection to adjust music or narration in chat.").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
+            }
+        }
+    }
+    func finishingTrack(_ title: String, text: String) -> some View {
+        HStack(spacing: 3) {
+            Text(title).font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).frame(width: 56)
+            Text(text).font(.pixfun(11)).padding(.horizontal, 6)
+                .frame(width: max(40, (draft?.duration ?? 0)*zoom), height: 28, alignment: .leading)
+                .background(Color.pixfunGold.opacity(0.12)).cornerRadius(4)
         }
     }
     func track(audio: Bool) -> some View {
         HStack(spacing: 3) {
-            Text(audio ? "A1\nOriginal" : "V1\nVideo").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).frame(width: 56)
+            Text(audio ? "A1\nOriginal" : "V1\nVisuals").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).frame(width: 56)
             ForEach(draft?.shots ?? []) { shot in
                 Button { select(shot) } label: {
                     VStack(alignment: .leading, spacing: 4) {
@@ -144,7 +182,7 @@ struct EditorWorkspaceView: View {
                         }
                         HStack(spacing: 4) {
                             if shot.locked { Image(systemName: "lock.fill") }
-                            Text(audio ? (store.items.first { $0.id == shot.mediaId }?.metadata?.hasAudio == false ? "No audio" : "Linked audio") : shot.label).lineLimit(1)
+                            Text(audio ? (run?.finishing?.originalVolume == 0 ? "Muted" : store.items.first { $0.id == shot.mediaId }?.metadata?.hasAudio == false ? "No audio" : "Linked audio") : shot.label).lineLimit(1)
                         }.font(.pixfun(11)).padding(.horizontal, 6)
                         if !audio { Text("\(timestamp(offset(shot.id))) · \(String(format: "%.2fs", shot.end-shot.start))").font(.pixfun(10)).foregroundStyle(Color.pixfunMuted).padding(.horizontal, 6) }
                     }.frame(width: max(40, (shot.end-shot.start)*zoom), height: audio ? 27 : 85, alignment: .topLeading)
@@ -168,10 +206,12 @@ struct EditorWorkspaceView: View {
                     Button("Clear") { selectedID = nil; refreshScope() }.buttonStyle(PixfunButtonStyle(kind: .quiet))
                 }
                 HStack {
-                    Text("Source in/out").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    Text(selectedPhoto == nil ? "Source in/out" : "Display duration").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    if selectedPhoto == nil {
                     TextField("In seconds", text: $inText).frame(width: 64).accessibilityLabel("Source in seconds")
-                    TextField("Out seconds", text: $outText).frame(width: 64).accessibilityLabel("Source out seconds")
-                    Button("Apply trim", action: trim)
+                    }
+                    TextField(selectedPhoto == nil ? "Out seconds" : "Seconds", text: $outText).frame(width: 64).accessibilityLabel(selectedPhoto == nil ? "Source out seconds" : "Photo display duration in seconds")
+                    Button(selectedPhoto == nil ? "Apply trim" : "Apply duration", action: trim)
                     Spacer()
                 }.disabled(busy || selected.locked || (draft?.base.first { $0.id == selected.id }?.locked == true))
                 HStack {
@@ -205,7 +245,7 @@ struct EditorWorkspaceView: View {
         var shots = proposed.shots
         guard let i = shots.firstIndex(where: { $0.id == selected.id }) else { return }
         shots[i].start = start; shots[i].end = end; proposed.replace(shots)
-        if let error = proposed.validation(durations: durations) { issue = error; return }
+        if let error = proposed.validation(durations: durations, photoIDs: photoIDs) { issue = error; return }
         draft = proposed; issue = nil
     }
     func move(_ amount: Int) {
@@ -247,7 +287,7 @@ struct EditorWorkspaceView: View {
     }
     func loadSource() async {
         sourcePlayer.stop()
-        guard sourceMode, let selected else { return }
+        guard sourceMode, let selected, selectedPhoto == nil else { return }
         do {
             let url = try await store.service.original(selected.mediaId)
             guard !Task.isCancelled, sourceMode, selectedID == selected.id else { return }

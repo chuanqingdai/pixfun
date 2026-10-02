@@ -5,6 +5,6 @@ const fs=require('node:fs');
 const root=path.resolve(__dirname,'..');
 const python=path.join(root,'.desktop-venv/bin/python');
 if(!fs.existsSync(python))throw new Error('Create .desktop-venv with Python 3.9–3.12 and install pyinstaller==6.20.0. See desktop/README.md.');
-const result=spawnSync(python,['-m','PyInstaller','--noconfirm','--onedir','--name','pixfun-service','--distpath','build-desktop/backend','--workpath','build-desktop/work','--specpath','build-desktop','--target-arch','arm64','--add-data',`${path.join(root,'creator-skills/visionflow-travel-director/SKILL.md')}:creator-skills/visionflow-travel-director`,'desktop_service.py'],{cwd:root,stdio:'inherit',env:{...process.env,PYINSTALLER_CONFIG_DIR:path.join(root,'build-desktop/pyinstaller-cache')}});
+const result=spawnSync(python,['-m','PyInstaller','--noconfirm','--onedir','--name','pixfun-service','--distpath','build-desktop/backend','--workpath','build-desktop/work','--specpath','build-desktop','--target-arch','arm64','--add-data',`${path.join(root,'creator-skills/visionflow-travel-director/SKILL.md')}:creator-skills/visionflow-travel-director`,'--add-data',`${path.join(root,'creator-skills/visionflow-travel-short/SKILL.md')}:creator-skills/visionflow-travel-short`,'desktop_service.py'],{cwd:root,stdio:'inherit',env:{...process.env,PYINSTALLER_CONFIG_DIR:path.join(root,'build-desktop/pyinstaller-cache')}});
 if(result.status!==0)process.exit(result.status??1);
 if(!process.argv.includes('--skip-icon'))require('./build-desktop-icon.cjs');

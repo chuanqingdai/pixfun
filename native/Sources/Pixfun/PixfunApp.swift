@@ -8,7 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { store?.stop() }
 }
 
+#if !PIXFUN_LAYOUT_TEST
 @main
+#endif
 struct PixfunApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var store = WorkspaceStore()

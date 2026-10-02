@@ -32,6 +32,11 @@ struct PromptEditor: NSViewRepresentable {
         editor.textContainer?.containerSize = NSSize(width: 600, height: CGFloat.greatestFiniteMagnitude)
         editor.textContainer?.widthTracksTextView = true
         editor.textContainer?.heightTracksTextView = false
+        editor.textContainer?.lineBreakMode = .byWordWrapping
+        editor.textContainer?.maximumNumberOfLines = 0
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        editor.defaultParagraphStyle = paragraph
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = false
         editor.minSize = .zero
@@ -54,17 +59,20 @@ struct PromptEditor: NSViewRepresentable {
         scroll.onLayout = { [weak editor, weak coordinator] in
             if let editor { coordinator?.measure(editor) }
         }
+        scroll.synchronizeEditorLayout()
         return scroll
     }
     func updateNSView(_ scroll: PromptScrollView, context: Context) {
         guard let editor = scroll.documentView as? PromptTextView else { return }
         context.coordinator.parent = self
         editor.placeholder = placeholder
+        scroll.synchronizeEditorLayout()
         // Do not replace text while the user is composing with a Chinese/Japanese IME.
         if editor.string != text && !editor.hasMarkedText() {
             editor.string = text
             editor.undoManager?.removeAllActions()
             editor.needsDisplay = true
+            scroll.synchronizeEditorLayout()
             context.coordinator.measure(editor)
         }
         if requestFocus && !context.coordinator.focusing {
@@ -86,6 +94,7 @@ struct PromptEditor: NSViewRepresentable {
             guard let editor = notification.object as? PromptTextView else { return }
             parent.text = editor.string
             editor.needsDisplay = true
+            (editor.enclosingScrollView as? PromptScrollView)?.synchronizeEditorLayout()
             measure(editor)
         }
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -111,7 +120,35 @@ struct PromptEditor: NSViewRepresentable {
 
 final class PromptScrollView: NSScrollView {
     var onLayout: (() -> Void)?
-    override func layout() { super.layout(); onLayout?() }
+    override func layout() {
+        super.layout()
+        synchronizeEditorLayout()
+        onLayout?()
+    }
+
+    // SwiftUI can resize the clip view without resizing NSTextView's document.
+    // Pin both document and text-container width to the viewport before measuring.
+    // A hidden horizontal scroller alone does not make a text view wrap.
+    func synchronizeEditorLayout() {
+        guard let editor = documentView as? NSTextView,
+              let container = editor.textContainer, let layout = editor.layoutManager else { return }
+        let width = contentSize.width
+        guard width > 0 else { return }
+        editor.minSize = NSSize(width: width, height: 0)
+        editor.maxSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        if abs(editor.frame.width - width) > 0.5 {
+            editor.setFrameSize(NSSize(width: width, height: editor.frame.height))
+        }
+        let textWidth = max(1, width - editor.textContainerInset.width * 2)
+        if abs(container.containerSize.width - textWidth) > 0.5 {
+            container.containerSize = NSSize(width: textWidth, height: .greatestFiniteMagnitude)
+        }
+        layout.ensureLayout(for: container)
+        let height = max(contentSize.height, ceil(layout.usedRect(for: container).height + editor.textContainerInset.height * 2))
+        if abs(editor.frame.height - height) > 0.5 {
+            editor.setFrameSize(NSSize(width: width, height: height))
+        }
+    }
 }
 
 final class PromptTextView: NSTextView {

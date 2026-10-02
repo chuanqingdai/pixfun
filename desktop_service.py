@@ -23,6 +23,7 @@ import uuid
 from urllib.parse import urlparse, unquote
 
 import app as engine
+from photo_source import prepare_photo
 from agent_engine import AgentEngine
 from video_description import VideoDescriptions
 from shot_analysis import ShotAnalyses
@@ -100,6 +101,9 @@ class Library:
         if source.parent != root or not source.is_file():
             raise ValueError('Bundled example is missing or outside its directory')
         record = sample['record']
+        # Keep authored sample copy separate from regenerable model output.
+        # Existing analysis, progress and user metadata must remain untouched.
+        record['sampleCopy'] = record.get('videoDescription')
         media_id = record['id']
         if not media_id.startswith('example-') or record.get('isExample') is not True:
             raise ValueError('Invalid bundled example identity')
@@ -109,6 +113,7 @@ class Library:
                 # Bundle relocation must not discard favorites, new analysis or soft removal.
                 saved = json.loads(existing[0])
                 if saved.get('isExample'):
+                    saved['sampleCopy'] = record['sampleCopy']
                     # Refresh only our unmodified prepared copy, never model/user output.
                     if (saved.get('videoDescription') or {}).get('model') == 'Prepared editorial example':
                         saved['videoDescription'] = record.get('videoDescription')
@@ -201,22 +206,23 @@ class Library:
             if not source.is_file():
                 raise ValueError('Original file not found. Locate it to reconnect this item.')
             self.patch(media_id, status='analyzing')
-            metadata = engine.probe_media(source)
+            decoded = source
+            if record['kind'] == 'image':
+                def decode_command(args):
+                    code, _, error = engine.run_command(args, timeout=60)
+                    if code != 0: raise ValueError('Could not decode this photo. Try a JPEG or PNG copy.')
+                decoded = prepare_photo(source, engine.OUTPUTS, decode_command)
+            metadata = engine.probe_media(decoded)
+            if record['kind'] == 'image':
+                metadata.update(duration=None, fps=None, hasAudio=False)
             if not metadata.get('available') or not (metadata.get('hasAudio') if record['kind'] == 'audio' else metadata.get('width')):
                 raise ValueError('Cannot read this media. Try another format.')
             self.patch(media_id, metadata=metadata)
             result = None
             if record['kind'] == 'audio':
                 result = {'ok': True, 'analysis': {'metadata': metadata, 'segments': [], 'subtitleCues': [], 'subtitleMessage': 'Audio playback is available. Local speech recognition is not installed.'}}
-            if record['kind'] == 'image' and source.suffix.lower() in {'.heic','.heif','.tif','.tiff'}:
-                job_id = uuid.uuid4().hex[:12]
-                directory = engine.OUTPUTS / job_id
-                directory.mkdir(parents=True, exist_ok=True)
-                preview = directory / 'preview.jpg'
-                code, _, _ = engine.run_command(['ffmpeg','-y','-i',str(source),'-frames:v','1','-vf','scale=1920:1920:force_original_aspect_ratio=decrease',str(preview)],timeout=60)
-                if code != 0:
-                    raise ValueError('Cannot create a preview for this image. Convert it to JPEG or PNG and import it again.')
-                self.patch(media_id, url=engine.media_url('output', job_id, preview.name))
+            if record['kind'] == 'image':
+                self.patch(media_id, url=engine.media_url('output', decoded.parent.name, decoded.name))
             if record['kind'] == 'video':
                 job_id = uuid.uuid4().hex[:12]
                 duration = float(metadata.get('duration') or 0)

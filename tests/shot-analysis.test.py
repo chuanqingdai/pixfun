@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import threading
 import unittest
+from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('agent_tests',ROOT/'tests/agent.test.py')
 base=importlib.util.module_from_spec(spec); spec.loader.exec_module(base)
@@ -14,6 +15,24 @@ class ShotTests(unittest.TestCase):
     # Use the existing isolated library/model fixture without inheriting its tests.
     setUp=base.AgentTests.setUp
     tearDown=base.AgentTests.tearDown
+    def test_audio_without_subtitles_transcribes_and_reuses_speech_cache(self):
+        record, _ = self.library.get(self.asset)
+        record['metadata']['hasAudio'] = True
+        record['result']['analysis']['subtitleCues'] = []
+        self.library.patch(self.asset, metadata=record['metadata'], result=record['result'],
+                           videoDescription={'status':'running','message':'Another description job'})
+        with patch.object(self.models, 'capabilities', return_value={'localSpeech':True}), \
+             patch.object(self.models, 'transcribe', return_value={'cues':[{'start':0,'end':1,'text':'The trail starts here.'}]}) as transcribe:
+            for attempt in range(2):
+                _, result = self.agent.understand({'mode':'local'}, self.asset, threading.Event(), progress=lambda _:None)
+                self.assertTrue(result['output']['shots'])
+                self.assertEqual(result['speechEvidence']['cues'][0]['text'], 'The trail starts here.')
+                # Re-run editorial analysis, retaining only the separate speech cache.
+                with self.library.connect() as db:
+                    db.execute("DELETE FROM agent_analysis WHERE json_extract(record, '$.output') IS NOT NULL")
+            self.assertEqual(transcribe.call_count, 1)
+        self.assertEqual(self.library.get(self.asset)[0]['videoDescription']['status'], 'running')
+
     def test_editorial_pipeline_cache_and_coverage(self):
         service=ShotAnalyses(self.library,self.agent)
         key=self.asset

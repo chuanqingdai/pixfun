@@ -3,11 +3,26 @@ import hashlib
 from pathlib import Path
 
 SKILL_ID = 'visionflow-travel-director'
+DEFAULT_SKILL = {'id': SKILL_ID, 'title': 'Travel Vlog',
+                 'strategy': 'Use the installed Travel Vlog editing strategy.'}
 SOURCE = Path(__file__).resolve().parent / 'creator-skills' / SKILL_ID / 'SKILL.md'
+SHORT_ID = 'visionflow-travel-short'
+SHORT_SOURCE = SOURCE.parent.parent / SHORT_ID / 'SKILL.md'
 ADAPTER_VERSION = '1'
 
 # Only installed, allowlisted content is executable policy. A client-supplied path is never read.
 def resolve_skill(chosen):
+    if chosen and chosen.get('id') == SHORT_ID:
+        if not SHORT_SOURCE.is_file(): raise ValueError('The Travel Short specification is missing.')
+        source = SHORT_SOURCE.read_text(encoding='utf-8')
+        if 'version: "1.1"' not in source: raise ValueError('Travel Short needs a compatible runtime adapter.')
+        passages = [p for p in source.splitlines() if p.startswith(('- 一个主题', '- 最终文件时长', '模板必须适配素材', '地名、日期'))]
+        return {'id': SHORT_ID, 'title':'Travel Short', 'version':'1.1', 'adapterVersion':'1',
+                'sourceSHA256':hashlib.sha256(source.encode()).hexdigest(), 'editorialRules':'\n'.join(passages),
+                'defaults':{'aspect':'9:16','duration':None,'coverage':'selected'},
+                'executionScope':'photo_video_edit_preview',
+                'pending':['Animated typography and photo motion', 'Multi-image layouts and graphic transitions',
+                           'Full audiovisual review and delivery package']}
     if not chosen or chosen.get('id') != SKILL_ID:
         return None
     if not SOURCE.is_file():
@@ -25,9 +40,9 @@ def resolve_skill(chosen):
             'adapterVersion': ADAPTER_VERSION, 'sourceSHA256': hashlib.sha256(source.encode()).hexdigest(),
             'editorialRules': '\n\n'.join(passages),
             'defaults': {'aspect': '16:9', 'duration': None, 'coverage': 'all_usable_unique'},
-            'executionScope': 'video_story_and_rough_cut',
-            'pending': ['授权配乐与对白避让混音', '照片动效与竖屏模糊背景',
-                        '章节闪黑、字体包装及地点标签', '全片连续视听验收与完整交付包']}
+            'executionScope': 'photo_video_story_and_rough_cut',
+            'pending': ['Photo motion and portrait backgrounds',
+                        'Advanced transitions, typography and location titles', 'Full audiovisual review and delivery package']}
 
 
 ROUTING_RULE = '''选中的 Travel Vlog 是叙事策略，不改变用户本次任务类型。
@@ -48,7 +63,8 @@ coverageMode=all_usable_unique 时每个输入文件都必须在正文有清楚�
 仅 duplicate_candidate 标记不足以证明文件重复。无法满足则在limitations说明，不隐瞒遗漏。
 不强制给素材不足的短片塞进高光片头；人物、动作、对白完整性高于快切。
 镜头的reason解释真实事件、故事作用与剪法。没有音频证据不得声称保留了某句对白。
-目前是视频原声粗剪：没有执行音乐、标签、转场、照片、调色或全片听审，不能称完整技能验收通过。
+可按用户明确要求调用本地配乐混音、系统语音旁白、淡入淡出转场；不自动添加这些包装。
+没有执行标签、照片、调色或全片听审，不能称完整技能验收通过。
 每个shot增加section（intro|body|outro），intro不计正文覆盖，缺省为body。
 '''
 
@@ -70,4 +86,4 @@ def coverage_report(shots, records, mode='all_usable_unique'):
     missing = [e for e in entries if e['state'] != 'present']
     return {'mode': mode, 'files': entries, 'requiresDecision': mode != 'selected' and bool(missing),
             'status': 'NEEDS_REVIEW', 'eventCompleteness': 'UNVERIFIED',
-            'note': '按时间线检查源文件正文露出；不等于人物、动作、对白或关键事件已全部完整保留。'}
+            'note': 'Checks source-file coverage in the timeline, not completeness of people, actions, dialogue or key events.'}

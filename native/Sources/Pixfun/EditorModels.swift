@@ -28,10 +28,11 @@ struct EditorDraft: Codable, Equatable {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(shots); shots = next
     }
-    func validation(durations: [String: Double]) -> String? {
+    func validation(durations: [String: Double], photoIDs: Set<String> = []) -> String? {
         guard !shots.isEmpty else { return "Keep at least one shot in the timeline." }
         guard shots.count <= 80, Set(shots.map(\.id)).count == shots.count else { return "Use up to 80 unique shots." }
         for shot in shots {
+            if photoIDs.contains(shot.mediaId) && (shot.start != 0 || shot.end > 60) { return "Set a photo display duration up to 60 seconds, starting at 0." }
             guard shot.start.isFinite, shot.end.isFinite, shot.start >= 0, shot.end - shot.start >= 0.25 else { return "Each shot needs valid in/out points and at least 0.25 seconds." }
             if let length = durations[shot.mediaId], shot.end > length + 0.001 { return "The out point exceeds the original file’s duration." }
         }

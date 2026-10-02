@@ -5,23 +5,30 @@ import UniformTypeIdentifiers
 @MainActor
 final class WorkspaceStore: ObservableObject {
     let service = LocalService()
-    @Published var page: WorkspacePage? = .home { didSet { if page != .media { detail = nil } } }
+    @Published var page: WorkspacePage? = .home { didSet { if page != .media { detail = nil; mediaReturnProjectID = nil } } }
+    @Published private(set) var mediaReturnProjectID: String?
+    var mediaBackTitle: String { mediaReturnProjectID == nil ? "Media" : "Conversation" }
     @Published var ready = false
     @Published var startupError: String?
     @Published var error: String?
-    @Published var items: [MediaItem] = []
+    @Published var items: [MediaItem] = [] { didSet {
+        searchDocuments = Dictionary(uniqueKeysWithValues: items.map { ($0.id, MediaSearchDocument($0)) })
+        refreshMediaSearch()
+    } }
     @Published var projects: [Project] = []
     @Published var skills: [CreatorSkill] = []
     @Published var draft = Draft() { didSet { if restoredDraft { persistDraft() } } }
     @Published var projectDrafts: [String: Draft] = [:] { didSet { if restoredDraft { persistProjectDrafts() } } }
     @Published var selectedProjectID: String?
     private var selectionProjectID: String?
-    @Published var query = ""
-    @Published var category = MediaCategory.all
-    @Published var folder = ""
-    @Published var searchScope = MediaSearchScope.name
-    @Published var sort = MediaSort.original
-    @Published var locations: [String: MediaLocation] = [:]
+    @Published var query = "" { didSet { refreshMediaSearch() } }
+    @Published var category = MediaCategory.all { didSet { refreshMediaSearch() } }
+    @Published var folder = "" { didSet { refreshMediaSearch() } }
+    @Published var searchScope = MediaSearchScope.all { didSet { refreshMediaSearch() } }
+    @Published var sort = MediaSort.original { didSet { refreshMediaSearch() } }
+    @Published var locations: [String: MediaLocation] = [:] { didSet { refreshMediaSearch() } }
+    private var searchDocuments: [String: MediaSearchDocument] = [:]
+    @Published private(set) var mediaSearchResults: [MediaSearchResult] = []
     var lastOpenedMediaID: String?
     var mediaSeekTime: Double = 0
     @Published var selecting = false
@@ -79,13 +86,26 @@ final class WorkspaceStore: ObservableObject {
         }
         return nil
     }
+    var needsComposerMaterials: Bool {
+        composerDraft.attachments.isEmpty &&
+            (!composerDraft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+             (composerProjectID != nil && activeAgentRun?.clarificationKind == "materials"))
+    }
     var canSubmitAgent: Bool {
-        !saving && !importing && !agentActionPending && composerIssue == nil &&
+        !composerDraft.attachments.isEmpty && !saving && !importing && !agentActionPending && composerIssue == nil &&
             (!composerDraft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || canResumeWithMaterials)
     }
     var composerDraft: Draft {
         get { draft(for: composerProjectID) }
         set { setDraft(newValue, for: composerProjectID) }
+    }
+    // The project keeps its source context; the composer shows only unsent additions.
+    var composerPendingAttachments: [Attachment] {
+        guard let projectID = composerProjectID else { return composerDraft.attachments }
+        let sent = Set(agentRuns.filter { $0.projectId == projectID }.flatMap {
+            ($0.attachments?.map(\.id)) ?? $0.originalMediaIds ?? $0.mediaIds ?? []
+        })
+        return composerDraft.attachments.filter { !sent.contains($0.id) }
     }
     func draft(for id: String?) -> Draft {
         guard let id else { return draft }
@@ -104,6 +124,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
     func navigate(_ destination: WorkspacePage) {
+        mediaReturnProjectID = nil
         closeEditor()
         if destination == .project { selectedProjectID = nil }
         selecting = false; selection.removeAll(); selectionProjectID = nil
@@ -118,17 +139,34 @@ final class WorkspaceStore: ObservableObject {
         return ordered.compactMap { id in items.first { $0.id == id && $0.kind == "video" }?.cover }.first
     }
     var visibleItems: [MediaItem] {
-        MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort).apply(items, locations: locations)
+        mediaSearchResults.map(\.item)
+    }
+    private func refreshMediaSearch() {
+        mediaSearchResults = MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort)
+            .results(items, locations: locations, documents: searchDocuments)
+    }
+    var isSearchingMedia: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var mediaResultSummary: String {
+        let count = visibleItems.count
+        return isSearchingMedia ? "\(count) \(count == 1 ? "result" : "results") · \(items.filter { $0.kind != "audio" }.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
     }
     var folders: [MediaFolder] {
         let paths = items.filter { $0.kind != "audio" }.compactMap { locations[$0.id]?.folder }
         return Dictionary(grouping: paths, by: { $0 }).map { MediaFolder(path: $0.key, count: $0.value.count) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
-    var hasMediaFilters: Bool { !query.isEmpty || !folder.isEmpty || category != .all }
-    func resetMediaFilters() { query = ""; folder = ""; category = .all; searchScope = .name }
-    func openMedia(_ item: MediaItem, at seconds: Double = 0) { mediaSeekTime = max(0, seconds); lastOpenedMediaID = item.id; detail = item; page = .media }
-    func backToMedia() { detail = nil; page = .media }
+    var hasMediaFilters: Bool { isSearchingMedia || !folder.isEmpty || category != .all || searchScope != .all }
+    func resetMediaFilters() { query = ""; folder = ""; category = .all; searchScope = .all }
+    func openMedia(_ item: MediaItem, at seconds: Double = 0) {
+        mediaReturnProjectID = page == .project ? selectedProjectID : nil
+        mediaSeekTime = max(0, seconds); lastOpenedMediaID = item.id; detail = item; page = .media
+    }
+    func backToMedia() {
+        let project = mediaReturnProjectID
+        detail = nil; mediaReturnProjectID = nil
+        if let project { selectedProjectID = project; page = .project }
+        else { page = .media }
+    }
     func start() async {
         guard !ready else { return }
         startupError = nil
@@ -230,13 +268,19 @@ final class WorkspaceStore: ObservableObject {
         agentMode = activeAgentRun?.mode ?? "local"
         page = .project
     }
-    func submitAgent() {
-        guard canSubmitAgent else { return }
+    var canApplyAgentOption: Bool {
+        !composerDraft.attachments.isEmpty && !saving && !importing && !agentActionPending &&
+        composerIssue == nil && activeAgentRun?.busy != true
+    }
+    func submitAgent() { submitAgent(prompt: nil) }
+    func submitAgent(prompt optionPrompt: String?) {
+        guard optionPrompt == nil ? canSubmitAgent : canApplyAgentOption else { return }
         saving = true
         let sourceID = composerProjectID
         let sourcePage = page
         let submitted = composerDraft
-        let effectivePrompt = submitted.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (activeAgentRun?.prompt ?? "") : submitted.prompt
+        let effectivePrompt = optionPrompt ?? (submitted.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (activeAgentRun?.prompt ?? "") : submitted.prompt)
+        let messageMediaIDs = composerPendingAttachments.map(\.id)
         let mode = agentMode
         let editScope = editorProjectID == sourceID ? editorSelection : nil
         perform {
@@ -251,20 +295,21 @@ final class WorkspaceStore: ObservableObject {
                 let _: OK = try await self.service.post("/api/desktop/agent/configure", object, native: true)
             }
             var payload: [String: Any] = ["prompt": effectivePrompt, "mediaIds": submitted.attachments.map(\.id), "mode": mode, "requestId": UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), "skill": NSNull()]
+            payload["messageMediaIds"] = messageMediaIDs
             if let id = submitted.projectId { payload["id"] = id }
             if let editScope { payload["editScope"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(editScope)) }
             if let skill = submitted.skill { payload["skill"] = ["id": skill.id, "title": skill.title, "strategy": skill.strategy] }
             let response: Response = try await self.service.post("/api/desktop/agent/start", payload, native: true)
             self.agentRuns.removeAll { $0.id == response.run.id }
             self.agentRuns.insert(response.run, at: 0)
-            self.completeSubmission(submitted, sourceID: sourceID, sourcePage: sourcePage, projectID: response.run.projectId)
+            self.completeSubmission(submitted, sourceID: sourceID, sourcePage: sourcePage, projectID: response.run.projectId, preservePrompt: optionPrompt != nil)
             try await self.refresh()
         }
     }
-    func completeSubmission(_ submitted: Draft, sourceID: String?, sourcePage: WorkspacePage?, projectID: String) {
+    func completeSubmission(_ submitted: Draft, sourceID: String?, sourcePage: WorkspacePage?, projectID: String, preservePrompt: Bool = false) {
         let unchanged = draft(for: sourceID) == submitted
         if unchanged {
-            var next = submitted; next.prompt = ""; next.projectId = projectID
+            var next = submitted; next.prompt = preservePrompt ? submitted.prompt : ""; next.projectId = projectID
             projectDrafts[projectID] = next
             if sourceID == nil { draft = Draft() }
         }
@@ -280,6 +325,13 @@ final class WorkspaceStore: ObservableObject {
             defer { self.agentActionPending = false }
             struct Response: Decodable { var run: AgentRun }
             let response: Response = try await self.service.post("/api/desktop/agent/action", ["id": run.id, "action": action], native: true)
+            if ["use_videos", "use_visuals"].contains(action), let ids = response.run.mediaIds {
+                var next = self.draft(for: run.projectId)
+                // Keep attachments added while the action was in flight; only remove excluded sources.
+                let original = Set(run.mediaIds ?? next.attachments.map(\.id))
+                next.attachments.removeAll { original.contains($0.id) && !ids.contains($0.id) }
+                self.setDraft(next, for: run.projectId)
+            }
             self.agentRuns.removeAll { $0.id == response.run.id }; self.agentRuns.insert(response.run, at: 0)
             try await self.refresh()
         }

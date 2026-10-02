@@ -6,26 +6,70 @@ struct AgentExample: Identifiable {
     let title: String
     let outcome: String
     let prompt: String
+    var symbol: String {
+        switch id {
+        case "analyze": return "text.magnifyingglass"
+        case "highlights": return "scissors"
+        default: return "film"
+        }
+    }
     static let starters: [AgentExample] = [
-        .init(id: "analyze", title: "Analyze footage", outcome: "A summary and editing suggestions", prompt: "Analyze these materials. Summarize each file, explain its editing value, and include useful time ranges. Do not create a video."),
-        .init(id: "search", title: "Find a moment", outcome: "Matching clips with time ranges", prompt: "Find moments with a campfire in these videos. Return the matching clips and time ranges. If none match, say so. Do not create a video."),
-        .init(id: "plan", title: "Plan a story", outcome: "A shot order to review first", prompt: "Suggest a travel story using these videos. Explain the shot order and suggested durations. Give me a plan first; do not render a video."),
-        .init(id: "create", title: "Make a rough cut", outcome: "Review a plan, then build an MP4", prompt: "Make a 30-second 16:9 rough cut from these videos, keeping the original sound. Do not add music, captions, voiceover or effects. If there is not enough footage, ask me before changing the duration."),
-        .init(id: "subtitles", title: "Extract subtitles", outcome: "Spoken words and an SRT file", prompt: "Transcribe the speech in these files and provide an SRT file. If there is no usable speech, tell me. Do not create a video or add captions to one.")
+        .init(id: "analyze", title: "Summarize my footage", outcome: "Summarize my footage.", prompt: "Summarize each video and suggest the best moments to use."),
+        .init(id: "create", title: "Create a travel video", outcome: "Create a travel video.", prompt: "Create a travel video with a clear story and original sound."),
+        .init(id: "highlights", title: "Make a short highlight reel", outcome: "Make a short highlight reel.", prompt: "Make a short travel highlight reel from the best moments, with original sound.")
     ]
     func applying(to draft: String) -> String {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? prompt : draft + "\n" + prompt
+        requiresReplacementConfirmation(for: draft) ? draft : prompt
+    }
+    func requiresReplacementConfirmation(for draft: String) -> Bool {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !text.isEmpty && !Self.starters.contains { $0.prompt == text }
     }
 }
 
 struct AgentArtifact: Codable, Identifiable {
     var id: String; var type: String; var title: String; var text: String
     var mediaId: String?; var start: Double?; var end: Double?; var path: String?
+    var findingParts: (content: String, metadata: String?, suggestion: String?) {
+        guard type == "analysis" else { return (text, nil, nil) }
+        let lines = text.components(separatedBy: "\n")
+        let pattern = #"(^| · )(Keep|Recommended|Shorten|Remove|必留|推荐|可压缩|可删除) · [0-9.]+s$"#
+        guard let index = lines.indices.first(where: { lines[$0].range(of: pattern, options: .regularExpression) != nil }), index > 0 else {
+            return (text, nil, nil)
+        }
+        let suggestion = lines.dropFirst(index + 1).joined(separator: "\n")
+        return (lines.prefix(index).joined(separator: "\n"), lines[index], suggestion.isEmpty ? nil : suggestion)
+    }
+}
+struct AgentSourceGroup: Identifiable {
+    var id: String; var title: String; var findings: [AgentArtifact]
+    static func groups(_ artifacts: [AgentArtifact]) -> [AgentSourceGroup] {
+        var result: [AgentSourceGroup] = []
+        for artifact in artifacts where ["analysis", "observation", "subtitle", "match"].contains(artifact.type) {
+            let key = artifact.mediaId ?? artifact.title
+            if let index = result.firstIndex(where: { $0.id == key }) { result[index].findings.append(artifact) }
+            else { result.append(.init(id: key, title: artifact.title, findings: [artifact])) }
+        }
+        return result
+    }
+    var summary: String {
+        var seen = Set<String>()
+        return findings.map { $0.findingParts.content }.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: " ")
+    }
 }
 struct AgentShot: Codable, Identifiable, Equatable {
     var id: String; var mediaId: String; var start: Double; var end: Double
     var label: String; var reason: String; var locked: Bool
     var section: String? = nil
+}
+struct AgentFinishing: Codable {
+    struct Music: Codable { var mediaId: String; var volume: Double; var ducking: Bool }
+    struct Narration: Codable { var start: Double; var end: Double; var text: String; var voice: String }
+    struct Transition: Codable { var kind: String; var duration: Double }
+    var music: Music?
+    var narration: [Narration]
+    var transition: Transition
+    var originalVolume: Double
 }
 struct AgentAnalysisMaterial: Codable, Identifiable {
     var mediaId: String
@@ -40,6 +84,14 @@ struct AgentAnalysisReport: Codable {
     var materials: [AgentAnalysisMaterial]
     var synthesized: Bool? = nil
 }
+struct AgentDecision: Codable, Identifiable {
+    struct Option: Codable, Identifiable { var id: String; var label: String }
+    var id: String; var state: String; var question: String; var options: [Option]
+    var selected: String?; var response: String?; var resultText: String?
+}
+struct AgentChoice: Codable, Identifiable {
+    var id: String; var label: String; var prompt: String
+}
 struct AgentRun: Codable, Identifiable {
     var id: String; var projectId: String; var prompt: String; var mode: String
     var status: String; var stage: String; var message: String; var summary: String; var intent: String
@@ -49,6 +101,43 @@ struct AgentRun: Codable, Identifiable {
     var editedAt: Double? = nil
     var createdAt: Double? = nil
     var clarificationKind: String? = nil
+    var mediaIds: [String]? = nil
+    var skillNotice: String? = nil
+    var finishing: AgentFinishing? = nil
+    var attachments: [Attachment]? = nil
+    var messageAttachments: [Attachment]? = nil
+    var originalMediaIds: [String]? = nil
+    var conversationHistory: [AgentDecision]? = nil
+    var choices: [AgentChoice]? = nil
+    func sentAttachments(in items: [MediaItem]) -> [Attachment] {
+        if let messageAttachments { return messageAttachments }
+        if let attachments { return attachments }
+        return (originalMediaIds ?? mediaIds ?? []).map { id in
+            let item = items.first { $0.id == id }
+            return Attachment(id: id, name: item?.file.name ?? "Unavailable file", kind: item?.kind ?? "video")
+        }
+    }
+    var canUseVideosOnly: Bool {
+        status == "clarify" && (["video_only", "visual_only"].contains(clarificationKind ?? "") ||
+            question.hasPrefix("This rough-cut workflow currently uses video and its original sound only."))
+    }
+    var hasConversationActions: Bool {
+        status == "consent" || canUseVideosOnly || canResumePhotoEdit || status == "review" ||
+        (status == "clarify" && choices?.isEmpty == false) ||
+        (status == "completed" && intent == "plan" && !timeline.isEmpty && preview == nil) ||
+        ["failed", "cancelled", "interrupted"].contains(status)
+    }
+    var canResumePhotoEdit: Bool {
+        status == "clarify" && question.contains("photo slideshows are not supported yet")
+            && attachments?.contains(where: { $0.kind == "image" }) == true
+    }
+    var displayQuestion: String {
+        if canResumePhotoEdit { return "Photo editing is now available. Your material is ready to use." }
+        if canUseVideosOnly && clarificationKind == nil {
+            return "This earlier task was paused by a material limit. Continue with videos only, or send a new request to include photos too."
+        }
+        return question
+    }
     var editScope: EditorSelection? = nil
     var analysisReport: AgentAnalysisReport? = nil
     // Older runs already contain source findings. Present these without rerunning a model
@@ -127,7 +216,14 @@ struct AgentRun: Codable, Identifiable {
     var activityNotice: String? {
         guard !busy else { return nil }
         switch status {
-        case "failed": return message.isEmpty ? "Something went wrong. Please retry." : message
+        case "failed":
+            if message.contains("has no attribute") || message.contains("Traceback") || message.contains("NoneType") {
+                return "A local processing error stopped this task. Try again to continue."
+            }
+            if message.hasPrefix("Invalid source range") || message == "Value outside allowed range" {
+                return "I couldn't make a valid edit from these clips. Retry, or try fewer videos."
+            }
+            return message.isEmpty ? "Something went wrong. Please retry." : message
         case "cancelled": return "Stopped"
         case "interrupted": return "Paused. Retry to continue."
         case "consent": return question.isEmpty ? "Permission needed to continue." : nil
@@ -136,8 +232,32 @@ struct AgentRun: Codable, Identifiable {
         default: return nil
         }
     }
+    var failureTitle: String {
+        switch stage {
+        case "understand", "transcribe", "report": return "Couldn't finish analyzing your footage"
+        case "render": return "Couldn't create your preview"
+        default: return "Couldn't finish this task"
+        }
+    }
     var preview: AgentArtifact? { artifacts.last { $0.type == "preview" } }
     var lastPreview: AgentArtifact? { preview ?? artifacts.last { $0.type == "previous_preview" } }
+    var resultHeading: String? {
+        guard status == "completed" else { return nil }
+        if preview != nil { return "Video preview" }
+        if intent == "plan", !timeline.isEmpty { return "Story plan" }
+        if intent == "analyze", displayAnalysisReport?.materials.isEmpty == false { return "Footage summary" }
+        return nil
+    }
+    var resultDetail: String? {
+        guard resultHeading != nil else { return nil }
+        if preview != nil { return "Watch, edit, or export your video." }
+        if intent == "plan" {
+            let seconds = timeline.reduce(0) { $0 + $1.end - $1.start }
+            return "\(timeline.count) shots · \(String(format: "%.1f", seconds))s · \(aspect)"
+        }
+        let count = displayAnalysisReport?.materials.count ?? 0
+        return "\(count) \(count == 1 ? "file" : "files") · Open a card for details"
+    }
 }
 struct AgentCapabilities: Codable {
     var localText: Bool; var localVision: Bool; var localSpeech: Bool
