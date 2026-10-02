@@ -61,6 +61,18 @@ def wait(agent,key,timeout=40):
     raise AssertionError('Task timeout')
 
 
+def write_test_tone(path):
+    # Test-only PCM fixture: bundled FFmpeg intentionally omits lavfi inputs.
+    import array
+    import math
+    import wave
+    samples = array.array('h', (round(4096 * math.sin(2 * math.pi * 440 * n / 48000)) for n in range(3 * 48000)))
+    if sys.byteorder != 'little': samples.byteswap()
+    with wave.open(str(path), 'wb') as wav:
+        wav.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
+        wav.writeframes(samples.tobytes())
+
+
 class AgentTests(unittest.TestCase):
     def test_highlight_starter_renders_even_when_model_router_would_plan(self):
         self.models.intent='plan'
@@ -74,8 +86,10 @@ class AgentTests(unittest.TestCase):
     def test_create_with_audio_without_subtitles_reaches_preview(self):
         # Real audio stream, no sidecar; model responses alone are fixtures.
         source = Path(self.temp.name) / 'audio-without-subtitles.mp4'
+        tone = Path(self.temp.name) / 'tone.wav'
+        write_test_tone(tone)
         self.agent.command(['ffmpeg','-v','error','-y','-i',ROOT/'qa/media-library/captioned-test.mp4',
-            '-f','lavfi','-i','sine=frequency=440:duration=3','-t','3','-map','0:v:0','-map','1:a:0',
+            '-i',tone,'-t','3','-map','0:v:0','-map','1:a:0',
             '-c:v','copy','-c:a','aac',source], threading.Event())
         asset = self.library.register([str(source)])['items'][0]['id']
         self.models.intent = 'create'
@@ -480,8 +494,10 @@ class AgentTests(unittest.TestCase):
         import array
         import math
         source=Path(self.temp.name)/'test-tone-video.mp4'; cancel=threading.Event()
+        tone=Path(self.temp.name)/'tone.wav'
+        write_test_tone(tone)
         self.agent.command(['ffmpeg','-v','error','-y','-i',ROOT/'qa/media-library/captioned-test.mp4',
-            '-f','lavfi','-i','sine=frequency=440:duration=3','-t','3','-map','0:v:0','-map','1:a:0',
+            '-i',tone,'-t','3','-map','0:v:0','-map','1:a:0',
             '-c:v','copy','-c:a','aac',source],cancel)
         asset=self.library.register([str(source)])['items'][0]['id']
         self.models.intent='create'
