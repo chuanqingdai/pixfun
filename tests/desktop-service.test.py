@@ -211,6 +211,12 @@ class DesktopServiceTests(unittest.TestCase):
 
     def test_creator_skill_survives_project_and_draft_restart(self):
         skill={'id':'city-walk','title':'City walk','strategy':'Follow a route. Keep street sounds.'}
+        scoped={**skill,'applicability':'Street footage and local sound; a route-led walk.'}
+        scoped_project=self.json('/api/desktop/projects',{'prompt':'Use this scoped strategy','skill':scoped})['project']
+        self.assertEqual(scoped_project['skill'],scoped)
+        for invalid in [None,3,'', 'x'*401]:
+            with self.assertRaises(urllib.error.HTTPError):
+                self.json('/api/desktop/projects',{'prompt':'Invalid scope','skill':{**skill,'applicability':invalid}})
         draft=json.dumps({'prompt':'An unsent request','skill':skill,'attachments':[]})
         self.json('/api/desktop/settings',{'key':'projectDraft','value':draft})
         project=self.json('/api/desktop/projects',{'prompt':'A 3-minute city film','skill':skill})['project']

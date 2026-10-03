@@ -25,6 +25,30 @@ def tone(path, frequency, duration, active=None):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_audio_controls_preserve_levels_and_validate_mute_states(self):
+        value = finishing.validate({'music':{'mediaId':'a','volume':0.3}, 'musicMuted':True,
+            'narrationMuted':True, 'narrationVolume':0.6}, self.records, 6)
+        self.assertTrue(value['musicMuted']); self.assertEqual(value['music']['volume'], 0.3)
+        self.assertTrue(value['narrationMuted']); self.assertEqual(value['narrationVolume'], 0.6)
+        self.assertEqual(finishing.resolve({}, value, finishing.request(None), self.records, 6), value)
+        for invalid in ({'musicMuted':'yes'}, {'narrationMuted':1}, {'narrationVolume':float('nan')}, {'narrationVolume':2}):
+            with self.assertRaises(ValueError): finishing.validate(invalid, self.records, 6)
+        restored = finishing.resolve({}, {'originalMuted':True}, finishing.request({'originalAudio':'restore'}), self.records, 6)
+        self.assertFalse(restored['originalMuted'])
+
+    def test_muted_layers_are_not_sent_to_tts_or_music_input(self):
+        from types import SimpleNamespace
+        import tempfile
+        commands = []
+        engine = SimpleNamespace(command=lambda args, *a: commands.append(args), progress=lambda *a: None)
+        value = finishing.validate({'music':{'mediaId':'a'}, 'musicMuted':True, 'narrationMuted':True,
+            'narration':[{'start':0,'end':5,'text':'Muted voice'}]}, self.records, 6)
+        with tempfile.TemporaryDirectory() as folder:
+            finishing.mix(engine, {'id':'fixture','version':1}, Path(folder), 'base.mp4', 'out.mp4', value, 6, threading.Event())
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0].count('-i'), 1)
+        self.assertNotIn('/usr/bin/say', commands[0])
+
     def setUp(self):
         self.records = {'a': {'id':'a','kind':'audio','metadata':{'duration':10},'file':{'name':'Music'}}}
 
@@ -56,6 +80,25 @@ class PolicyTests(unittest.TestCase):
             self.assertTrue(path.is_file()); self.assertGreater(path.stat().st_size,100000)
             self.assertIn('Kevin MacLeod',credit(record)); self.assertIn('CC BY 4.0',credit(record))
 
+    def test_first_travel_film_defaults_and_explicit_opt_outs(self):
+        wanted, automatic = finishing.travel_defaults(finishing.request(None), 'Create a travel video.', True, True)
+        self.assertTrue(automatic)
+        self.assertEqual((wanted['music'], wanted['transition'], wanted['narration']), ('add', 'fade', 'keep'))
+        for prompt in ('No music, no transitions', '不要配乐，不要转场', 'original sound only, no effects'):
+            result, automatic = finishing.travel_defaults(finishing.request({'music':'add','transition':'fade'}), prompt, True, True)
+            self.assertFalse(automatic)
+            self.assertEqual((result['music'], result['transition']), ('remove', 'none'))
+        unchanged, automatic = finishing.travel_defaults(finishing.request(None), 'Shorten this shot', False, True)
+        self.assertEqual(unchanged, finishing.request(None))
+        self.assertFalse(automatic)
+        missing, automatic = finishing.travel_defaults(finishing.request(None), 'Create a film', True, False)
+        self.assertEqual(missing['music'], 'keep')
+        self.assertFalse(automatic)
+        records = {key:value[0] for key,value in catalog().items()}
+        self.assertEqual(finishing.background_music(records)['mediaId'], 'music-life-of-riley')
+        records.update(self.records)
+        self.assertEqual(finishing.background_music(records)['mediaId'], 'a')
+
     def test_empty_rank_query_does_not_rank_edit_instructions(self):
         from agent_tools import tool_plan
         self.assertNotIn('rank',tool_plan('create',{'tools':['rank'],'query':''})['tools'])
@@ -67,6 +110,32 @@ class RenderTests(unittest.TestCase):
     setUp = contracts.AgentTests.setUp
     tearDown = contracts.AgentTests.tearDown
     start = contracts.AgentTests.start
+
+    def test_narration_gain_uses_real_mix_with_fixture_speech(self):
+        # Only TTS is replaced by a deterministic tone; mix, AAC encode and decode are real.
+        from types import SimpleNamespace
+        folder = Path(self.temp.name); cancel = threading.Event()
+        silence = folder/'silence.wav'; tone(silence, 440, 3, active=0)
+        base = folder/'base.mp4'
+        self.agent.command(['ffmpeg','-v','error','-y','-i',ROOT/'qa/media-library/captioned-test.mp4',
+            '-i',silence,'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','aac','-t','3',base], cancel)
+        def command(args, *rest):
+            if args[0] == '/usr/bin/say':
+                tone(Path(args[args.index('-o')+1]), 770, 1)
+                return b''
+            return self.agent.command(args, *rest)
+        engine = SimpleNamespace(command=command, progress=lambda *a: None)
+        levels = []
+        for gain, muted in ((1,False), (0.25,False), (1,True)):
+            value = finishing.validate({'originalVolume':0, 'narrationVolume':gain, 'narrationMuted':muted,
+                'narration':[{'start':0,'end':2,'text':'Fixture voice'}]}, {}, 3)
+            output = folder/f'voice-{gain}-{muted}.mp4'
+            finishing.mix(engine, {'id':'fixture','version':1}, folder, base, output, value, 3, cancel)
+            data = self.agent.command(['ffmpeg','-v','error','-i',output,'-vn','-ac','1','-ar','8000','-f','f32le','-'], cancel)
+            samples = array.array('f'); samples.frombytes(data)
+            levels.append(math.sqrt(sum(x*x for x in samples[:6400]) / 6400))
+        self.assertAlmostEqual(levels[1]/levels[0], 0.25, delta=0.03)
+        self.assertLess(levels[2], 0.0001)
 
     def test_ducking_reduces_music_under_foreground_and_recovers(self):
         from types import SimpleNamespace

@@ -93,7 +93,7 @@
   $('newProject').onclick=()=>{if($('projectPrompt').value.trim()&&!confirm('Discard the unsaved request and start a new project?'))return;project=null;attachments=[];activeSkill=null;$('projectPrompt').value='';renderSkill();renderThread();renderAttachments();stash();status('');$('projectPrompt').focus();};
   document.addEventListener('pixfun:mediachange',renderAttachments);document.addEventListener('pixfun:workspacepage',event=>{if(event.detail==='history')loadHistory();});
   // Selecting a skill attaches its strategy to the composer, never submits a project.
-  function useSkill(skill){if(!validSkill(skill))return;if(busy){library.navigate('home');status('Finish saving the current request before changing skills.');return;}activeSkill={id:skill.id,title:skill.title,strategy:skill.strategy};renderSkill();stash();library.navigate('home');status('');$('projectPrompt').focus();}
+  function useSkill(skill){if(!validSkill(skill))return;if(busy){library.navigate('home');status('Finish saving the current request before changing skills.');return;}activeSkill={id:skill.id,title:skill.title,strategy:skill.strategy,...(typeof skill.applicability==='string'?{applicability:skill.applicability.slice(0,400)}:{})};renderSkill();stash();library.navigate('home');status('');$('projectPrompt').focus();}
   window.PixfunWorkspace={attach,useSkill,chooseMedia};renderThread();renderAttachments();renderSkill();
   window.PixfunDesktop.settings().then(async result=>{
     const draft=JSON.parse(result.settings.projectDraft||'null');if(!draft||draftDirty)return;

@@ -8,7 +8,7 @@ struct MediaView: View {
         var columns = Array(repeating: [MediaSearchResult](), count: count), heights = Array(repeating: 0.0, count: count)
         for result in store.mediaSearchResults {
             let shortest = heights.enumerated().min { $0.element < $1.element }!.offset
-            columns[shortest].append(result); heights[shortest] += 1 / result.item.aspect + (result.hits.isEmpty ? 0.34 : 1.05)
+            columns[shortest].append(result); heights[shortest] += 1 / result.item.aspect + (result.hits.isEmpty ? 0.34 : 1.05) + (result.item.cardSummary == nil ? 0 : 0.16) + (result.item.searchTags.isEmpty ? 0 : 0.25)
         }
         return columns
     }
@@ -126,7 +126,11 @@ struct MediaCard: View {
     let item: MediaItem
     var matches: [MediaSearchHit] = []
     @State private var hovered = false
+    @State private var showTags = false
+    @State private var showUsage = false
     var isSelected: Bool { store.selecting && store.selection.contains(item.id) }
+    private var visibleTags: [MediaSearchTag] { Array(item.contentTags.prefix(3)) }
+    private var additionalTagCount: Int { max(0, item.searchTags.count - visibleTags.count) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -161,6 +165,9 @@ struct MediaCard: View {
                         }
                     VStack(alignment: .leading, spacing: 7) {
                         Text(item.name).font(.pixfun(15, semibold: true)).lineLimit(2)
+                        if matches.isEmpty, let summary = item.cardSummary {
+                            Text(summary).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(2).help(summary)
+                        }
                         if let location = item.context?["location"], !location.isEmpty { Label(location, systemImage: "mappin.and.ellipse").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(1) }
                         if let device = item.context?["device"], !device.isEmpty { Text(device).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(1) }
                         if item.status != "ready" && !item.processing { Text(item.missing == true ? "Original missing" : item.status.capitalized).font(.pixfun(12)).foregroundStyle(item.status == "error" ? Color.orange : .pixfunMuted) }
@@ -173,6 +180,45 @@ struct MediaCard: View {
             }.buttonStyle(.plain)
                 .accessibilityLabel("\(store.selecting ? (isSelected ? "Deselect" : "Select") : "Open") \(item.name)\(item.isExample == true ? " · Sample" : "")\(item.processingLabel.map { " · \($0)" } ?? "")")
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            if !item.searchTags.isEmpty {
+                MediaTagFlow {
+                    ForEach(visibleTags) { tag in tagButton(tag) }
+                    if additionalTagCount > 0 {
+                        Button(visibleTags.isEmpty ? "Tags" : "+\(additionalTagCount)") { showTags = true }
+                            .font(.pixfun(11)).buttonStyle(.plain).padding(6)
+                            .accessibilityLabel("Show all searchable tags")
+                            .popover(isPresented: $showTags) {
+                                MediaTagFlow { ForEach(item.searchTags) { tag in tagButton(tag) } }
+                                    .padding(14).frame(width: 300)
+                            }
+                    }
+                }.padding(.horizontal, 13).padding(.bottom, 12)
+            }
+            if !store.selecting, let usage = store.usedShots(item.id) {
+                let used = usage.shots.filter { $0.mediaId == item.id }
+                Button { showUsage = true } label: {
+                    Label("\(usage.draft ? "Draft" : "Used") · \(used.count) clip\(used.count == 1 ? "" : "s")", systemImage: "scissors")
+                        .font(.pixfun(11)).foregroundStyle(Color.pixfunGold)
+                }.buttonStyle(.plain).padding(.horizontal, 13).padding(.bottom, 12)
+                    .help("Used in the current project's edit")
+                    .popover(isPresented: $showUsage) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(store.projects.first { $0.id == usage.run.projectId }?.title ?? "Current edit").font(.pixfun(13, semibold: true)).lineLimit(2)
+                            ForEach(used) { shot in
+                                Button {
+                                    showUsage = false; store.openUsedShot(shot.id, projectID: usage.run.projectId)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        let position = StoryTimeline.offset(shot.id, in: usage.shots)
+                                        Text("Cut \(StoryTimeline.timecode(position))–\(StoryTimeline.timecode(position + shot.end - shot.start))")
+                                        Text(item.kind == "image" ? String(format: "Photo · %.2fs", shot.end) : "Source \(StoryTimeline.timecode(shot.start))–\(StoryTimeline.timecode(shot.end))")
+                                            .foregroundStyle(Color.pixfunMuted)
+                                    }.font(.pixfun(12)).monospacedDigit().padding(6)
+                                }.buttonStyle(.plain).help("Locate this clip in the story")
+                            }
+                        }.padding(16).frame(width: 290)
+                    }
+            }
             if !store.selecting, let hit = matches.first(where: { $0.start != nil }), let seconds = hit.start {
                 Button { store.openMedia(item, at: seconds) } label: {
                     Label("View match · \(timestamp(seconds))", systemImage: "play.circle")
@@ -201,6 +247,40 @@ struct MediaCard: View {
             if item.status == "error" || item.status == "cancelled" { Button("Retry analysis") { store.retry(item) } }
             Divider()
             Button("Remove from Media", role: .destructive) { store.remove(item) }.disabled(item.processing)
+        }
+    }
+    func tagButton(_ tag: MediaSearchTag) -> some View {
+        Button {
+            if store.selecting { store.toggleSelection(item.id) }
+            else { showTags = false; store.searchScope = tag.scope; store.query = tag.text }
+        } label: {
+            Label(tag.text, systemImage: tag.symbol).font(.pixfun(11)).lineLimit(1)
+                .padding(.horizontal, 7).padding(.vertical, 5)
+                .background(Color.pixfunRaised, in: Capsule())
+        }.buttonStyle(.plain).foregroundStyle(Color.pixfunMuted)
+            .help(store.selecting ? "Select this material" : "Search \(tag.scope.rawValue): \(tag.text)")
+            .accessibilityLabel(store.selecting ? "Select \(item.name)" : "Search for \(tag.text)")
+    }
+}
+
+/// Intrinsic-width chips wrap without adding a horizontal scrollbar to each card.
+struct MediaTagFlow: Layout {
+    func positions(_ subviews: Subviews, width: CGFloat) -> ([CGPoint], CGSize) {
+        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            if x > 0 && x + size.width > width { x = 0; y += row + 6; row = 0 }
+            points.append(CGPoint(x: x, y: y)); x += size.width + 6; row = max(row, size.height)
+        }
+        return (points, CGSize(width: width, height: y + row))
+    }
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        positions(subviews, width: max(1, proposal.width ?? 260)).1
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let points = positions(subviews, width: bounds.width).0
+        for (index, view) in subviews.enumerated() {
+            view.place(at: CGPoint(x: bounds.minX + points[index].x, y: bounds.minY + points[index].y), proposal: ProposedViewSize(width: bounds.width, height: nil))
         }
     }
 }
@@ -528,16 +608,19 @@ final class PlaybackController: ObservableObject {
 // the executable; no SwiftUI VideoPlayer runtime wrapper or web player is used.
 struct NativeVideoPlayer: NSViewRepresentable {
     var player: AVPlayer
+    var showsControls = true
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
         view.player = player
-        view.controlsStyle = .inline
+        view.controlsStyle = showsControls ? .inline : .none
+        view.allowsVideoFrameAnalysis = false
         view.videoGravity = .resizeAspect
         view.showsFullScreenToggleButton = true
         return view
     }
     func updateNSView(_ view: AVPlayerView, context: Context) {
         if view.player !== player { view.player = player }
+        view.controlsStyle = showsControls ? .inline : .none
     }
     static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) { view.player?.pause(); view.player = nil }
 }

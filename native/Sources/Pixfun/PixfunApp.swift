@@ -49,7 +49,7 @@ struct WorkspaceView: View {
         Group {
             if store.ready {
                 if let projectID = store.editorProjectID, store.page == .project, store.selectedProjectID == projectID {
-                    EditorWorkspaceView(projectID: projectID)
+                    StoryEditorWorkspace(projectID: projectID)
                 } else { NavigationSplitView {
                     VStack(alignment: .leading, spacing: 0) {
                         PixfunLogo().padding(.horizontal, 6).padding(.top, 18).padding(.bottom, 30)

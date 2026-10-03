@@ -23,6 +23,15 @@ extension Color {
     static let pixfunBrandSoft = Color(pixfunHex: 0x343027)
     static let pixfunOnAccent = Color(pixfunHex: 0x20221f)
     static let pixfunFocus = Color(pixfunHex: 0x9bbfd9)
+
+    // Cool chat, recessed preview, lighter neutral story rail. Keep card and input
+    // surfaces distinct without changing the rest of the app's dark palette.
+    static let pixfunStoryChat = Color(pixfunHex: 0x1e262c)
+    static let pixfunStoryPreview = Color(pixfunHex: 0x101314)
+    static let pixfunStoryRail = Color(pixfunHex: 0x282c2c)
+    static let pixfunStoryCard = Color(pixfunHex: 0x303637)
+    static let pixfunStoryInput = Color(pixfunHex: 0x2c3438)
+    static let pixfunStoryInputLine = Color(pixfunHex: 0x526168)
 }
 
 enum PixfunTypography {

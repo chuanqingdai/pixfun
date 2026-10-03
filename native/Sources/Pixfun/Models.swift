@@ -68,6 +68,12 @@ struct MediaItem: Codable, Identifiable {
     var isExample: Bool?
     var coverUrl: String?
     var sampleCopy: VideoDescription?
+    var analysisTags: [String]? = nil
+    var cardSummary: String? {
+        let candidates = [description, shotAnalysis?.summary, displayVideoDescription?.full_description]
+        return candidates.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && $0 != name }
+    }
     var name: String {
         if isExample == true, let curated = sampleCopy?.title ?? title, !curated.isEmpty { return curated }
         return videoDescription?.title ?? (title?.isEmpty == false ? title : nil) ?? file.name
@@ -99,7 +105,7 @@ struct MediaItem: Codable, Identifiable {
     }
 }
 struct Attachment: Codable, Identifiable, Equatable { var id: String; var name: String; var kind: String }
-struct ChosenSkill: Codable, Equatable { var id: String; var title: String; var strategy: String }
+struct ChosenSkill: Codable, Equatable { var id: String; var title: String; var strategy: String; var applicability: String? = nil }
 struct BriefMessage: Codable { var text: String; var createdAt: Double; var attachments: [Attachment]?; var skill: ChosenSkill? }
 struct Project: Codable, Identifiable {
     var id: String; var title: String; var updatedAt: Double; var attachments: [Attachment]; var skill: ChosenSkill?; var messages: [BriefMessage]
@@ -120,13 +126,14 @@ struct CreatorSkill: Codable, Identifiable {
     var value: String; var beats: [String]; var handling: [String]; var example: String; var strategy: String
     var source: String?; var version: String?; var highlights: [SkillHighlight]?
     var actionTitle: String?; var capabilityNote: String?
+    var applicability: String?; var notFor: String?
     var materialCases: [SkillHighlight]?; var templates: [SkillHighlight]?; var workflow: [SkillHighlight]?
     var specificationURL: URL? {
         guard let source, let root = Bundle.main.resourceURL else { return nil }
         let url = root.appendingPathComponent("CreatorSkills").appendingPathComponent(source)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
-    var chosen: ChosenSkill { ChosenSkill(id: id, title: title, strategy: strategy) }
+    var chosen: ChosenSkill { ChosenSkill(id: id, title: title, strategy: strategy, applicability: applicability) }
 }
 enum WorkspacePage: String, CaseIterable, Identifiable {
     case home = "Home", media = "Media", skills = "Skills", project = "Project"

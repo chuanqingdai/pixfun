@@ -10,12 +10,12 @@
       structure:['Find one memorable moment','Design around your material','Leave room for the view'],
       beats:['Choose complementary views and a clear theme. Photos alone are enough to plan a short.', 'Adapt titles, layouts, and transitions to real content. Keep people and important details visible.', 'Balance designed moments with a clean hero image, then let the picture and sound resolve.'],
       pacing:'Usually 12–24 seconds, always under 30. Use a shorter edit when the material is limited; never loop to fill time.',
-      sound:'Use one licensed instrumental track when requested and available. Preserve useful original sound; photos do not have location audio.',
+      sound:'Use a bundled licensed instrumental track by default, unless music is turned off. Preserve useful original sound and lower music under speech; photos do not have location audio.',
       avoid:'Do not invent places, dates, movement, or voices. Check every requested effect before promising a finished video.',
       handling:['Photos only: use safe framing, readable titles, and gentle layout changes. Do not require video or fabricate movement.', 'Mixed formats: adapt the canvas and template to the subjects. Skip unsupported or unsuitable effects and explain alternatives.'],
       example:'Create a short travel video from these photos and clips, with safe framing and a clear visual story.',
       source:'visionflow-travel-short/SKILL.md', version:'1.1',
-      capabilityNote:'Create a short film from photos, videos, or both. Editorial Postcard and City Notes single-panel layouts support animated titles, gentle full-photo motion and graphic reveals. The other four recipes, multi-image collages and cross-dissolves are not yet rendering presets. Original framing is preserved; music and narration remain optional.',
+      capabilityNote:'Create a short film from photos, videos, or both. Editorial Postcard and City Notes single-panel layouts support animated titles, gentle full-photo motion and graphic reveals. The other four recipes, multi-image collages and cross-dissolves are not yet rendering presets. Includes instrumental music and gentle fades by default; music can be turned off, and narration is only added on request.',
       highlights:[
         {title:'Start small',body:'Three photos, a few clips, or a mix—choose a format that suits what you have.'},
         {title:'Designed, not crowded',body:'Short titles, graphic reveals, and selective transitions share one visual language.'},
@@ -130,7 +130,20 @@
     'travel-guide':{value:'Make long, information-rich recordings easier to follow without losing the speaker’s meaning. Organize speech into useful chapters and use supporting footage to illustrate, not replace, the explanation.',beats:['Start with the speaker’s actual topic or a concise recorded introduction. Make the scope clear without adding unverified claims.','Group complete explanations by topic. Place relevant place or object footage over speech while keeping qualifications intact.','Close with recorded takeaways or a concise recap based strictly on the supplied content.'],handling:['A single long talk: preserve complete ideas and remove repetition only when the meaning remains unchanged.','B-roll without a clear match: leave the speaker visible rather than implying a place or object they did not discuss.'],example:'Turn this 10-minute guided walk into a 6-minute travel guide. Keep the factual explanations, group related topics, and use my location shots as B-roll.'},
   };
   skills.forEach(skill=>Object.assign(skill,details[skill.id]));
-  function buildBrief(skill,direction){return `${skill.title}${skill.source ? `\nFull specification: CreatorSkills/${skill.source} (v${skill.version}). This brief is a summary; consult the bundled specification.` : ''}${skill.capabilityNote ? `\nAvailability: ${skill.capabilityNote}\nHonor the requested outcome; create a supported edit preview when asked. Do not claim unimplemented packaging has been rendered.` : ''}\n\nStory framework:\n${skill.structure.map((beat,i)=>`${i+1}. ${beat}: ${skill.beats[i]}`).join('\n')}\nPacing: ${skill.pacing}\nSound: ${skill.sound}\nMaterial handling: ${skill.handling.join(' ')}\nGuardrails: ${skill.avoid}\n\nCreator direction: ${direction.trim()||'Use the strategy above with the selected footage.'}`;}
+  const scopes={
+    'visionflow-travel-director':['Mixed travel photos and videos; a route-led film with meaningful coverage of every usable unique file.','A strict under-30-second best-of reel; use Travel Short instead.'],
+    'visionflow-travel-short':['A few photos or clips around one theme; a selected highlight film under 30 seconds.','Full-trip coverage or long, uninterrupted conversations.'],
+    'city-walk':['Street footage and local sound; a walk organized around a supported route.','Disconnected landmarks presented as a continuous route.'],
+    'food-tour':['Food preparation, serving and recorded reactions; a place-to-first-bite story.','Reviews or tasting claims that were not recorded.'],
+    'travel-diary':['Mixed trip footage and personal narration; a chronological visual diary.','Invented memories or a factual destination guide.'],
+    'outdoor-adventure':['Terrain, movement and effort; a journey toward a destination.','Unsupported achievements or risks.'],
+    'flights-stays':['Cabin or room tours and commentary; a clear tour of spaces and details.','Ratings or service claims without evidence.'],
+    'family-memories':['Shared activities and conversations; complete interactions over rapid highlights.','Fast montages that cut off important conversations.'],
+    'scenic-escape':['Landscape, drone and natural-sound footage; a quiet, visually paced film.','Dialogue-led explanations or a claimed route without evidence.'],
+    'travel-guide':['Recorded explanations with matching B-roll; a factual, topic-led guide.','Scenery alone used to invent advice or destination facts.']
+  };
+  skills.forEach(skill=>{[skill.applicability,skill.notFor]=scopes[skill.id];});
+  function buildBrief(skill,direction){return `${skill.title}\nBest for: ${skill.applicability}\nNot for: ${skill.notFor}${skill.source ? `\nFull specification: CreatorSkills/${skill.source} (v${skill.version}). This brief is a summary; consult the bundled specification.` : ''}${skill.capabilityNote ? `\nAvailability: ${skill.capabilityNote}\nHonor the requested outcome; create a supported edit preview when asked. Do not claim unimplemented packaging has been rendered.` : ''}\n\nStory framework:\n${skill.structure.map((beat,i)=>`${i+1}. ${beat}: ${skill.beats[i]}`).join('\n')}\nPacing: ${skill.pacing}\nSound: ${skill.sound}\nMaterial handling: ${skill.handling.join(' ')}\nGuardrails: ${skill.avoid}\n\nCreator direction: ${direction.trim()||'Use the strategy above with the selected footage.'}`;}
   if(typeof document==='undefined'){module.exports={skills,buildBrief};return;}
   if(!window.PixfunDesktop)return;
   const library=window.PixfunLibrary,root=document.getElementById('workspaceSkills');
@@ -151,8 +164,8 @@
   function openTask(task,trigger){
     sourceButton=trigger;catalog.hidden=true;detail.hidden=false;detail.replaceChildren();
     const backButton=node('button','← All skills','text-button skill-back');backButton.type='button';backButton.onclick=back;
-    const head=node('header'),title=node('h2',task.title);title.tabIndex=-1;head.append(title,node('p',task.copy));
-    const action=node('button',task.actionTitle||'Use skill','button primary');action.type='button';action.onclick=()=>window.PixfunWorkspace.useSkill({id:task.id,title:task.title,strategy:buildBrief(task,'')});
+    const head=node('header'),title=node('h2',task.title);title.tabIndex=-1;head.append(title,node('p',`Best for: ${task.applicability}`),node('p',`Not for: ${task.notFor}`));
+    const action=node('button',task.actionTitle||'Use skill','button primary');action.type='button';action.onclick=()=>window.PixfunWorkspace.useSkill({id:task.id,title:task.title,strategy:buildBrief(task,''),applicability:task.applicability});
     const top=node('div',null,'creator-skill-actions');top.append(backButton,action);
     const value=node('section',null,'creator-skill-value');value.append(node('h3','Why creators use it'),node('p',task.value));
     const story=node('section',null,'creator-story-structure');story.append(node('h3','Story framework'));const beats=node('ol');task.structure.forEach((beat,index)=>{const li=node('li');li.append(node('strong',beat),node('p',task.beats[index]));beats.append(li);});story.append(beats);

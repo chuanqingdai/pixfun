@@ -9,7 +9,7 @@ function run(command, args) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 run('swiftc', ['-parse-as-library', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macosx13.0`, '-module-cache-path', cache,
-  'native/Sources/Pixfun/Models.swift', 'native/Sources/Pixfun/MediaSearch.swift', 'native/Sources/Pixfun/AgentModels.swift', 'native/Sources/Pixfun/EditorModels.swift', 'native/Sources/Pixfun/LocalService.swift', 'native/Sources/Pixfun/WorkspaceStore.swift', 'native/Tests/ModelTests.swift', '-o', output]);
+  'native/Sources/Pixfun/Models.swift', 'native/Sources/Pixfun/MediaSearch.swift', 'native/Sources/Pixfun/AgentModels.swift', 'native/Sources/Pixfun/EditorModels.swift', 'native/Sources/Pixfun/StoryTimeline.swift', 'native/Sources/Pixfun/LocalService.swift', 'native/Sources/Pixfun/WorkspaceStore.swift', 'native/Tests/ModelTests.swift', '-o', output]);
 run(output, []);
 const fontOutput = path.join(root, 'build-native/NativeFontTests');
 run('swiftc', ['-parse-as-library', '-module-cache-path', cache, 'native/Tests/FontTests.swift', '-o', fontOutput]);
@@ -20,6 +20,10 @@ run('swiftc', ['-parse-as-library', '-module-cache-path', cache,
   'native/Sources/Pixfun/Theme.swift', 'native/Sources/Pixfun/PromptEditor.swift',
   'native/Tests/PromptEditorTests.swift', '-o', promptOutput]);
 run(promptOutput, []);
+const keyboardOutput = path.join(root, 'build-native/StoryKeyboardTests');
+run('swiftc', ['-parse-as-library', '-module-cache-path', cache,
+  'native/Sources/Pixfun/StoryPlaybackKeys.swift', 'native/Tests/StoryKeyboardTests.swift', '-o', keyboardOutput]);
+run(keyboardOutput, []);
 const {skills,buildBrief} = require('../public/desktop-skills.js');
 for (const skill of skills) {
   if(skill.structure.length !== skill.beats.length || buildBrief(skill, '').length > 4000) throw new Error(`Invalid native skill: ${skill.id}`);

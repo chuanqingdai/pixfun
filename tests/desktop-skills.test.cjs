@@ -1,5 +1,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const {skills,buildBrief}=require('../public/desktop-skills.js');
+test('every skill begins with a distinct scope and a boundary',()=>{
+ assert.equal(new Set(skills.map(s=>s.applicability)).size,skills.length);
+ for(const skill of skills){
+  assert(skill.applicability && skill.notFor);
+  const brief=buildBrief(skill,'');
+  assert(brief.startsWith(`${skill.title}\nBest for: ${skill.applicability}\nNot for: ${skill.notFor}`));
+  assert(brief.indexOf('Best for:')<brief.indexOf('Story framework:'));
+ }
+ const native=fs.readFileSync('native/Sources/Pixfun/SkillsView.swift','utf8');
+ assert(native.indexOf('skill.applicability')<native.indexOf('Story framework'));
+});
 test('all skill covers use distinct real photography with recorded sources',()=>{
  const crypto=require('node:crypto');
  const provenance=require('../public/media/travel/skill-photo-covers.json');

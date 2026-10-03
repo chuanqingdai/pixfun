@@ -17,7 +17,7 @@ ROOT=Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT))
 TEMP=tempfile.TemporaryDirectory(prefix='pixfun-agent-contracts-')
 os.environ['PIXFUN_DATA_DIR']=TEMP.name
 from desktop_service import Library
-from agent_engine import AgentEngine, validate_timeline, validate_edit_scope, preserve_scoped_ids, requested_total_duration, selected_duration_constraint, validate_requested_edit
+from agent_engine import AgentEngine, edit_receipt, validate_timeline, validate_edit_scope, preserve_scoped_ids, requested_total_duration, selected_duration_constraint, validate_requested_edit
 from agent_models import AgentCancelled, ModelGateway
 
 
@@ -74,6 +74,116 @@ def write_test_tone(path):
 
 
 class AgentTests(unittest.TestCase):
+    def edit_fixture(self):
+        # Persist a baseline and accepted edit without inference or rendering.
+        with patch.object(self.agent, 'dispatch'):
+            baseline = self.start()
+        baseline.update(status='completed', intent='create', timeline=[{'id':'one', 'mediaId':self.asset,
+            'start':0, 'end':3, 'label':'Opening', 'reason':'Fixture', 'locked':False}], aspect='9:16')
+        baseline['finishing'] = {'music':None, 'narration':[], 'originalVolume':0.4,
+                                 'transition':{'kind':'none','duration':0.25}}
+        self.agent.save(baseline)
+        with patch.object(self.agent, 'dispatch'):
+            changed = self.start('Shorten the opening', id=baseline['projectId'],
+                editBase={'runId':baseline['id'], 'version':baseline['version']})
+        changed.update(status='completed', intent='modify', timeline=[{**baseline['timeline'][0], 'end':2}],
+                       finishing={**baseline['finishing'], 'originalVolume':0}, aspect='16:9')
+        changed['editReceipt'] = edit_receipt(changed)
+        self.agent.save(changed)
+        return baseline, changed
+
+    def test_edit_receipt_and_undo_restore_exact_saved_draft(self):
+        baseline, changed = self.edit_fixture()
+        self.assertEqual(changed['editReceipt']['changedShotIds'], ['one'])
+        self.assertTrue(changed['editReceipt']['soundOrCaptions'])
+        restored = self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':changed['version']})
+        self.assertEqual(restored['timeline'], baseline['timeline'])
+        self.assertEqual(restored['finishing'], baseline['finishing'])
+        self.assertEqual(restored['aspect'], baseline['aspect'])
+        self.assertEqual(restored['duration'], 3)
+        self.assertTrue(restored['editReceipt']['undone'])
+        self.assertEqual(restored['status'], 'review')
+        self.assertFalse(any(a['type']=='preview' for a in restored['artifacts']))
+        with self.assertRaises(ValueError):
+            self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':restored['version']})
+
+    def test_undo_refuses_stale_version_and_later_requests(self):
+        baseline, changed = self.edit_fixture()
+        with self.assertRaises(ValueError):
+            self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':0})
+        changed['version'] += 1
+        self.agent.save(changed)
+        with self.assertRaises(ValueError):
+            self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':changed['version']})
+        changed['version'] -= 1
+        self.agent.save(changed)
+        with patch.object(self.agent, 'dispatch'):
+            newer = self.start('Another request', id=changed['projectId'])
+        newer['status'] = 'completed'; self.agent.save(newer)
+        with self.assertRaises(ValueError):
+            self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':changed['version']})
+        self.assertEqual(self.agent.get(changed['id'])['timeline'], changed['timeline'])
+
+    def test_whole_film_base_is_version_guarded_before_new_request(self):
+        baseline, changed = self.edit_fixture()
+        before = len(self.agent.list())
+        with self.assertRaises(ValueError):
+            self.start('Modify everything', id=changed['projectId'], editBase={'runId':baseline['id'], 'version':baseline['version']})
+        self.assertEqual(len(self.agent.list()), before)
+
+    def test_saved_draft_is_the_next_request_and_undo_baseline_without_rendering(self):
+        baseline, changed = self.edit_fixture()
+        saved = self.agent.action({'id':changed['id'], 'action':'timeline', 'version':changed['version'],
+            'timeline':[{**changed['timeline'][0], 'end':1.5}], 'finishing':changed['finishing']})
+        with patch.object(self.agent, 'dispatch'):
+            request = self.start('Extend this clip', id=saved['projectId'],
+                editBase={'runId':saved['id'], 'version':saved['version']},
+                editScope={'runId':saved['id'], 'version':saved['version'], 'shotIds':['one']})
+        self.assertEqual(request['previousTimeline'], saved['timeline'])
+        self.assertEqual(request['previousFinishing'], saved['finishing'])
+        self.assertIsNone(request['previousPreview'])
+        request.update(timeline=[{**saved['timeline'][0], 'end':2}], finishing=saved['finishing'], status='completed')
+        request['editReceipt'] = edit_receipt(request); self.agent.save(request)
+        restored = self.agent.action({'id':request['id'], 'action':'undo_edit', 'version':request['version']})
+        self.assertEqual(restored['timeline'][0]['end'], 1.5)
+        self.assertEqual(restored['finishing'], saved['finishing'])
+
+    def test_receipt_marks_only_clips_affected_by_caption_or_clip_audio(self):
+        shots = [{'id':'a', 'start':0, 'end':2}, {'id':'b', 'start':0, 'end':2}]
+        run = {'previousTimeline':shots, 'timeline':shots, 'version':1, 'previousFinishing':{},
+               'finishing':{'clipAudio':[{'shotId':'b', 'volume':0.5, 'muted':False}]}}
+        self.assertEqual(edit_receipt(run)['changedShotIds'], ['b'])
+        run['finishing'] = {'captions':[{'id':'c', 'start':0, 'end':1, 'text':'Hi'}]}
+        self.assertEqual(edit_receipt(run)['changedShotIds'], ['a'])
+        run['finishing'] = {}; run['packaging'] = {'title':'New title'}
+        self.assertTrue(edit_receipt(run)['packagingChanged'])
+        self.assertEqual(edit_receipt(run)['changedShotIds'], ['a', 'b'])
+        run['packaging'] = {}; run['finishing'] = {'musicMuted':False, 'narrationMuted':False, 'narrationVolume':1}
+        self.assertFalse(edit_receipt(run)['soundOrCaptions'])
+        self.assertEqual(edit_receipt(run)['changedShotIds'], [])
+
+    def test_undo_does_not_present_generated_preview_as_restored_draft(self):
+        baseline, changed = self.edit_fixture()
+        changed['artifacts'] = [{'id':'generated', 'type':'preview', 'title':'Generated', 'text':'', 'path':str(ROOT/'qa/media-library/captioned-test.mp4')}]
+        changed['previousPreview'] = {**changed['artifacts'][0], 'id':'baseline', 'title':'Baseline'}
+        self.agent.save(changed)
+        restored = self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':changed['version']})
+        self.assertEqual(restored['artifacts'][0]['type'], 'previous_preview')
+        self.assertEqual(restored['artifacts'][-1]['title'], 'Baseline')
+        self.assertEqual(restored['artifacts'][-1]['type'], 'preview')
+        self.assertEqual(restored['artifacts'][-1]['timelineVersion'], restored['version'])
+        self.assertEqual(restored['artifacts'][0]['timelineVersion'], changed['version'])
+        self.assertEqual(restored['status'], 'completed')
+
+    def test_legacy_undo_keeps_default_finishing_renderable(self):
+        baseline, changed = self.edit_fixture()
+        changed['previousFinishing'] = {}; self.agent.save(changed)
+        restored = self.agent.action({'id':changed['id'], 'action':'undo_edit', 'version':changed['version']})
+        import agent_finishing
+        finish = agent_finishing.validate(restored.get('finishing', {}), {}, restored['duration'], restored['timeline'])
+        self.assertEqual(finish['originalVolume'], 1)
+        self.assertEqual(finish['transition']['kind'], 'none')
+
     def test_highlight_starter_renders_even_when_model_router_would_plan(self):
         self.models.intent='plan'
         run=wait(self.agent,self.start('Make a short travel highlight reel from the best moments.')['id'])
@@ -370,7 +480,8 @@ class AgentTests(unittest.TestCase):
         self.models.intent='create'
         r=wait(self.agent,self.start('Make a travel edit')['id'])
         self.assertEqual(r['skillExecution']['id'],'visionflow-travel-director')
-        self.assertIn('Using Travel Vlog',r['skillNotice'])
+        self.assertIn('Travel Vlog ·',r['skillNotice'])
+        self.assertIn('route-led',r['skillNotice'])
         self.assertTrue(r['contentLedDuration'])
         other=wait(self.agent,self.start('Make an edit',skill={'id':'food-tour','title':'Food tour','strategy':'Food'})['id'])
         self.assertNotIn('skillNotice',other)
@@ -467,7 +578,12 @@ class AgentTests(unittest.TestCase):
         self.assertTrue(any(a['type']=='subtitle' for a in r['artifacts']))
         self.models.intent='create'
         mixed=wait(self.agent,self.start('剪辑视频和背景音乐',mediaIds=[self.asset,audio])['id'])
-        self.assertEqual(mixed['status'],'clarify'); self.assertFalse(mixed['timeline'])
+        # Mixed visual/audio edits are supported now; verify the selected audio
+        # reaches the actual preview instead of expecting the old limitation.
+        self.assertEqual(mixed['status'],'completed', mixed['message'])
+        self.assertTrue(mixed['timeline'])
+        self.assertEqual(mixed['finishing']['music']['mediaId'], audio)
+        self.assertTrue(any(a['type']=='preview' for a in mixed['artifacts']))
     def test_cloud_decline_retry_cannot_bypass_consent(self):
         r=self.start(mode='cloud'); self.assertEqual(r['status'],'consent'); self.assertFalse(self.models.calls)
         self.agent.action({'id':r['id'],'action':'stop'})
@@ -501,7 +617,7 @@ class AgentTests(unittest.TestCase):
             '-c:v','copy','-c:a','aac',source],cancel)
         asset=self.library.register([str(source)])['items'][0]['id']
         self.models.intent='create'
-        run=wait(self.agent,self.start('Create 3 seconds',mediaIds=[asset])['id'])
+        run=wait(self.agent,self.start('Create 3 seconds with original sound only',mediaIds=[asset])['id'])
         rendered=run
         self.assertEqual(rendered['status'],'completed',rendered['message'])
         preview=next(a for a in rendered['artifacts'] if a['type']=='preview')

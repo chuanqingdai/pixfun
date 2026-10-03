@@ -12,7 +12,10 @@ struct SkillsView: View {
                         Spacer()
                         Button(skill.actionTitle ?? "Use skill") { store.use(skill) }.buttonStyle(PixfunButtonStyle(kind: .primary))
                     }
-                    PageHeading(title: skill.title, subtitle: skill.copy)
+                    PageHeading(title: skill.title, subtitle: skill.applicability ?? skill.copy)
+                    if let notFor = skill.notFor {
+                        Text("Not for: \(notFor)").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    }
                     HStack(alignment: .top, spacing: 30) {
                         skillImage(skill).aspectRatio(16.0 / 9.0, contentMode: .fit).frame(width: 290).clipShape(RoundedRectangle(cornerRadius: 12))
                         section("For creators", skill.value)

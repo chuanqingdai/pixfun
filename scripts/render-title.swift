@@ -9,13 +9,14 @@ struct Request: Decodable {
     let width: Int
     let height: Int
     let dark: Bool
+    let caption: Bool?
 }
 do {
     guard CommandLine.arguments.count == 4 else { throw NSError(domain: "title arguments", code: 1) }
     let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
     let request = try JSONDecoder().decode(Request.self, from: data)
     guard (100...4096).contains(request.width), (50...2048).contains(request.height),
-          request.text.count <= 90 else { throw NSError(domain: "title bounds", code: 2) }
+          request.text.count <= (request.caption == true ? 180 : 90) else { throw NSError(domain: "title bounds", code: 2) }
     let fontURL = URL(fileURLWithPath: CommandLine.arguments[3])
     guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(fontURL as CFURL) as? [CTFontDescriptor],
           let descriptor = descriptors.first else { throw NSError(domain: "missing bundled font", code: 3) }
@@ -30,6 +31,7 @@ do {
     let accent = request.dark ? NSColor(calibratedRed: 0.84, green: 0.71, blue: 0.50, alpha: 1) : ink
     let paragraph = NSMutableParagraphStyle()
     paragraph.lineBreakMode = .byWordWrapping
+    if request.caption == true { paragraph.alignment = .center }
     var size = min(h * 0.40, w * 0.082)
     var title: NSAttributedString!
     var rect: NSRect = .zero
@@ -41,12 +43,19 @@ do {
         size -= 1
     } while size >= 18
     guard rect.height <= h * 0.68 else { throw NSError(domain: "title does not fit", code: 4) }
+    if request.caption == true {
+        let box=NSRect(x: 0, y: 4, width: w, height: min(h,rect.height+20))
+        NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
+        NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
+        title.draw(with: NSRect(x: 2, y: 14, width: w-4, height: rect.height+2), options: [.usesLineFragmentOrigin, .usesFontLeading])
+    } else {
     title.draw(with: NSRect(x: 0, y: h * 0.68 - rect.height, width: w - 4, height: rect.height + 2), options: [.usesLineFragmentOrigin, .usesFontLeading])
     let small = CTFontCreateWithFontDescriptor(descriptor, max(14, size * 0.29), nil)
     NSAttributedString(string: request.index, attributes: [.font: small, .foregroundColor: accent, .kern: 2])
         .draw(at: NSPoint(x: 0, y: h * 0.83))
     accent.setFill()
     NSRect(x: 0, y: h * 0.77, width: min(48, w * 0.08), height: 2).fill()
+    }
     NSGraphicsContext.restoreGraphicsState()
     guard let png = bitmap.representation(using: .png, properties: [:]) else { throw NSError(domain: "PNG export", code: 5) }
     try png.write(to: URL(fileURLWithPath: CommandLine.arguments[2]), options: .atomic)

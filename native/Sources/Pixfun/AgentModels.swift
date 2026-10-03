@@ -30,6 +30,7 @@ struct AgentExample: Identifiable {
 struct AgentArtifact: Codable, Identifiable {
     var id: String; var type: String; var title: String; var text: String
     var mediaId: String?; var start: Double?; var end: Double?; var path: String?
+    var timelineVersion: Int? = nil
     var findingParts: (content: String, metadata: String?, suggestion: String?) {
         guard type == "analysis" else { return (text, nil, nil) }
         let lines = text.components(separatedBy: "\n")
@@ -62,14 +63,56 @@ struct AgentShot: Codable, Identifiable, Equatable {
     var label: String; var reason: String; var locked: Bool
     var section: String? = nil
 }
-struct AgentFinishing: Codable {
-    struct Music: Codable { var mediaId: String; var volume: Double; var ducking: Bool }
-    struct Narration: Codable { var start: Double; var end: Double; var text: String; var voice: String }
-    struct Transition: Codable { var kind: String; var duration: Double }
+
+/// Source evidence and its uses in the edit share one material entry.
+struct AgentConversationMaterial: Identifiable {
+    var id: String
+    var mediaID: String?
+    var title: String
+    var summary: String
+    static func collect(_ run: AgentRun) -> [Self] {
+        let groups = AgentSourceGroup.groups(run.artifacts)
+        var result: [Self] = []
+        var seen = Set<String>()
+        for id in run.timeline.map(\.mediaId) + (run.mediaIds ?? []) {
+            guard seen.insert(id).inserted else { continue }
+            let group = groups.first { $0.findings.first?.mediaId == id }
+            let shot = run.timeline.first { $0.mediaId == id }
+            result.append(Self(id: id, mediaID: id, title: group?.title ?? shot?.label ?? "Source", summary: group?.summary ?? shot?.reason ?? ""))
+        }
+        for group in groups where seen.insert(group.id).inserted {
+            result.append(Self(id: group.id, mediaID: group.findings.first?.mediaId, title: group.title, summary: group.summary))
+        }
+        return result
+    }
+}
+struct AgentFinishing: Codable, Equatable {
+    struct Music: Codable, Equatable { var mediaId: String; var volume: Double; var ducking: Bool; var sourceStart: Double?; var loop: Bool? }
+    struct Narration: Codable, Equatable { var start: Double; var end: Double; var text: String; var voice: String; var rate: Double? }
+    struct Transition: Codable, Equatable { var kind: String; var duration: Double }
+    struct Caption: Codable, Equatable, Identifiable { var id: String; var start: Double; var end: Double; var text: String }
+    struct ClipAudio: Codable, Equatable { var shotId: String; var volume: Double; var muted: Bool }
+    struct Seam: Codable, Equatable { var afterShotId: String; var beforeShotId: String; var kind: String; var duration: Double }
     var music: Music?
     var narration: [Narration]
     var transition: Transition
     var originalVolume: Double
+    var originalMuted: Bool?
+    var captions: [Caption]?
+    var clipAudio: [ClipAudio]?
+    var seams: [Seam]?
+    var musicMuted: Bool? = nil
+    var narrationMuted: Bool? = nil
+    var narrationVolume: Double? = nil
+    static var empty: Self { Self(narration: [], transition: .init(kind: "none", duration: 0.25), originalVolume: 1) }
+    func audio(for id: String) -> ClipAudio { clipAudio?.first { $0.shotId == id } ?? .init(shotId: id, volume: 1, muted: false) }
+    func gain(for id: String) -> Double {
+        let clip = audio(for: id)
+        return originalMuted == true || clip.muted ? 0 : originalVolume * clip.volume
+    }
+    func seam(_ left: String, _ right: String) -> Seam {
+        seams?.first { $0.afterShotId == left && $0.beforeShotId == right } ?? .init(afterShotId: left, beforeShotId: right, kind: transition.kind, duration: transition.duration)
+    }
 }
 struct AgentAnalysisMaterial: Codable, Identifiable {
     var mediaId: String
@@ -92,7 +135,82 @@ struct AgentDecision: Codable, Identifiable {
 struct AgentChoice: Codable, Identifiable {
     var id: String; var label: String; var prompt: String
 }
+struct AgentProgressUpdate: Codable, Identifiable {
+    var id: String
+    var kind: String
+    var stage: String? = nil
+    var mediaId: String? = nil
+    var label: String? {
+        ["intent": "Reviewing your request", "understand": "Reviewing your material",
+         "transcribe": "Checking speech", "plan": "Arranging your story", "search": "Finding matching moments",
+         "report": "Preparing your summary", "render": "Rendering your video",
+         "finishing": "Planning sound and finishing touches", "verify": "Checking the finished video"][stage ?? ""]
+    }
+}
+
+struct AgentScrollState {
+    var followingLatest = true
+    var contentHeight: CGFloat = 0
+    mutating func observe(bottom: CGFloat, height: CGFloat, viewport: CGFloat) -> Bool {
+        let resized = abs(height - contentHeight) > 0.5
+        contentHeight = height
+        // Content growth is not a user scrolling away from the latest message.
+        if !resized { followingLatest = bottom <= viewport + 70 }
+        return resized && followingLatest
+    }
+}
+
+struct AgentEditReceipt: Codable, Equatable {
+    var changedShotIds: [String]
+    var removedCount: Int
+    var soundOrCaptions: Bool
+    var aspectChanged: Bool
+    var version: Int
+    var undone: Bool
+    var packagingChanged: Bool? = nil
+    var hasChanges: Bool { !changedShotIds.isEmpty || removedCount > 0 || soundOrCaptions || aspectChanged || packagingChanged == true }
+    var summary: String {
+        if undone { return "Change undone" }
+        var parts: [String] = []
+        if !changedShotIds.isEmpty { parts.append("\(changedShotIds.count) \(changedShotIds.count == 1 ? "clip" : "clips") updated") }
+        if removedCount > 0 { parts.append("\(removedCount) removed") }
+        if soundOrCaptions { parts.append("Audio / effects updated") }
+        if aspectChanged { parts.append("Format updated") }
+        if packagingChanged == true { parts.append("Titles updated") }
+        return parts.isEmpty ? "No timeline changes" : parts.joined(separator: " · ")
+    }
+}
+
+struct StoryVersion: Identifiable {
+    var id: String
+    var number: Int
+    var shots: [AgentShot]
+    var preview: AgentArtifact?
+    var prompt: String
+    var duration: Double { shots.reduce(0) { $0 + $1.end - $1.start } }
+    static func collect(_ runs: [AgentRun]) -> [Self] {
+        var result: [Self] = []
+        for run in runs.sorted(by: { ($0.createdAt ?? $0.updatedAt, $0.id) < ($1.createdAt ?? $1.updatedAt, $1.id) }) {
+            var snapshots: [Int: [AgentShot]] = [:]
+            for entry in run.timelineHistory ?? [] { snapshots[entry.version] = entry.shots }
+            if !run.timeline.isEmpty && !run.busy { snapshots[run.version] = run.timeline }
+            var renders: [Int: AgentArtifact] = [:]
+            for artifact in run.artifacts where ["preview", "previous_preview"].contains(artifact.type) {
+                let version = artifact.timelineVersion ?? (artifact.type == "preview" ? run.version : Int(artifact.title.components(separatedBy: " · v").last ?? ""))
+                if let version { renders[version] = artifact }
+            }
+            for version in Set(snapshots.keys).union(renders.keys).sorted() {
+                result.append(Self(id: "\(run.id):\(version)", number: result.count + 1, shots: snapshots[version] ?? [],
+                                   preview: renders[version], prompt: run.prompt))
+            }
+        }
+        return result.reversed()
+    }
+}
+
 struct AgentRun: Codable, Identifiable {
+    struct SavedTimeline: Codable { var version: Int; var shots: [AgentShot] }
+    var timelineHistory: [SavedTimeline]? = nil
     var id: String; var projectId: String; var prompt: String; var mode: String
     var status: String; var stage: String; var message: String; var summary: String; var intent: String
     var question: String; var resultText: String; var events: [String]; var artifacts: [AgentArtifact]
@@ -109,6 +227,38 @@ struct AgentRun: Codable, Identifiable {
     var originalMediaIds: [String]? = nil
     var conversationHistory: [AgentDecision]? = nil
     var choices: [AgentChoice]? = nil
+    var progressUpdates: [AgentProgressUpdate]? = nil
+    var storySummary: String? = nil
+    var arrangementSummary: String? {
+        guard !timeline.isEmpty, ["create", "modify", "plan"].contains(intent) else { return nil }
+        // Legacy edits saved the actual story on the first line of resultText.
+        // The routing summary describes an unseen request, not an editorial decision.
+        let text = (storySummary ?? resultText.components(separatedBy: "\n").first ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return text.count > 420 ? String(text.prefix(417)) + "…" : text
+    }
+    var arrangementDetails: String {
+        guard let arrangementSummary, resultText.hasPrefix(arrangementSummary) else { return resultText }
+        return String(resultText.dropFirst(arrangementSummary.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    var visibleProgress: [AgentProgressUpdate] {
+        let findings = artifacts.filter { ["analysis", "observation", "subtitle"].contains($0.type) && !$0.text.isEmpty }
+        var updates = progressUpdates ?? []
+        // Old saved tasks still expose their existing findings, without inventing stages.
+        for finding in findings {
+            if let id = finding.mediaId, !updates.contains(where: { $0.kind == "media" && $0.mediaId == id }) {
+                updates.append(AgentProgressUpdate(id: "media-" + id, kind: "media", mediaId: id))
+            }
+        }
+        let liveStep = busy ? updates.last(where: { $0.kind == "stage" })?.id : nil
+        return updates.filter { $0.id != liveStep && ($0.kind == "media" || $0.label != nil) }
+    }
+    var activityLabel: String {
+        if busy, status != "queued", let step = progressUpdates?.last(where: { $0.kind == "stage" }),
+           ["finishing", "verify"].contains(step.stage ?? ""), let label = step.label { return label }
+        return stageLabel
+    }
     func sentAttachments(in items: [MediaItem]) -> [Attachment] {
         if let messageAttachments { return messageAttachments }
         if let attachments { return attachments }
@@ -139,6 +289,7 @@ struct AgentRun: Codable, Identifiable {
         return question
     }
     var editScope: EditorSelection? = nil
+    var editReceipt: AgentEditReceipt? = nil
     var analysisReport: AgentAnalysisReport? = nil
     // Older runs already contain source findings. Present these without rerunning a model
     // or mistaking the old generic resultText for an actual report.

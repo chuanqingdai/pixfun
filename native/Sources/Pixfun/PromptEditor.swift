@@ -11,6 +11,7 @@ struct PromptEditor: NSViewRepresentable {
     var maximumHeight: CGFloat = 220
     var placeholder = "Describe your story, length, and style…"
     var onSubmit: (() -> Void)? = nil
+    var onFocusChange: ((Bool) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> PromptScrollView {
@@ -56,6 +57,9 @@ struct PromptEditor: NSViewRepresentable {
         scroll.borderType = .noBorder
         scroll.focusRingType = .none
         let coordinator = context.coordinator
+        editor.onFocusChange = { [weak coordinator] active in
+            DispatchQueue.main.async { coordinator?.parent.onFocusChange?(active) }
+        }
         scroll.onLayout = { [weak editor, weak coordinator] in
             if let editor { coordinator?.measure(editor) }
         }
@@ -152,6 +156,17 @@ final class PromptScrollView: NSScrollView {
 }
 
 final class PromptTextView: NSTextView {
+    var onFocusChange: ((Bool) -> Void)?
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocusChange?(true) }
+        return accepted
+    }
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { onFocusChange?(false) }
+        return accepted
+    }
     var placeholder = "Describe your story, length, and style…" { didSet { if oldValue != placeholder { needsDisplay = true } } }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

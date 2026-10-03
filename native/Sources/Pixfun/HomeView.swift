@@ -131,7 +131,7 @@ struct ComposerAttachmentHint: ViewModifier {
 struct ComposerNotice: View {
     @EnvironmentObject var store: WorkspaceStore
     var body: some View {
-        if let issue = store.composerIssue {
+        if let issue = store.composerVisibleIssue {
             HStack {
                 Text(issue).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 Spacer()

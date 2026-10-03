@@ -270,10 +270,13 @@ class Library:
         ids = payload.get('mediaIds', [])
         skill = payload.get('skill')
         if skill is not None:
-            if not isinstance(skill, dict) or set(skill) != {'id', 'title', 'strategy'}:
+            required = {'id', 'title', 'strategy'}
+            if not isinstance(skill, dict) or not required <= set(skill) or not set(skill) <= required | {'applicability'}:
                 raise ValueError('Invalid creator skill')
             if any(not isinstance(skill[k], str) or not skill[k].strip() or len(skill[k]) > limit for k, limit in [('id', 80), ('title', 80), ('strategy', 4000)]):
                 raise ValueError('Invalid creator skill')
+            if 'applicability' in skill and (not isinstance(skill['applicability'],str) or not skill['applicability'].strip() or len(skill['applicability'])>400):
+                raise ValueError('Invalid creator skill applicability')
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 5000:
             raise ValueError('Describe your video in 1–5000 characters.')
         if not isinstance(ids, list) or len(ids) > 100 or any(not isinstance(i, str) for i in ids):

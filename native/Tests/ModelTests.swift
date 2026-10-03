@@ -1,7 +1,7 @@
 import Foundation
 
 @main struct NativeModelTests {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         var checks = 0
         func check(_ value: @autoclosure () -> Bool, _ label: String) {
             guard value() else { fatalError("FAIL: \(label)") }; checks += 1
@@ -97,6 +97,40 @@ import Foundation
         check(searchHits("backpack", .name) == nil && searchHits("backpack", .folder) == nil, "scopes do not leak unrelated fields")
         check(searchHits("market iphone") != nil && searchHits("market never-present") == nil, "AND terms may span fields of one item")
         check(searchHits("internal-debug-only") == nil, "technical status messages excluded")
+        var tagged = searchable
+        tagged.analysisTags = ["Lakeside", " Walking ", "lakeside", "unknown", "", String(repeating: "x", count: 60)]
+        check(tagged.searchTags.filter { $0.text.lowercased() == "lakeside" }.count == 1, "tags are normalized and deduplicated")
+        check(!tagged.searchTags.contains { $0.text == "unknown" || $0.text.count > 48 }, "empty and invalid tags never become chips")
+        check(tagged.searchTags.contains { $0.text == "Wide shot" } && tagged.searchTags.contains { $0.text == "Establishing" }, "structured framing and story roles become search tags")
+        check(tagged.searchTags.allSatisfy { MediaSearchDocument(tagged).match(MediaSearchQuery($0.text), scope: $0.scope, location: nil) != nil }, "every displayed tag can find its own material in the indicated scope")
+        let restoredTags = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(tagged))
+        check(restoredTags.analysisTags == tagged.analysisTags, "saved observation tags survive native decoding")
+        check(Array(tagged.contentTags.prefix(2)).map(\.text) == ["Lakeside", "Walking"], "saved content tags take precedence over derived phrases")
+        check(!tagged.contentTags.contains { ["Wide shot", "Establishing", "Highlight"].contains($0.text) }, "generic editing and camera labels do not occupy visible content chips")
+        let boardwalkTags = MediaContentTags.extract("The camera tracks forward along a wooden boardwalk beside a calm lake, maintaining a consistent perspective with no visible movement or people.")
+        let personTags = MediaContentTags.extract("A boy in a plaid shirt stands in a sunlit grassy field, holding a coffee cup and making a peace sign with his hand.")
+        check(boardwalkTags.contains("wooden boardwalk") && boardwalkTags.contains("calm lake"), "old analyses yield grounded scene phrases without a model call")
+        check(personTags.contains("coffee cup") && personTags.contains("peace sign"), "specific objects and gestures distinguish content chips")
+        check(Array(boardwalkTags.prefix(3)) != Array(personTags.prefix(3)), "different materials no longer share generic visible tags")
+        check(!boardwalkTags.contains(where: { $0.contains("people") || $0.contains("camera") || $0.contains("perspective") }), "negated subjects and camera boilerplate do not become content tags")
+        check(MediaContentTags.extract("No boats or people. Possibly a temple.").isEmpty, "uncertain and negative observations do not become positive tags")
+        check(MediaContentTags.extract("").isEmpty, "missing analysis does not fabricate content tags")
+        check(!MediaContentTags.extract("A wooden boardwalk beside a calm body of water.").contains("calm body"), "incomplete noun phrases are not presented as tags")
+        let visualOnly = MediaContentTags.extract("A large sign reading 'North Mountain Trail' (Ye Ya Hu). A single word spoken by an unseen speaker.")
+        check(!visualOnly.contains { $0.contains("Mountain") || $0.contains("Ya Hu") || $0.contains("word") || $0.contains("speaker") }, "quoted speech, sign fragments and transcript boilerplate do not clutter visual tags")
+        check(!MediaContentTags.extract("The camera tracks horizontally across the lake.").contains("tracks"), "camera verbs misclassified as nouns stay out of visible tags")
+        var chineseTags = tagged
+        chineseTags.analysisTags = ["湖边", "骑行", "跟拍", "湖边"]
+        check(Array(chineseTags.contentTags.prefix(2)).map(\.text) == ["湖边", "骑行"], "Chinese content tags stay concise and generic camera terms stay hidden")
+        var oldPhoto = tagged
+        oldPhoto.analysisTags = nil; oldPhoto.shotAnalysis = nil; oldPhoto.result = nil; oldPhoto.description = nil; oldPhoto.kind = "image"
+        oldPhoto.videoDescription = VideoDescription(status: "ready", full_description: "A coffee cup on a wooden table.")
+        check(oldPhoto.contentTags.contains { $0.text == "coffee cup" }, "legacy photos gain content tags without editorial shots")
+        let oldTags = oldPhoto.contentTags.map(\.text)
+        oldPhoto.videoDescription = VideoDescription(status: "ready", full_description: "A wooden boardwalk beside a calm lake.")
+        check(oldPhoto.contentTags.map(\.text) != oldTags, "tag cache updates when analysis changes")
+        check(oldPhoto.contentTags.allSatisfy { MediaSearchDocument(oldPhoto).match(MediaSearchQuery($0.text), scope: $0.scope, location: nil) != nil }, "derived content chips remain clickable search terms")
+        check(tagged.cardSummary != nil, "analyzed cards show a useful summary beneath the filename")
         check(searchHits(" \n\t ")?.isEmpty == true, "blank query is normal library state")
         check(searchHits("徒步") == nil, "keyword search does not pretend to translate English analysis")
         check(searchable.matches("blue backpack"), "legacy matcher delegates to full document")
@@ -298,6 +332,30 @@ import Foundation
         check(workspace.projectCover(projectA) == "/api/thumbnail/clip2.jpg", "project uses an actual attached video thumbnail")
         let legacyRunJSON = #"{"id":"run-a","projectId":"project-a","prompt":"Edit","mode":"local","status":"completed","stage":"done","message":"Done","summary":"","intent":"create","question":"","resultText":"","events":[],"artifacts":[],"timeline":[],"version":1,"completed":1,"total":1,"duration":30,"aspect":"16:9","updatedAt":9999}"#
         var legacyRun = try JSONDecoder().decode(AgentRun.self, from: Data(legacyRunJSON.utf8))
+        var materialRun = legacyRun
+        materialRun.timeline = [
+            AgentShot(id: "use-1", mediaId: "shared", start: 0, end: 3, label: "First use", reason: "Opening", locked: false),
+            AgentShot(id: "use-2", mediaId: "shared", start: 5, end: 8, label: "Second use", reason: "Closing", locked: false)]
+        materialRun.mediaIds = ["shared", "unused", "shared"]
+        materialRun.artifacts = [
+            AgentArtifact(id: "evidence-1", type: "analysis", title: "Shared.mov", text: "A lakeside walk", mediaId: "shared"),
+            AgentArtifact(id: "evidence-2", type: "observation", title: "Shared.mov", text: "A lakeside walk", mediaId: "shared"),
+            AgentArtifact(id: "evidence-3", type: "analysis", title: "Other.jpg", text: "Mountains", mediaId: "other")]
+        let materialRows = AgentConversationMaterial.collect(materialRun)
+        check(materialRows.map(\.id) == ["shared", "unused", "other"], "one row per material across shots, attachments and evidence")
+        check(materialRows[0].summary == "A lakeside walk", "duplicate source descriptions are merged")
+        check(materialRows[0].mediaID == "shared", "merged material retains its source link")
+        check(materialRun.timeline.count == 2, "merging presentation never changes the edit")
+        materialRun.status = "failed"
+        check(AgentConversationMaterial.collect(materialRun).count == 3, "failed runs retain their materials behind the same disclosure")
+        check(AgentConversationMaterial.collect(legacyRun).isEmpty, "empty results have no material disclosure")
+        let section = workspace.conversationSection("run-a:materials")
+        check(!section.wrappedValue, "materials start collapsed")
+        section.wrappedValue = true
+        check(workspace.conversationSection("run-a:materials").wrappedValue, "a reconstructed layout preserves expansion")
+        check(!workspace.conversationSection("run-b:materials").wrappedValue, "other turns remain collapsed")
+        section.wrappedValue = false
+        check(!workspace.conversationSection("run-a:materials").wrappedValue, "one click collapses the full material list")
         var mixedRun = legacyRun
         mixedRun.status = "clarify"; mixedRun.clarificationKind = "video_only"
         mixedRun.skillNotice = "Using Travel Vlog to select highlights and shape your story."
@@ -381,6 +439,24 @@ import Foundation
         check(analysisRun.displayAnalysisReport == nil, "running task does not expose premature results")
         check(legacyRun.displayAnalysisReport == nil, "non-analysis results stay unchanged")
         var activityRun = legacyRun
+        var scrolling = AgentScrollState()
+        check(scrolling.observe(bottom: 400, height: 400, viewport: 500), "initial content follows latest")
+        check(scrolling.observe(bottom: 900, height: 900, viewport: 500), "new material growth does not disable following")
+        _ = scrolling.observe(bottom: 800, height: 900, viewport: 500)
+        check(!scrolling.followingLatest, "scrolling up releases automatic following")
+        check(!scrolling.observe(bottom: 1100, height: 1200, viewport: 500), "new findings do not pull a reader from history")
+        _ = scrolling.observe(bottom: 510, height: 1200, viewport: 500)
+        check(scrolling.followingLatest, "scrolling back to the bottom restores following")
+        activityRun.status = "running"; activityRun.stage = "plan"
+        activityRun.progressUpdates = [
+            AgentProgressUpdate(id: "request", kind: "stage", stage: "intent"),
+            AgentProgressUpdate(id: "review", kind: "stage", stage: "understand"),
+            AgentProgressUpdate(id: "source", kind: "media", mediaId: "fire"),
+            AgentProgressUpdate(id: "planning", kind: "stage", stage: "plan")]
+        check(activityRun.visibleProgress.map(\.id) == ["request", "review", "source"], "live stage appears only in the final loading indicator")
+        activityRun.status = "completed"
+        check(activityRun.visibleProgress.last?.id == "planning", "finished stage history remains available")
+        activityRun.progressUpdates = nil
         var evidenceRun = legacyRun
         evidenceRun.intent = "search"
         evidenceRun.artifacts = [AgentArtifact(id: "match", type: "match", title: "fire.mp4", text: "A campfire", mediaId: "fire", start: 1, end: 3)]
@@ -501,6 +577,26 @@ import Foundation
         edit.redo(); check(edit.shots.count == 2, "redo restores split")
         let restored = try JSONDecoder().decode(EditorDraft.self, from: JSONEncoder().encode(edit))
         check(restored == edit, "draft and undo/redo survive persistence")
+        var layered = EditorDraft(run: editRun)
+        var finishing = AgentFinishing.empty
+        finishing.clipAudio = [.init(shotId: "s1", volume: 0.4, muted: true)]
+        finishing.captions = [.init(id: "caption", start: 0.5, end: 1.5, text: "旅行的时光")]
+        layered.setFinishing(finishing)
+        check(layered.dirty && layered.finishing?.gain(for: "s1") == 0, "layer-only edit is dirty and mute retains remembered gain")
+        check(layered.validation(durations: ["clip2": 10]) == nil, "valid subtitle range")
+        layered.undo(); check(!layered.dirty, "undo restores layers together with shots")
+        layered.redo(); check(layered.finishing == finishing, "redo restores exact caption and audio")
+        let layerRoundTrip = try JSONDecoder().decode(EditorDraft.self, from: JSONEncoder().encode(layered))
+        check(layerRoundTrip == layered, "layers and their history survive restart")
+        var shortened = layered.shots; shortened[0].end = 1
+        layered.replace(shortened)
+        check(layered.validation(durations: ["clip2": 10]) != nil, "trim cannot silently truncate an existing caption")
+        layered.undo(); check(layered.duration == 3 && layered.finishing == finishing, "undo keeps original caption timing")
+        var legacyDraftJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(layered)) as! [String: Any]
+        for key in ["finishing", "baseFinishing", "undoLayers", "redoLayers"] { legacyDraftJSON.removeValue(forKey: key) }
+        var migrated = try JSONDecoder().decode(EditorDraft.self, from: JSONSerialization.data(withJSONObject: legacyDraftJSON))
+        migrated.hydrateLayers(from: editRun)
+        check(migrated.finishing == (editRun.finishing ?? .empty), "old draft migrates without discarding existing shots")
         edit.undo(); edit.shots[0].locked = true; edit.split("s1", at: 1)
         check(edit.shots.count == 1, "locked shot cannot split")
         edit.shots[0].end = 11
@@ -512,6 +608,217 @@ import Foundation
         check(edit.validation(durations: [:]) != nil, "reject sub-frame-like short interval")
         edit = EditorDraft(run: editRun); edit.shots.append(edit.shots[0])
         check(edit.validation(durations: [:]) != nil, "reject duplicate shot identifiers")
+        edit = EditorDraft(run: editRun)
+        let trim = edit.trimming("s1", leading: false, delta: 2, durations: ["clip2": 10], photoIDs: [])!
+        check(trim[0].end == 5 && edit.shots[0].end == 3 && edit.undoStack.isEmpty, "handle preview leaves committed draft and undo untouched")
+        edit.replace(trim)
+        check(edit.undoStack.count == 1 && edit.duration == 5, "one drag commits one undo transaction")
+        edit.undo(); check(edit.duration == 3, "undo restores pre-drag duration")
+        edit.redo(); check(edit.duration == 5, "redo restores drag")
+        check(edit.trimming("s1", leading: false, delta: 100, durations: ["clip2": 10], photoIDs: [])![0].end == 10, "right handle clamps to source duration")
+        check(edit.trimming("s1", leading: true, delta: 100, durations: ["clip2": 10], photoIDs: [])![0].start == 4.75, "left handle retains minimum clip length")
+        check(edit.trimming("s1", leading: true, delta: -100, durations: ["clip2": 10], photoIDs: [])![0].start == 0, "left handle cannot move before source")
+        check(edit.trimming("s1", leading: false, delta: .nan, durations: [:], photoIDs: []) == nil, "nonfinite drag rejected")
+        edit.shots[0].locked = true
+        check(edit.trimming("s1", leading: false, delta: 1, durations: [:], photoIDs: []) == nil, "locked clip has no trim")
+        edit.shots[0].locked = false; edit.base[0].locked = true
+        check(edit.trimming("s1", leading: false, delta: 1, durations: [:], photoIDs: []) == nil, "unlock must be saved before trim")
+        photoEdit.shots[0].end = 4
+        let photoTrim = photoEdit.trimming("photo-shot", leading: true, delta: 1, durations: ["photo": 60], photoIDs: ["photo"])!
+        check(photoTrim[0].start == 0 && photoTrim[0].end == 3, "photo left handle changes display time, never source in point")
+        check(photoEdit.trimming("photo-shot", leading: false, delta: 100, durations: ["photo": 60], photoIDs: ["photo"])![0].end == 60, "photo handle clamps to 60 seconds")
+        check(EditorDraft.time(at: 120, zoom: 40, duration: 9) == 3, "ruler uses exact pixels per second")
+        check(EditorDraft.time(at: -10, zoom: 40, duration: 9) == 0 && EditorDraft.time(at: 999, zoom: 40, duration: 9) == 9, "scrubbing clamps at both timeline edges")
+        check(EditorDraft.time(at: 10, zoom: 0, duration: 9) == 0, "invalid timeline scale is safe")
+        check(EditorDraft.fitZoom(duration: 40, width: 1200) == 30, "fit timeline includes the whole cut")
+        check(EditorDraft.fitZoom(duration: 600, width: 600) == 1, "long cuts can fit without a 20px minimum")
+        check(EditorDraft.fitZoom(duration: 0, width: 600) == 36 && EditorDraft.fitZoom(duration: .nan, width: 600) == 36, "fit handles absent duration")
+        check(EditorDraft.fitZoom(duration: 1, width: 900) == 160, "fit respects maximum scale")
+        photoEdit.shots[0].end = 4
+        let beforePhotoSplit = photoEdit.shots
+        photoEdit.split("photo-shot", at: 1.5, photoIDs: ["photo"])
+        check(photoEdit.shots.count == 2 && photoEdit.shots.allSatisfy { $0.start == 0 }, "split photos preserve zero source origin")
+        check(photoEdit.duration == 4 && photoEdit.shots[1].end == 2.5, "photo split preserves total display duration")
+        check(photoEdit.validation(durations: ["photo": 60], photoIDs: ["photo"]) == nil, "split photo timeline remains renderable")
+        photoEdit.undo(); check(photoEdit.shots == beforePhotoSplit, "photo split is one reversible edit")
+        edit = EditorDraft(run: editRun); edit.base[0].locked = true
+        edit.split("s1", at: 1)
+        check(edit.shots.count == 1, "unsaved unlock cannot bypass split lock")
+        let editorStore = WorkspaceStore()
+        let story = [
+            AgentShot(id: "a", mediaId: "p", start: 0, end: 3, label: "Lake", reason: "", locked: false),
+            AgentShot(id: "b", mediaId: "v", start: 2, end: 6, label: "Trail", reason: "", locked: false),
+            AgentShot(id: "c", mediaId: "p2", start: 0, end: 2, label: "Sunset", reason: "", locked: false)
+        ]
+        check(StoryTimeline.index(at: 3, in: story) == 1 && StoryTimeline.offset("c", in: story) == 7, "story boundaries use source durations rather than source in points")
+        var arrangementRun = legacyRun
+        arrangementRun.timeline = story
+        arrangementRun.resultText = "Open on the lake, then follow the walk to the lookout.\nNo recorded speech."
+        check(arrangementRun.arrangementSummary == "Open on the lake, then follow the walk to the lookout.", "legacy story introduction excludes limitations")
+        check(arrangementRun.arrangementDetails == "No recorded speech.", "story introduction is not duplicated in details")
+        arrangementRun.storySummary = "Begin with the lookout, then return to the lakeside."
+        arrangementRun.status = "running"; arrangementRun.stage = "render"
+        check(arrangementRun.arrangementSummary == arrangementRun.storySummary, "validated arrangement is visible before rendering completes")
+        arrangementRun.intent = "analyze"
+        check(arrangementRun.arrangementSummary == nil, "analysis does not pretend to have an arrangement")
+        arrangementRun.intent = "create"; arrangementRun.timeline = []
+        check(arrangementRun.arrangementSummary == nil, "routing without a timeline does not invent an arrangement")
+        check(StoryTimeline.index(at: 99, in: story) == 2 && StoryTimeline.index(at: .nan, in: story) == nil, "story seek handles the end and invalid input")
+        check(StoryTimeline.move(["c"], before: "a", in: story, locked: [])?.map(\.id) == ["c", "a", "b"], "story card reorders before an explicit target")
+        check(StoryTimeline.move(["a", "b"], before: nil, in: story, locked: [])?.map(\.id) == ["c", "a", "b"], "multi-card move preserves relative order")
+        check(StoryTimeline.move(["c"], before: "a", in: story, locked: ["b"]) == nil, "reorder cannot move a locked card indirectly")
+        check(StoryTimeline.move(["a"], before: "a", in: story, locked: []) == nil, "drop on self makes no undo step")
+        check(StoryTimeline.move(["missing"], before: nil, in: story, locked: []) == nil, "unknown drag identifiers rejected")
+        let voice = [AgentFinishing.Narration(start: 1, end: 6, text: "Across the lake", voice: "")]
+        check(StoryTimeline.parseTime("1:02.50") == 62.5 && StoryTimeline.parseTime("3.25") == 3.25, "precision fields accept seconds and timecodes")
+        check(["-1", "nan", "1:60", "1::2", "x", "1.2:03"].allSatisfy { StoryTimeline.parseTime($0) == nil }, "precision fields reject malformed or nonfinite timecodes")
+        check(StoryTimeline.timecode(59.999) == "1:00.00", "timecode rounds across minute boundaries")
+        check(StoryTimeline.timelineScale(viewport: 600, duration: 120, zoom: 1) == 5, "fit includes the whole timeline")
+        check(StoryTimeline.timelineScale(viewport: 600, duration: 120, zoom: 4) == 20, "all lanes share zoom scale")
+        check(StoryTimeline.timelineScale(viewport: 600, duration: 0, zoom: 1).isFinite, "empty timeline scale is finite")
+        check(StoryTimeline.timelineScale(viewport: 600, duration: 120, zoom: 99) == 160, "zoom is bounded")
+        check(StoryTimeline.rulerStep(scale: 5) == 10 && StoryTimeline.rulerStep(scale: 100) == 0.5, "ticks adapt to zoom without label overlap")
+        check(StoryTimeline.thumbnailTimes(start: 10, end: 16, count: 3) == [11, 13, 15], "filmstrip samples within the selected source range")
+        check(StoryTimeline.thumbnailTimes(start: 0, end: 0.25, count: 1) == [0.125], "short clips still have a frame")
+        check(StoryTimeline.thumbnailTimes(start: 0, end: 6, count: 100).count == 6, "video frame decoding is bounded")
+        check(StoryTimeline.thumbnailTimes(start: 2, end: 1, count: 1).isEmpty, "invalid ranges do not decode")
+        check(StoryTimeline.thumbnailTimes(start: .nan, end: 1, count: 1).isEmpty, "nonfinite sample ranges are rejected")
+        check(StoryTimeline.filmstripTileCount(width: 8) == 1, "short clip covers are never hidden")
+        check(StoryTimeline.filmstripTileCount(width: 300) == 4, "long clips fill with multiple thumbnails")
+        check(StoryTimeline.filmstripTileCount(width: 100000) == 128, "extreme zoom has bounded image tiles")
+        check(abs(StoryTimeline.steppedTime(3, direction: 1, duration: 9)-3-1.0/30) < 0.00001, "right arrow steps one output frame")
+        check(StoryTimeline.steppedTime(0, direction: -1, duration: 9) == 0, "left arrow clamps at start")
+        check(StoryTimeline.steppedTime(8.99, direction: 1, duration: 9) == 9, "right arrow clamps at end")
+        check(StoryTimeline.steppedTime(3, direction: -1, duration: 9, seconds: true) == 2, "shift arrow steps a second")
+        check(StoryTimeline.steppedTime(.nan, direction: 1, duration: 9) == 0, "invalid playback time is safe")
+        check(StoryTimeline.range(start: 2, end: 6, sourceDuration: 10, delta: 100, edge: 0) == 6...10, "slip keeps duration and clamps at source end")
+        check(StoryTimeline.range(start: 2, end: 6, sourceDuration: 10, delta: -100, edge: 0) == 0...4, "slip cannot go before source start")
+        check(StoryTimeline.range(start: 2, end: 6, sourceDuration: 10, delta: 100, edge: -1) == 5.75...6, "in handle cannot cross out handle")
+        check(StoryTimeline.range(start: 2, end: 6, sourceDuration: 10, delta: -100, edge: 1) == 2...2.25, "out handle maintains minimum duration")
+        var replacementPhoto = item; replacementPhoto.id = "replacement"; replacementPhoto.kind = "image"; replacementPhoto.status = "ready"
+        let replacedPhoto = StoryTimeline.replacing(story[1], with: replacementPhoto)!
+        let insertedPhoto = StoryTimeline.inserting(replacementPhoto, before: story[1].id, in: story)!
+        check(insertedPhoto.count == story.count+1 && insertedPhoto[1].mediaId == replacementPhoto.id && insertedPhoto[1].end == 3, "insert photo at exact list position with default duration")
+        check(!Set(story.map(\.id)).contains(insertedPhoto[1].id), "inserted use has a unique clip identity")
+        check(StoryTimeline.inserting(replacementPhoto, before: "gone", in: story) == nil, "stale insertion target cannot append silently")
+        var insertionLocked = story; insertionLocked[1].locked = true
+        check(StoryTimeline.inserting(replacementPhoto, before: story[1].id, in: insertionLocked) == nil, "insertion does not shift a locked clip")
+        check(StoryTimeline.inserting(replacementPhoto, before: nil, in: insertionLocked)?.count == story.count+1, "append after locked clip remains available")
+        check(replacedPhoto.id == story[1].id && replacedPhoto.start == 0 && replacedPhoto.end == story[1].end - story[1].start, "replacement keeps clip identity and duration; photo starts at zero")
+        var replacementVideo = replacementPhoto; replacementVideo.kind = "video"; replacementVideo.metadata?.duration = 1.5
+        check(StoryTimeline.replacing(story[1], with: replacementVideo)?.end == 1.5, "short replacement clamps to available source")
+        replacementVideo.missing = true
+        check(StoryTimeline.replacing(story[1], with: replacementVideo) == nil, "missing media cannot replace a clip")
+        var lockedStory = story[1]; lockedStory.locked = true
+        check(StoryTimeline.replacing(lockedStory, with: replacementPhoto) == nil, "locked clip cannot be replaced")
+        var duplicateRun = editRun; duplicateRun.timeline = [story[0], story[0]]; duplicateRun.timeline[1].id = "other-use"
+        editorStore.selectedProjectID = duplicateRun.projectId; editorStore.agentRuns = [duplicateRun]
+        check(editorStore.usedShots("p")?.shots.filter { $0.mediaId == "p" }.count == 2, "usage retains multiple ranges of the same source")
+        var duplicateDraft = EditorDraft(run: duplicateRun); var adjusted = duplicateDraft.shots; adjusted[0].end = 5; duplicateDraft.replace(adjusted)
+        editorStore.editorDrafts[duplicateRun.id] = duplicateDraft; editorStore.openEditor(duplicateRun.projectId)
+        check(editorStore.usedShots("p")?.draft == true && editorStore.usedShots("p")?.shots[1].end == 3, "draft usage is marked and editing one instance leaves the other unchanged")
+        check(editorStore.composerIssue == nil, "dirty timeline is saved by send instead of blocking input")
+        editorStore.editorSelection = EditorSelection(runId: duplicateRun.id, version: duplicateRun.version, shotIds: [story[0].id])
+        editorStore.freezeComposerTarget()
+        let pauseRequest = editorStore.editorPauseRequest
+        editorStore.editorSelection = EditorSelection(runId: duplicateRun.id, version: duplicateRun.version, shotIds: ["other-use"])
+        check(editorStore.composerEditTarget?.shotIds == [story[0].id], "typing locks target even when another card is selected")
+        editorStore.freezeComposerTarget()
+        check(editorStore.editorPauseRequest == pauseRequest, "focus does not repeatedly pause or retarget an existing request")
+        editorStore.chooseComposerTarget(wholeFilm: true)
+        check(editorStore.composerEditTarget?.shotIds.isEmpty == true && editorStore.editorSelectionLabel == "Whole film", "scope chip explicitly switches to whole film")
+        editorStore.chooseComposerTarget(wholeFilm: false)
+        check(editorStore.composerEditTarget?.shotIds == ["other-use"], "explicit selected scope uses current selection")
+        editorStore.agentRuns[0].version += 1
+        check(editorStore.composerIssue?.contains("Choose") == true && editorStore.composerVisibleIssue != nil, "stale frozen target is visible and never silently retargeted")
+        editorStore.agentRuns = [duplicateRun]
+        var receiptRun = duplicateRun
+        receiptRun.status = "completed"
+        receiptRun.editReceipt = AgentEditReceipt(changedShotIds: ["other-use"], removedCount: 0, soundOrCaptions: false, aspectChanged: false, version: duplicateRun.version, undone: false)
+        editorStore.agentRuns = [receiptRun]
+        check(!editorStore.canUndoAgentEdit(receiptRun), "AI undo cannot overwrite a dirty local draft")
+        editorStore.editorDrafts[duplicateRun.id] = EditorDraft(run: receiptRun)
+        check(editorStore.canUndoAgentEdit(receiptRun), "latest unchanged AI result can be undone")
+        var newer = receiptRun; newer.id = "newer-turn"; newer.updatedAt += 100
+        editorStore.agentRuns = [newer, receiptRun]
+        check(!editorStore.canUndoAgentEdit(receiptRun), "earlier conversation results cannot overwrite later work")
+        editorStore.agentRuns = [receiptRun]
+        var staleReceipt = receiptRun; staleReceipt.version += 1
+        check(!editorStore.canUndoAgentEdit(staleReceipt), "saved manual version invalidates AI undo")
+        check(receiptRun.editReceipt?.summary == "1 clip updated", "receipt summarizes actual changes compactly")
+        editorStore.editorDrafts[duplicateRun.id] = duplicateDraft
+        editorStore.closeEditor()
+        check(editorStore.composerEditTarget?.shotIds == ["other-use"], "collapsing editor preserves the request scope in the same conversation")
+        let failedSend = WorkspaceStore()
+        var sendRun = editRun; sendRun.status = "completed"
+        failedSend.agentRuns = [sendRun]; failedSend.items = [clip2]
+        failedSend.openEditor(sendRun.projectId)
+        failedSend.composerDraft = Draft(prompt: "Shorten this clip", attachments: [Attachment(id: clip2.id, name: clip2.name, kind: "video")], projectId: sendRun.projectId)
+        var invalidDraft = EditorDraft(run: sendRun); invalidDraft.shots[0].end = -1
+        failedSend.editorDrafts[sendRun.id] = invalidDraft
+        failedSend.submitAgent()
+        for _ in 0..<100 where failedSend.saving { try await Task.sleep(nanoseconds: 1_000_000) }
+        check(failedSend.error != nil && failedSend.composerDraft.prompt == "Shorten this clip", "invalid autosave leaves request text intact and reports failure")
+        check(failedSend.agentRuns.count == 1 && failedSend.editorDrafts[sendRun.id] == invalidDraft, "failed validation neither starts AI nor discards the draft")
+        invalidDraft.shots[0].end = 2; failedSend.editorDrafts[sendRun.id] = invalidDraft; failedSend.error = nil
+        failedSend.submitAgent()
+        for _ in 0..<100 where failedSend.saving { try await Task.sleep(nanoseconds: 1_000_000) }
+        check(!failedSend.saving && failedSend.error != nil && failedSend.composerDraft.prompt == "Shorten this clip", "unavailable service does not erase input or leave send spinning")
+        check(failedSend.agentRuns.count == 1 && failedSend.editorDrafts[sendRun.id]?.dirty == true, "save failure prevents starting a new AI request")
+        check(editorStore.editorProjectID == nil && editorStore.editorDrafts[duplicateRun.id]?.shots == adjusted, "video-card collapse retains unsaved timeline edits")
+        editorStore.openEditor(duplicateRun.projectId)
+        check(editorStore.editorProjectID == duplicateRun.projectId && editorStore.editorDrafts[duplicateRun.id]?.shots == adjusted, "reopening from the video card restores the same draft")
+        duplicateDraft.undo(); check(duplicateDraft.shots == duplicateRun.timeline, "undo restores exact repeated-source ranges")
+        editorStore.editorDrafts = [:]; editorStore.page = .home; editorStore.editorProjectID = nil
+        check(StoryTimeline.narration(at: 0, shots: story, cues: voice).first?.continued == false, "narration starts on its first card")
+        check(StoryTimeline.narration(at: 1, shots: story, cues: voice).first?.continued == true, "cross-clip narration uses continuation instead of duplicate text")
+        check(StoryTimeline.narration(at: 2, shots: story, cues: voice).isEmpty, "finished narration is not shown on later cards")
+        var generated = editRun
+        generated.status = "completed"
+        generated.artifacts = [AgentArtifact(id: "render1", type: "preview", title: "Preview", text: "", path: "/fixture/video.mp4")]
+        editorStore.agentRuns = [generated]
+        check(editorStore.editorProjectID == nil, "background generation never navigates away from home")
+        editorStore.selectedProjectID = generated.projectId; editorStore.page = .project
+        check(editorStore.editorProjectID == generated.projectId, "finished video opens editor by default")
+        editorStore.closeEditor(); editorStore.agentRuns = [generated]
+        check(editorStore.editorProjectID == nil, "polling respects manual collapse")
+        generated.version += 1; generated.status = "running"
+        editorStore.agentRuns = [generated]
+        check(editorStore.editorProjectID == nil, "running work does not open old preview")
+        generated.status = "completed"; generated.artifacts[0].id = "render2"
+        editorStore.agentRuns = [generated]
+        check(editorStore.editorProjectID == generated.projectId, "a newly completed render opens editor again")
+        editorStore.closeEditor(); editorStore.page = .media
+        generated.version += 1; editorStore.agentRuns = [generated]
+        check(editorStore.editorProjectID == nil && editorStore.page == .media, "background completion does not interrupt media browsing")
+        var chapterShots = [AgentShot(id: "chapter-a", mediaId: "p", start: 0, end: 3, label: "A", reason: "", locked: false),
+                            AgentShot(id: "chapter-b", mediaId: "p", start: 0, end: 4, label: "B", reason: "", locked: false)]
+        check(StoryTimeline.chapters(chapterShots).isEmpty, "unstructured films have no chapter controls")
+        chapterShots[0].section = "intro"; chapterShots[1].section = "intro"
+        check(StoryTimeline.chapters(chapterShots).isEmpty, "one chapter does not add navigation")
+        chapterShots[1].section = "outro"
+        check(StoryTimeline.chapters(chapterShots).map(\.start) == [0, 3], "chapter navigation uses current edited durations")
+        let crossingVoice = [AgentFinishing.Narration(start: 2, end: 5, text: "Across the cut", voice: "Samantha")]
+        check(StoryTimeline.narrationIndices(for: "chapter-a", shots: chapterShots, cues: crossingVoice) == [0] && StoryTimeline.narrationIndices(for: "chapter-b", shots: chapterShots, cues: crossingVoice) == [0], "one narration segment links to both overlapping shots")
+        check(StoryTimeline.narrationIndices(for: "missing", shots: chapterShots, cues: crossingVoice).isEmpty, "removed clips have no narration link")
+        var historyRun = editRun; historyRun.status = "completed"; historyRun.version = 2; historyRun.timeline = chapterShots
+        historyRun.timelineHistory = [.init(version: 1, shots: [chapterShots[0]])]
+        historyRun.artifacts = [.init(id: "old-render", type: "previous_preview", title: "Travel film · v1", text: "", path: "/fixture/v1.mp4")]
+        let versions = StoryVersion.collect([historyRun])
+        check(versions.count == 2 && versions[0].preview == nil && versions[0].shots.count == 2, "unsaved render state is a draft, not an old video mislabeled as current")
+        check(versions[1].preview?.id == "old-render" && versions[1].shots.count == 1, "historical preview stays associated with its saved timeline")
+        check(historyRun.version == 2 && historyRun.timeline == chapterShots, "reading versions does not change editable state")
+        historyRun.artifacts[0].timelineVersion = 2
+        check(StoryVersion.collect([historyRun])[0].preview?.id == "old-render", "explicit render version takes priority over an inherited old title after undo")
+        var voiceDraft = EditorDraft(run: historyRun)
+        var mixed = AgentFinishing.empty; mixed.narration = crossingVoice; mixed.narrationVolume = 0.4; mixed.narrationMuted = true; mixed.musicMuted = true
+        voiceDraft.setFinishing(mixed)
+        check(voiceDraft.validation(durations: ["p": 10]) == nil, "muted narration retains valid timing and volume")
+        let mixRoundtrip = try JSONDecoder().decode(EditorDraft.self, from: JSONEncoder().encode(voiceDraft))
+        check(mixRoundtrip.finishing?.narrationVolume == 0.4 && mixRoundtrip.finishing?.narrationMuted == true, "audio mix state survives draft persistence")
+        voiceDraft.undo(); check(voiceDraft.finishing?.narrationMuted != true, "audio mixer uses existing undo stack")
+        mixed.narration[0].end = 12; voiceDraft.setFinishing(mixed)
+        check(voiceDraft.validation(durations: ["p": 10]) != nil, "narration cannot outlive the edited film")
         print("Passed \(checks) native model/import checks.")
     }
 }

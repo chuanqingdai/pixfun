@@ -9,7 +9,7 @@ import re
 import shutil
 from pathlib import Path
 
-VERSION = 1
+VERSION = 2
 ROUTING = '''Packaging is supported: gentle full-photo motion, animated short titles,
 Editorial Postcard (light) and City Notes (dark) single-panel layouts, and a short graphic reveal.
 Return packagingRequest {"style":"keep|none|editorial-postcard|city-notes", "text":"keep|auto|none", "motion":"keep|gentle|none"}.
@@ -54,7 +54,7 @@ def component(shot, index, count, record, settings, width, height):
             'animateTitle':settings['motion'] != 'none',
             'index':f'{index+1:02d} / {count:02d}', 'titleEnd':title_end,
             'keyframes':{'title':{'inFrames':9,'outFrames':8,'risePixels':round(height*.01)},
-                         'photo':{'startScale':.96,'endScale':.985,'easing':'linear'},
+                         'photo':{'startScale':.96,'endScale':.984,'easing':'smoothstep','sampling':'subpixel-bilinear'},
                          'reveal':{'frames':9,'direction':'left-to-right'}},
             'sourceRange':None if record['kind']=='image' else [shot['start'],shot['end']]}
 
@@ -67,13 +67,18 @@ def filters(agent, design, width, height, folder, cancel, overlay_input):
     x,y,w,h = design['viewport']
     extra=[]; parts=[]
     if styled or design['motion']:
-        # Zoom the padded *canvas*, never the actual photo bounds. 0.96→0.985
+        # Zoom the padded *canvas*, never the actual photo bounds. 0.96→0.984
         # leaves a visible safety margin throughout, including extreme panoramas.
         sw,sh = max(2,int(w*.96)//2*2), max(2,int(h*.96)//2*2)
         initial=f'[0:v]scale={sw}:{sh}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={color},setsar=1,fps=30'
         if design['motion']:
             frames=max(1,design['durationFrames']-1)
-            initial+=f",zoompan=z='1+0.025*min(on/{frames},1)':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s={w}x{h}:fps=30"
+            # zoompan rounds the crop origin/size to integer pixels (and chroma
+            # blocks), causing visible jumps at this small zoom. Sample RGB at
+            # fractional coordinates instead, then subsample only at encoding.
+            zoom=f'1+{.075/frames**2:.15g}*N*N-{.05/frames**3:.15g}*N*N*N'
+            sample=f'(X-(W-1)/2)*ld(0)+(W-1)/2,(Y-(H-1)/2)*ld(0)+(H-1)/2'
+            initial+=",format=gbrp,geq="+':'.join(f"{channel}='st(0,1/({zoom}));{channel}({sample})'" for channel in ('r','g','b'))+':interpolation=bilinear'
         parts.append(initial+'[image]')
         parts.append(f'color=c={color}:s={width}x{height}:r=30:d={duration}[canvas]')
         if design['reveal']:

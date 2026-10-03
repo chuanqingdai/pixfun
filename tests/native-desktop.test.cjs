@@ -12,14 +12,14 @@ test('starter requests explain outcomes and fill the composer without sending', 
   assert.match(examples, /Text\(example.outcome\)/);
   assert.doesNotMatch(examples, /submitAgent/);
   const view = read('native/Sources/Pixfun/AgentView.swift');
-  assert.equal((view.match(/AgentEvidenceResults\(run: run\)/g) || []).length, 2);
+  assert.equal((view.match(/AgentEvidenceResults\(run: run\)/g) || []).length, 1);
   assert.match(view, /run.directEvidence.prefix\(8\)/);
   assert.match(view, /No matching moments found/);
   assert.match(view, /No usable speech was found/);
 });
 test('analysis answers remain visible in latest and earlier turns without report downloads', () => {
   const view = read('native/Sources/Pixfun/AgentView.swift');
-  assert.equal((view.match(/AgentAnalysisResults\(run: run, report: report\)/g) || []).length, 2);
+  assert.equal((view.match(/AgentAnalysisResults\(run: run, report: report\)/g) || []).length, 1);
   const report = view.split('struct AgentAnalysisResults: View')[1].split('struct AgentSettingsView')[0];
   assert.ok(report.indexOf('Text(report.overview)') < report.indexOf('AgentMaterialSummaryCard('));
   assert.match(report, /summary: material.content, mediaID: material.mediaId/);
@@ -32,8 +32,8 @@ test('analysis answers remain visible in latest and earlier turns without report
   assert.match(card, /frame\(width: 96, height: 76\)/);
   assert.match(card, /item\?\.kind == "audio"/);
   assert.match(card, /Text\(summary\).*lineLimit\(3\)/);
-  assert.match(view, /run.artifacts.contains\(where: \{ \["analysis", "observation", "subtitle", "match", "notice"\]/);
-  assert.match(view, /run.artifacts.contains\(where: \{ \["analysis", "observation", "subtitle", "match", "notice", "finishing", "credits", "skill"\]/);
+  assert.match(view, /AgentRunMaterials\(run: run\)/);
+  assert.doesNotMatch(view, /Text\("Saved results"\)/);
   assert.match(view, /Label\("Export", systemImage: "square.and.arrow.up"\)/);
   assert.match(view, /hasSuffix\("\.srt"\) == true/);
 });
@@ -58,9 +58,15 @@ test('editor keeps scoped chat, recoverable drafts, linked original audio and va
   const engine = read('agent_engine.py');
   assert.match(view, /HSplitView/);
   assert.match(view, /AgentWorkspaceView\(run: active, compact: true\)/);
-  assert.match(view, /track\(audio: false\)/);
-  assert.match(view, /track\(audio: true\)/);
-  assert.match(view, /Source in seconds/);
+  const timeline = read('native/Sources/Pixfun/EditorTimelineView.swift');
+  assert.match(view, /EditorTimelineView\(/);
+  assert.match(timeline, /if hasOriginal/);
+  assert.match(timeline, /Clip start handle/);
+  assert.doesNotMatch(view, /Apply trim|Apply duration|Display duration/);
+  assert.doesNotMatch(timeline, /No audio|A1\\n|V1\\n/);
+  assert.match(timeline, /onSeek\(EditorDraft.time/);
+  assert.match(view, /baseline == draft/);
+  assert.match(view, /Collapse editor/);
   assert.match(view, /Previous render · rebuild after saving/);
   assert.match(view, /validation == nil, !conflict/);
   assert.match(view, /sourcePlayer.stop\(\)/);
@@ -69,6 +75,217 @@ test('editor keeps scoped chat, recoverable drafts, linked original audio and va
   assert.match(engine, /validate_edit_scope\(shots,run\['previousTimeline'\],run.get\('editScope'\)\)/);
   assert.match(engine, /artifact\['type'\] = 'previous_preview'/);
 });
+test('editor has an independent timeline workspace and selection does not navigate playback', () => {
+  const view = read('native/Sources/Pixfun/EditorView.swift');
+  assert.match(view, /VSplitView/);
+  assert.match(view, /inspector.frame\(width: 200\)/);
+  assert.match(view, /ScrollView\(\.vertical\) \{ timeline \}/);
+  const selection = view.split('func select(_ shot: AgentShot)')[1].split('func syncSelection')[0];
+  assert.doesNotMatch(selection, /seek\(|zoom =|cursor =/);
+  assert.match(view, /EditorDraft.fitZoom/);
+  assert.match(view, /playhead: cursor/);
+  assert.match(view, /if !stalePreview && playback.ready \{ playback.seek\(cursor\) \}/);
+  assert.match(view, /photoIDs: photoIDs\); syncSelection\(\)/);
+});
+test('media cards show compact searchable evidence tags outside the open-card button', () => {
+  const media = read('native/Sources/Pixfun/MediaView.swift');
+  assert.match(media, /item.contentTags.prefix\(3\)/);
+  assert.match(media, /ForEach\(visibleTags\)/);
+  assert.match(media, /ForEach\(item.searchTags\)/);
+  assert.match(media, /store.searchScope = tag.scope; store.query = tag.text/);
+  assert.match(media, /if store.selecting \{ store.toggleSelection\(item.id\) \}/);
+  assert.match(media, /MediaTagFlow/);
+  assert.match(media, /item.cardSummary/);
+  assert.match(read('native/Sources/Pixfun/MediaSearch.swift'), /for tag in item.searchTags/);
+});
+test('story editor separates playback, scoped selection and honest draft review', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  assert.match(read('native/Sources/Pixfun/PixfunApp.swift'), /StoryEditorWorkspace\(projectID:/);
+  assert.match(story, /StoryOverview/);
+  const selection = story.split('func select(_ shot: AgentShot)')[1].split('func syncSelection')[0];
+  assert.doesNotMatch(selection, /seek\(|play\(|toggle\(/);
+  assert.match(story, /StoryScrollIntent \{ following = false \}/);
+  assert.match(story, /Back to playhead/);
+  assert.match(story, /StoryTimeArea\(/);
+  assert.doesNotMatch(story, /Draft timing · sound and effects update after rendering|Label\("Source |Photo ·/);
+  assert.match(story, /Source-only preview\. Music, narration, transitions and packaging are applied when rendered\./);
+  assert.match(story, /\.disabled\(stale \|\| busy\)/);
+  assert.match(story, /trimBase == draft/);
+  assert.match(story, /store.saveAgentTimeline/);
+  assert.match(read('native/Sources/Pixfun/AgentView.swift'), /store.editorSelectionLabel/);
+  assert.match(story, /StorySourceRange\(/);
+  assert.match(story, /StoryTimeField\(/);
+  assert.match(story, /stoppingAt: shot.id/);
+  assert.doesNotMatch(story, /Duration scale: 15 seconds|%.1fs → %.1fs|Selected for your next request/);
+  assert.match(story, /StoryReplacementPicker/);
+  assert.match(story, /await Task.yield\(\)[\s\S]*store.editorRequestedShotID == id[\s\S]*proxy.scrollTo\(id, anchor: .center\)/);
+  const ai = story.split('func editWithAI')[1].split('func canEdit')[0];
+  assert.match(ai, /chooseComposerTarget/);
+  assert.doesNotMatch(ai, /saveAgentTimeline/);
+  assert.match(ai, /editorComposerFocus/);
+  assert.doesNotMatch(ai, /submitAgent|composerDraft.prompt =/);
+  const controls = read('native/Sources/Pixfun/StoryTrimControls.swift');
+  assert.match(controls, /onChange\(of: value\) \{ next in if !focused \{ text = format\(next\)/);
+  assert.match(controls, /generator.image\(at:/);
+});
+test('story panes have distinct surfaces and only the compact composer uses the raised input treatment', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  for (const token of ['pixfunStoryChat', 'pixfunStoryPreview', 'pixfunStoryRail']) {
+    assert.match(story, new RegExp('background\\(Color\\.' + token + '\\)'));
+  }
+  assert.match(story, /background\(Color.pixfunStoryCard\)/);
+  const theme = read('native/Sources/Pixfun/Theme.swift');
+  const luminance = token => {
+    const hex = theme.match(new RegExp(token + ' = Color\\(pixfunHex: 0x([0-9a-f]+)\\)'))[1];
+    const channels = hex.match(/../g).map(c => parseInt(c, 16) / 255)
+      .map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return channels.reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  };
+  assert.ok(luminance('pixfunStoryChat') - luminance('pixfunStoryPreview') > 0.008);
+  assert.ok(luminance('pixfunStoryRail') - luminance('pixfunStoryChat') > 0.004);
+  assert.ok(luminance('pixfunStoryCard') > luminance('pixfunStoryRail'));
+  assert.ok(luminance('pixfunStoryInput') > luminance('pixfunStoryChat'));
+  for (const surface of ['pixfunStoryChat', 'pixfunStoryPreview', 'pixfunStoryRail', 'pixfunStoryCard', 'pixfunStoryInput']) {
+    assert.ok((luminance('pixfunMuted') + 0.05) / (luminance(surface) + 0.05) >= 4.5, surface + ' retains readable secondary text');
+  }
+  const composer = read('native/Sources/Pixfun/AgentView.swift');
+  assert.match(composer, /compact \? Color.pixfunStoryInput : Color.pixfunSurface/);
+  assert.match(composer, /onFocusChange: \{\s*composerHasFocus = \$0/);
+  const input = read('native/Sources/Pixfun/PromptEditor.swift');
+  assert.match(input, /override func becomeFirstResponder/);
+  assert.match(input, /override func resignFirstResponder/);
+});
+test('story finishing controls persist real layers and export only the current rendered artifact', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  const timeArea = read('native/Sources/Pixfun/StoryTimeArea.swift');
+  assert.match(timeArea, /StoryCaptionTrack\(/);
+  assert.match(timeArea, /Transition before/);
+  assert.match(story, /metadata\?\.hasAudio == true/);
+  assert.match(story, /finishing: value.finishing/);
+  assert.match(story, /accepted.baseFinishing = accepted.finishing/);
+  assert.match(story, /disabled\(stale \|\| busy\)/);
+  assert.match(story, /Update preview/);
+  assert.match(read('native/Sources/Pixfun/StorySequencePlayer.swift'), /finishing\?\.gain\(for: shot.id\)/);
+  const store = read('native/Sources/Pixfun/WorkspaceStore.swift');
+  assert.match(store, /payload\["finishing"\]/);
+  assert.match(store, /copyItem\(atPath: path, toPath: destination.path\)/);
+  const engine = read('agent_engine.py');
+  assert.match(engine, /payload.get\('finishing', run.get\('finishing', \{\}\)\)/);
+  assert.match(engine, /agent_layers.burn_captions/);
+  assert.match(engine, /transition,gain,packaging.VERSION/);
+});
+test('editor keeps clip tools in the right rail and other tools in the center', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  const rail = story.split('var storyPane: some View')[1].split('@ViewBuilder func trimControls')[0];
+  assert.doesNotMatch(rail, /seamButton|Text\(description\)/);
+  assert.match(rail, /StoryInsertionGap/);
+  assert.match(rail, /Label\("Add clip"/);
+  assert.match(rail, /contentTags/);
+  assert.doesNotMatch(rail, /if clipToolsInRail \{ selectedTools \}/);
+  const card = rail.split('func card(_ shot: AgentShot)')[1];
+  assert.match(card, /if primary == shot.id && selection.count == 1 \{[\s\S]*if tool == \.clip\(shot.id\)/);
+  assert.match(card, /trimControls\(shot\)/);
+  assert.match(card, /metadata\?\.hasAudio == true \{ clipAudioControls\(shot\) \}/);
+  assert.match(card, /Collapse clip controls/);
+  assert.match(card, /Button\("Locate in preview"\) \{ seek\(start, play: false\) \}/);
+  assert.match(card, /Image\(systemName: "line.3.horizontal"\)[\s\S]*?\.onDrag/);
+  assert.doesNotMatch(card.split('}.padding(11)')[1], /\.onDrag/);
+  assert.match(card, /frame\(height: 58, alignment: \.top\)/);
+  assert.match(card, /HStack\(alignment: \.firstTextBaseline, spacing: 5\)/);
+  assert.match(card, /overlay\(alignment: \.topTrailing\)/);
+  assert.match(rail, /padding\(\.vertical, 2\)/);
+  assert.doesNotMatch(story.split('var previewPane: some View')[1].split('var storyPane: some View')[0], /if !clipToolsInRail \{ selectedTools \}/);
+  assert.match(story, /switch tool \{/);
+  assert.match(story, /if captions.isEmpty \{\s*Button\("Add caption", action: addCaption\)/);
+  assert.match(read('native/Sources/Pixfun/StoryTimeArea.swift'), /showCaptions && !captions.isEmpty/);
+  assert.match(read('native/Sources/Pixfun/WorkspaceStore.swift'), /additionalMediaIds/);
+});
+test('finishing tools use exclusive popovers without automatically expanding lanes', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  for (const target of ['sound', 'captions', 'transition']) {
+    assert.ok(story.includes(`.popover(isPresented: floatingPresentation(.${target})`));
+  }
+  assert.match(story, /if !presented && floatingTool == target \{ closeFloatingTools\(\) \}/);
+  assert.match(story, /StoryPlaybackKeys\(enabled: trimBase == nil && floatingTool == nil/);
+  assert.match(story, /Toggle\("Show audio track", isOn: \$showAudio\)/);
+  assert.match(story, /Toggle\("Show caption track", isOn: \$showCaptions\)/);
+  const bar = story.split('var finishingBar: some View')[1].split('var captionPopover')[0];
+  assert.doesNotMatch(bar, /showAudio.toggle|showCaptions.toggle/);
+  const add = story.split('func addCaption()')[1].split('func insertClip')[0];
+  assert.doesNotMatch(add, /showCaptions = true/);
+  assert.match(add, /guard !busy, !conflict/);
+  const track = story.split('struct StoryCaptionTrack: View')[1].split('struct StoryValueSlider')[0];
+  assert.doesNotMatch(track, /onChanged.*select\(cue.id\)/);
+  assert.match(track, /draggedID == cue.id/);
+});
+test('editor keyboard actions reuse guarded edits and never seek on selection', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  const select = story.split('case .select(let direction):')[1].split('case .start:')[0];
+  assert.match(select, /visible.map/);
+  assert.match(select, /selectRequested/);
+  assert.doesNotMatch(select, /seek\(|playClip\(|toggle\(/);
+  for (const marker of ['func undoStory()', 'func redoStory()', 'func removeSelection()', 'func save()']) {
+    const body = story.split(marker)[1].split('\n    }')[0];
+    assert.match(body, /guard.*!busy.*!conflict.*trimBase == nil/);
+  }
+  assert.match(story, /!selection.isEmpty, selection.isDisjoint\(with: locked\), selection.count < shots.count/);
+  assert.match(story, /!keyboardHelpOpen && !addingClip && replacing == nil && dragging.isEmpty/);
+  assert.match(story, /if case .clip = tool \{ removeSelection\(\) \}/);
+  assert.match(story, /Keyboard shortcuts…/);
+});
+test('P1 reuses audio and version popovers without replacing the editable draft', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  const audio = read('native/Sources/Pixfun/StoryAudioPopover.swift');
+  const versions = read('native/Sources/Pixfun/StoryVersions.swift');
+  assert.match(story, /StoryAudioPopover\(/);
+  assert.match(story, /if !StoryTimeline.chapters\(shots\).isEmpty/);
+  assert.match(story, /narrationIndices\(for: shot.id/);
+  assert.match(story, /selectedNarration = index; floatingTool = \.sound/);
+  assert.match(audio, /Music.*[\s\S]*Narration/);
+  assert.match(audio, /next.musicMuted = !/);
+  assert.match(audio, /next.narrationMuted = !/);
+  assert.match(versions, /Saved draft/);
+  assert.doesNotMatch(versions, /editorDrafts|saveAgentTimeline|agentAction|openEditor/);
+});
+test('center navigation offers fit zoom follow and precise seek without stealing text input', () => {
+  const story = read('native/Sources/Pixfun/StoryEditorView.swift');
+  const time = read('native/Sources/Pixfun/StoryTimeArea.swift');
+  for (const title of ['Zoom in timeline', 'Zoom out timeline', 'Fit whole timeline', 'Follow playhead']) assert.ok(time.includes(title));
+  assert.match(time, /StoryTimeScrollIntent \{ following = false \}/);
+  assert.match(time, /onChange\(of: tool\)/);
+  assert.doesNotMatch(story, /StoryPlaybackTime\(/);
+  assert.doesNotMatch(read('native/Sources/Pixfun/StoryTrimControls.swift'), /struct StoryPlaybackTime/);
+  assert.match(time, /Story playback position/);
+  assert.match(story, /jumpToTime\(StoryTimeline.steppedTime/);
+  assert.match(story, /Locate selected item/);
+  assert.match(story, /Preview selected clip/);
+  const keys = read('native/Sources/Pixfun/StoryPlaybackKeys.swift');
+  for (const guard of ['window.isKeyWindow', 'window.attachedSheet == nil', 'firstResponder is NSTextView', 'firstResponder is NSTextField']) assert.ok(keys.includes(guard));
+  assert.match(keys, /NSEvent.removeMonitor/);
+});
+test('story timeline shows bounded source-range filmstrips even on short clips', () => {
+  const time = read('native/Sources/Pixfun/StoryTimeArea.swift');
+  const strip = read('native/Sources/Pixfun/StoryFilmstrip.swift');
+  assert.match(time, /StoryFilmstrip\(shot: shot/);
+  assert.doesNotMatch(time, /\*scale > 65/);
+  assert.match(time, /clipStart \+ clipWidth >= scrollOffset/);
+  assert.match(time, /frame\(height: 44\)/);
+  assert.match(strip, /visible && !isPhoto \? requestKey : nil/);
+  assert.match(strip, /StoryTimeline.thumbnailTimes\(start: shot.start, end: shot.end/);
+  assert.match(strip, /appliesPreferredTrackTransform = true/);
+  assert.match(strip, /cancelAllCGImageGeneration/);
+  assert.match(strip, /loadedKey == requestKey/);
+  assert.match(strip, /cache.totalCostLimit = 32\*1024\*1024/);
+});
+test('arrangement rationale precedes results and remains visible in the compact editor conversation', () => {
+  const conversation = read('native/Sources/Pixfun/AgentView.swift').split('var conversation: some View')[1];
+  assert.ok(conversation.indexOf('entry.arrangementSummary') < conversation.indexOf('if entry.busy'));
+  assert.ok(conversation.indexOf('entry.arrangementSummary') < conversation.indexOf('if entry.id == run.id && !entry.busy'));
+  assert.match(conversation, /Text\(arrangement\)/);
+  assert.doesNotMatch(conversation, /Review the preview, then select a shot/);
+  const backend = read('agent_engine.py');
+  assert.match(backend, /run\['storySummary'\]=str\(answer.get\('story',''\)\).strip\(\)/);
+});
 test('Agent is one conversation with inline videos, actual activity and a persistent composer', () => {
   const agent = read('native/Sources/Pixfun/AgentView.swift');
   assert.doesNotMatch(agent, /HSplitView/);
@@ -76,9 +293,9 @@ test('Agent is one conversation with inline videos, actual activity and a persis
   assert.match(read('native/Sources/Pixfun/PixfunApp.swift'), /Button\("New project"\)/);
   assert.match(agent, /AgentPreviousResults\(run: entry\)/);
   assert.match(agent, /AgentActivityView\(run: entry\)/);
-  assert.match(agent, /AgentVideoMessage\(artifact: preview, aspect: run.aspect\)/);
+  assert.match(agent, /AgentVideoMessage\(artifact: preview, aspect: run.aspect,/);
   assert.doesNotMatch(agent, /Work log/);
-  assert.match(agent, /Text\(run.stageLabel\)/);
+  assert.match(agent, /Text\(run.activityLabel\)/);
   const activity = agent.split('struct AgentActivityView: View')[1].split('struct AgentFailureCard')[0];
   assert.doesNotMatch(activity, /Text\(run.message\)/);
   assert.match(agent, /DisclosureGroup\("Technical details"\)\s*\{\s*Text\(run.message\)/);
@@ -89,6 +306,12 @@ test('Agent is one conversation with inline videos, actual activity and a persis
   assert.match(agent, /item.status == \.failed/);
   assert.doesNotMatch(agent, /Export report/);
   assert.match(read('scripts/build-desktop-backend.cjs'), /--add-data.*creator-skills/);
+});
+test('finished videos omit preset editing suggestions and retain the request composer', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  assert.doesNotMatch(agent, /Tighter pacing|Stronger opening|Shorten by 20%/);
+  assert.match(agent, /entry.status == "completed" && entry.preview == nil \{ analysisFollowUp \}/);
+  assert.match(agent, /Describe what to create or change/);
 });
 test('analysis activity is prominent, honest about queued work, and respects reduced motion', () => {
   const agent = read('native/Sources/Pixfun/AgentView.swift');
@@ -105,6 +328,55 @@ test('analysis activity is prominent, honest about queued work, and respects red
   assert.match(media, /if let status = item.processingLabel/);
   assert.match(media, /PixfunActivityIndicator\(queued: status == "Queued…"/);
   assert.match(media, /PixfunActivityIndicator\(queued: queued, size: 20\)/);
+});
+test('finished videos use one compact card with seek, edit and export controls', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  const card = agent.split('struct AgentVideoMessage: View')[1].split('private final class PlayerTimeObservation')[0];
+  assert.match(agent, /if run.preview == nil \{ AgentResultHeading\(run: run\) \}/);
+  assert.match(agent, /entry.skillNotice, entry.preview == nil/);
+  assert.match(card, /frame\(maxWidth: 720\)/);
+  assert.match(card, /Video playback position/);
+  assert.match(card, /ViewThatFits\(in: \.horizontal\)/);
+  assert.match(card, /Edit video/);
+  assert.match(card, /Export video/);
+  assert.match(card, /Close expanded preview/);
+  assert.match(card, /resumeAfterScrub/);
+  assert.match(card, /showsControls: false/);
+  assert.match(read('native/Sources/Pixfun/MediaView.swift'), /allowsVideoFrameAnalysis = false/);
+});
+test('compact conversation retains video cards with a reversible editor toggle', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  assert.doesNotMatch(agent, /if compact && !entry.busy/);
+  assert.match(agent, /AgentRunResults\(run: run, isCurrent: true\)/);
+  assert.match(agent, /var body: some View \{ AgentRunResults\(run: run\) \}/);
+  assert.match(agent, /editorProjectID: isCurrent && !run.timeline.isEmpty \? run.projectId : nil/);
+  const card = agent.split('struct AgentVideoMessage: View')[1].split('private final class PlayerTimeObservation')[0];
+  assert.match(card, /if editorIsOpen \{ store.closeEditor\(\) \}/);
+  assert.match(card, /else \{ store.openEditor\(editorProjectID\) \}/);
+  assert.match(card, /accessibilityLabel\(editorIsOpen \? "Collapse editor" : "Edit video"\)/);
+  assert.match(card, /HStack\(spacing: 8\) \{ transportControls; Spacer/);
+  assert.match(card, /HStack\(spacing: 4\) \{ editorAndExportControls; Spacer\(minLength: 0\) \}/);
+  assert.doesNotMatch(card, /showLabels/);
+  assert.match(card, /Label\(editorIsOpen \? "Collapse" : "Edit"/);
+  assert.match(card, /Label\("Export"/);
+  assert.doesNotMatch(card, /\bLabel\("Expand preview"/);
+  assert.match(card, /Image\(systemName: "arrow.up.left.and.arrow.down.right"\)/);
+  assert.match(card, /help\("Expand preview"\)\.accessibilityLabel\("Expand preview"\)/);
+});
+test('one conversation retains collapsed materials and reading position across editor layouts', () => {
+  const agent = read('native/Sources/Pixfun/AgentView.swift');
+  const store = read('native/Sources/Pixfun/WorkspaceStore.swift');
+  assert.match(store, /expandedConversationSections = Set<String>\(\)/);
+  assert.match(agent, /conversationSection\("\\\(entry.id\):files"\)/);
+  assert.match(agent, /conversationSection\("\\\(run.id\):materials"\)/);
+  assert.match(agent, /Expand or collapse all materials/);
+  assert.match(agent, /conversationBookmarks\[run.projectId\]/);
+  assert.match(agent, /onChange\(of: store.expandedConversationSections\).*followingLatest = false/);
+  const details = agent.split('struct AgentEditDetails: View')[1].split('struct AgentRunResults: View')[0];
+  assert.doesNotMatch(details, /AgentTimelineResult\(|AgentSourceResults\(/);
+  const results = agent.split('struct AgentRunResults: View')[1].split('struct AgentPreviousResults: View')[0];
+  assert.match(results, /AgentRunMaterials\(run: run\)/);
+  assert.doesNotMatch(results, /compact|Saved results|Source results/);
 });
 test('default desktop is native; Electron remains an explicit legacy fallback', () => {
   const pkg = JSON.parse(read('package.json'));
@@ -301,7 +573,13 @@ test('conversation has a compact centered composer and guarded task actions', ()
   assert.match(agent, /AgentMessageAttachments\(/);
   assert.doesNotMatch(agent, /run.events.enumerated|ProgressView\(value: Double\(min\(run.completed/);
   assert.match(agent, /else if let notice = run.activityNotice/);
-  assert.match(agent, /What would you like to change\?/);
+  assert.doesNotMatch(agent, /What would you like to change\?|Where would you like to go next\?|Tell me which moment to change/);
+  assert.equal((agent.match(/AgentEditDetails\(run: run\)/g) || []).length, 1);
+  assert.match(agent, /DisclosureGroup\("Details", isExpanded: store.conversationSection/);
+  assert.doesNotMatch(timeline, /Picker\("Preview mode"|Text\("Cut preview"\)|Text\("Selected source"\)/);
+  assert.match(timeline, /Label\("Back to preview"/);
+  assert.match(agent, /AgentProgressTimeline\(run: entry\)\s*AgentActivityView\(run: entry\)/);
+  assert.match(agent, /scrollState.observe\(bottom: metrics.bottom, height: metrics.height/);
   assert.match(agent, /store.submitAgent\(prompt: value\)/);
   assert.match(agent, /disabled\(!store.canApplyAgentOption\)/);
 });

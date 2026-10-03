@@ -17,17 +17,39 @@ from agent_models import ModelGateway, AgentCancelled, CapabilityMissing
 from analysis_frames import extract_frame
 from agent_tools import TOOL_RULE, tool_plan, ranked_evidence
 import agent_finishing as finishing
+import agent_layers
 import agent_packaging as packaging
 from music_library import catalog as music_catalog, credit as music_credit
 from transcript_quality import checked_cues
 from agent_report import summarize_report, report_text
 from product_language import explicitly_chinese
-from travel_skill import DEFAULT_SKILL, SHORT_ID, resolve_skill, ROUTING_RULE, PLANNING_RULE, coverage_report, normalize_short_sequence
+from travel_skill import DEFAULT_SKILL, SHORT_ID, resolve_skill, ROUTING_RULE, PLANNING_RULE, coverage_report, normalize_short_sequence, validate_story_structure
 from agent_conversation import capture_decision, answer_decision, requests_plan_review, requests_plan_only
 from photo_source import prepare_photo, prepare_render_photo, PHOTO_HOLD_LIMIT, DEFAULT_PHOTO_HOLD, apply_default_photo_pacing, fit_photo_duration
 
 FINAL = {'completed', 'failed', 'cancelled', 'interrupted'}
 INTENTS = {'analyze', 'search', 'plan', 'create', 'modify', 'subtitles', 'clarify'}
+
+def observation_tags(result):
+    """Expose existing visual-model tags in Media; never generate extra inferences."""
+    tags, seen = [], set()
+    for segment in result.get('segments', []):
+        values = segment.get('tags', [])
+        if not isinstance(values, list): continue
+        for value in values:
+            if not isinstance(value, str): continue
+            text = ' '.join(value.split()); key = text.casefold()
+            if not 2 <= len(text) <= 48 or key in seen or key in {'unknown','none','n/a','unspecified','未知','无'}: continue
+            seen.add(key); tags.append(text)
+    return tags[:24]
+
+def record_progress_update(run, kind, value):
+    updates = run.setdefault('progressUpdates', [])
+    field = 'stage' if kind == 'stage' else 'mediaId'
+    previous = [entry for entry in updates if entry['kind'] == kind]
+    if kind == 'media' and any(entry.get(field) == value for entry in previous): return
+    if kind == 'stage' and previous and previous[-1].get(field) == value: return
+    updates.append({'id': uuid.uuid4().hex, 'kind': kind, field: value, 'createdAt': time.time() * 1000})
 
 def starter_brief(run, short=False):
     """Known first-message product examples need no probabilistic re-routing.
@@ -211,6 +233,51 @@ def preserve_scoped_ids(shots, previous, scope):
     return shots
 
 
+def edit_receipt(run):
+    """A factual diff of the accepted edit, not model-authored claims."""
+    before = run.get('previousTimeline', [])
+    after = run.get('timeline', [])
+    if not before or not after:
+        return None
+    old = {shot['id']: shot for shot in before}
+    positions = {shot['id']: i for i, shot in enumerate(before)}
+    changed = [shot['id'] for i, shot in enumerate(after)
+               if old.get(shot['id']) != shot or positions.get(shot['id']) != i]
+    removed = [shot['id'] for shot in before if shot['id'] not in {s['id'] for s in after}]
+    defaults = {'music':None, 'narration':[], 'transition':{'kind':'none','duration':0.25},
+                'originalVolume':1, 'originalMuted':False, 'musicMuted':False, 'narrationMuted':False,
+                'narrationVolume':1, 'captions':[], 'clipAudio':[], 'seams':[]}
+    previous_finish = {k:(run.get('previousFinishing') or {}).get(k, v) for k,v in defaults.items()}
+    current_finish = {k:(run.get('finishing') or {}).get(k, v) for k,v in defaults.items()}
+    layers = previous_finish != current_finish
+    aspect = run.get('aspect', '16:9') != run.get('previousAspect', '16:9')
+    titles = run.get('packaging', {}) != run.get('previousPackaging', {})
+    affected = set(changed)
+    if aspect or titles or any(previous_finish.get(k) != current_finish.get(k)
+                              for k in ('music', 'narration', 'transition', 'originalVolume', 'originalMuted', 'musicMuted', 'narrationMuted', 'narrationVolume')):
+        affected.update(s['id'] for s in after)
+    old_audio = {a['shotId']: a for a in (previous_finish.get('clipAudio') or [])}
+    new_audio = {a['shotId']: a for a in (current_finish.get('clipAudio') or [])}
+    affected.update(key for key in old_audio.keys() | new_audio.keys() if old_audio.get(key) != new_audio.get(key))
+    old_captions = {c['id']: c for c in (previous_finish.get('captions') or [])}
+    new_captions = {c['id']: c for c in (current_finish.get('captions') or [])}
+    cues = [c for key in old_captions.keys() | new_captions.keys() if old_captions.get(key) != new_captions.get(key)
+            for c in (old_captions.get(key), new_captions.get(key)) if c]
+    offset = 0
+    for shot in after:
+        end = offset + shot['end'] - shot['start']
+        if any(c['start'] < end and c['end'] > offset for c in cues): affected.add(shot['id'])
+        offset = end
+    old_seams = previous_finish.get('seams') or []
+    new_seams = current_finish.get('seams') or []
+    for seam in old_seams + new_seams:
+        if (seam in old_seams) != (seam in new_seams):
+            affected.update((seam['afterShotId'], seam['beforeShotId']))
+    changed = [shot['id'] for shot in after if shot['id'] in affected]
+    return {'changedShotIds': changed, 'removedCount': len(removed), 'soundOrCaptions': layers,
+            'aspectChanged': aspect, 'packagingChanged': titles, 'version': run['version'], 'undone': False}
+
+
 class AgentEngine:
     def __init__(self, library, models=None):
         self.library = library
@@ -247,6 +314,12 @@ class AgentEngine:
         run['updatedAt'] = time.time() * 1000
         capture_decision(run)
         with self.library.connect() as db:
+            # A worker may hold an older snapshot while progress is published.
+            # Preserve already-visible steps and media across that later save.
+            row = db.execute('SELECT record FROM agent_runs WHERE id=?', (run['id'],)).fetchone()
+            saved = json.loads(row[0]).get('progressUpdates', []) if row else []
+            updates = {entry['id']: entry for entry in saved + run.get('progressUpdates', [])}
+            if updates: run['progressUpdates'] = sorted(updates.values(), key=lambda entry: entry['createdAt'])
             db.execute('UPDATE agent_runs SET record=?,updated=? WHERE id=?', (json.dumps(run, ensure_ascii=False), run['updatedAt'], run['id']))
 
     def progress(self, key, message, stage=None, **fields):
@@ -255,6 +328,9 @@ class AgentEngine:
             if self.cancels[key].is_set(): raise AgentCancelled()
             run.update(message=message, **fields)
             if stage: run['stage'] = stage
+            step = {'Planning music and narration': 'finishing', 'Checking the finished video': 'verify'}.get(message, stage)
+            if step in ('intent', 'understand', 'transcribe', 'plan', 'search', 'report', 'render', 'finishing', 'verify'):
+                record_progress_update(run, 'stage', step)
             run['events'] = (run['events'] + [message])[-30:]
             self.save(run)
             return run
@@ -274,6 +350,10 @@ class AgentEngine:
             history = [r for r in self.list() if r['projectId'] == project_id] if project_id else []
             # Earlier approvals do not authorize a new cloud run or a new set of attachments.
             old = next((r for r in history if r.get('timeline')), None)
+            base = payload.get('editBase')
+            if base is not None and (not isinstance(base, dict) or not old or
+                    base.get('runId') != old['id'] or base.get('version') != old['version']):
+                raise ValueError('The edit has changed. Review the latest timeline before sending.')
             scope = payload.get('editScope')
             if scope is not None:
                 if not isinstance(scope, dict) or not old or scope.get('runId') != old['id'] or scope.get('version') != old['version']:
@@ -310,6 +390,7 @@ class AgentEngine:
                    'previousAspect': old.get('aspect', '16:9') if old else '16:9',
                    'previousFinishing': old.get('finishing', {}) if old else {},
                    'previousPackaging': old.get('packaging', {}) if old else {},
+                   'previousPreview': next((dict(a) for a in old.get('artifacts', []) if a['type'] == 'preview'), None) if old else None,
                    'duration': 30, 'aspect': '16:9', 'createdAt': time.time()*1000, 'updatedAt': time.time()*1000,
                    'cloudEndpoint': self.models.capabilities()['baseURL']}
             run['cloudApproved'] = False
@@ -352,17 +433,59 @@ class AgentEngine:
             if action == 'approve' and run['status'] not in ('consent', 'review') and not can_build_plan: raise ValueError('No approval is pending.')
             if action == 'retry' and run['status'] not in ('failed', 'cancelled', 'interrupted') and not legacy_photo_block: raise ValueError('This task is not retryable.')
             if action == 'retry' and run['id'] in self.futures and not self.futures[run['id']].done(): raise ValueError('Stopping the previous execution. Retry in a moment.')
-            if action not in ('approve', 'retry', 'timeline', 'use_videos','use_visuals'): raise ValueError('Unknown task action')
+            if action not in ('approve', 'retry', 'timeline', 'use_videos','use_visuals', 'undo_edit'): raise ValueError('Unknown task action')
             if any(r['id'] != run['id'] and r['status'] in ('queued','running') for r in self.list()): raise ValueError('Another task is running.')
+            if action == 'undo_edit':
+                receipt = run.get('editReceipt') or {}
+                latest = next((r for r in self.list() if r['projectId'] == run['projectId']), None)
+                if (not latest or latest['id'] != run['id'] or run['status'] not in ('completed', 'review', 'failed') or
+                        not run.get('previousTimeline') or receipt.get('undone') or
+                        payload.get('version') != run['version'] or receipt.get('version') != run['version']):
+                    raise ValueError('This edit cannot be undone after newer changes. Your current work is kept.')
+                run['timelineHistory'] = (run.get('timelineHistory', []) + [{'version': run['version'],
+                    'shots': run['timeline'], 'finishing': run.get('finishing', {}), 'packaging': run.get('packaging', {})}])[-30:]
+                run['timeline'] = run['previousTimeline']
+                if run.get('previousFinishing'):
+                    run['finishing'] = run['previousFinishing']
+                else:
+                    # Legacy cuts omit this field; null would fail render validation.
+                    run.pop('finishing', None)
+                run['packaging'] = run.get('previousPackaging') or {}
+                run['aspect'] = run.get('previousAspect', '16:9')
+                run['duration'] = sum(s['end'] - s['start'] for s in run['timeline'])
+                run['version'] += 1
+                for artifact in run['artifacts']:
+                    if artifact['type'] == 'preview':
+                        artifact['type'] = 'previous_preview'
+                        artifact.setdefault('timelineVersion', run['version'] - 1)
+                preview = run.get('previousPreview')
+                if preview and Path(preview.get('path', '')).is_file():
+                    restored = dict(preview); restored['id'] = uuid.uuid4().hex
+                    restored['timelineVersion'] = run['version']
+                    run['artifacts'].append(restored)
+                else:
+                    preview = None
+                receipt['undone'] = True
+                run['editReceipt'] = receipt
+                run.update(status='completed' if preview else 'review', message='AI edit undone.', question='', choices=[])
+                self.save(run); return run
             if action == 'timeline':
                 if run['status'] not in ('review', 'completed'): raise ValueError('Wait for the task to finish before editing.')
                 if payload.get('version') != run['version']: raise ValueError('The timeline changed. Refresh before saving.')
-                records = {k: self.library.get(k)[0] for k in run['mediaIds']}
+                additional=payload.get('additionalMediaIds',[])
+                if not isinstance(additional,list) or len(additional)>100 or any(not isinstance(k,str) for k in additional):
+                    raise ValueError('Invalid added media selection.')
+                media_ids=list(dict.fromkeys(run['mediaIds']+additional))
+                if len(media_ids)>100: raise ValueError('Use up to 100 media files per project.')
+                records = {k: self.library.get(k)[0] for k in media_ids}
+                if any(records[k].get('status')!='ready' or records[k].get('missing') or records[k]['kind'] not in ('image','video') for k in additional):
+                    raise ValueError('Wait for added photos or videos to finish importing.')
                 records.update({k:v[0] for k,v in music_catalog().items()})
                 proposed = validate_timeline(payload.get('timeline'), records)
+                if set(additional)-{s['mediaId'] for s in proposed}: raise ValueError('Added media must be used by a clip in this edit.')
                 if (run.get('skillExecution') or {}).get('id') == SHORT_ID and sum(s['end']-s['start'] for s in proposed) > 29:
                     raise ValueError('Travel Short must be at most 29 seconds.')
-                finishing.validate(run.get('finishing', {}), records, sum(s['end']-s['start'] for s in proposed))
+                manual_finish = finishing.validate(payload.get('finishing', run.get('finishing', {})), records, sum(s['end']-s['start'] for s in proposed), proposed)
                 # Unlock is an explicit separate edit; a locked shot cannot be trimmed/removed at the same time.
                 for old in run['timeline']:
                     if old.get('locked'):
@@ -371,6 +494,8 @@ class AgentEngine:
                             raise ValueError('Unlock the shot before changing or removing it.')
                 run['timelineHistory'] = (run.get('timelineHistory', []) + [{'version':run['version'], 'shots':run['timeline'], 'finishing':run.get('finishing',{}), 'packaging':run.get('packaging',{})}])[-30:]
                 run['timeline'] = proposed
+                run['mediaIds'] = media_ids
+                run['finishing'] = manual_finish
                 run['version'] += 1
                 run['editedAt'] = time.time() * 1000
                 if run.get('skillExecution'):
@@ -379,7 +504,9 @@ class AgentEngine:
                     self.travel_report(run, records)
                 run.update(status='review', message='Timeline changed. Build a new preview to see this version.')
                 for artifact in run['artifacts']:
-                    if artifact['type'] == 'preview': artifact['type'] = 'previous_preview'
+                    if artifact['type'] == 'preview':
+                        artifact['type'] = 'previous_preview'
+                        artifact.setdefault('timelineVersion', run['version'] - 1)
                 self.save(run); return run
             if run['mode'] != 'local' and run['cloudEndpoint'] != self.models.capabilities()['baseURL']:
                 raise ValueError('Cloud destination changed. Start a new request to approve the new destination.')
@@ -428,6 +555,8 @@ class AgentEngine:
             p.stdout.close(); p.stderr.close()
 
     def artifact(self, run, kind, title, text='', **fields):
+        if kind in ('analysis', 'observation', 'subtitle') and text and fields.get('mediaId'):
+            record_progress_update(run, 'media', fields['mediaId'])
         if kind == 'analysis':
             previous = next((a for a in run['artifacts'] if a['type'] == kind and
                 all(a.get(k) == fields.get(k) for k in ('mediaId', 'start', 'end'))), None)
@@ -487,7 +616,9 @@ class AgentEngine:
         with self.library.connect() as db: cached = db.execute('SELECT record FROM agent_analysis WHERE signature=?', (signature,)).fetchone()
         if cached:
             report('Using saved understanding · ' + record['file']['name'])
-            return record, json.loads(cached[0])
+            result = json.loads(cached[0])
+            self.library.patch(media_id, analysisTags=observation_tags(result))
+            return record, result
         visual_source = prepare_photo(source, self.root / 'photos', lambda args: self.command(args, cancel, 60)) if record['kind'] == 'image' else source
         folder = self.root / 'analysis' / signature; folder.mkdir(parents=True, exist_ok=True)
         duration = float((record.get('metadata') or {}).get('duration') or 0)
@@ -540,6 +671,7 @@ class AgentEngine:
         result = {'summary': '\n'.join(n['summary'] for n in notes), 'segments': notes,
                   'source': 'sampled-frames', 'model': str(model), 'windowSeconds': window_seconds, 'framesPerWindow': 3}
         with self.library.connect() as db: db.execute('INSERT OR REPLACE INTO agent_analysis VALUES (?,?)', (signature,json.dumps(result,ensure_ascii=False)))
+        self.library.patch(media_id, analysisTags=observation_tags(result))
         if not record.get('description'): self.library.patch(media_id,description=notes[0]['summary'][:500])
         return record, result
 
@@ -600,7 +732,7 @@ class AgentEngine:
             run = self.get(key); run.update(intent=intent, summary=str(brief.get('summary',''))[:1200],
                 duration=number(requested_duration,1,600), aspect=aspect)
             if installed_skill and intent in ('plan', 'create', 'modify'):
-                run['skillNotice'] = f"Using {installed_skill['title']} to arrange your photos and videos."
+                run['skillNotice'] = f"{installed_skill['title']} · {installed_skill['applicability']}"
                 run['contentLedDuration'] = intent != 'modify' and not explicit_duration and brief.get('durationSpecified') is not True
                 run['coverageMode'] = 'selected' if short_skill or run.get('editScope') or brief.get('coverageMode') == 'selected' else 'all_usable_unique'
                 if short_skill and re.search(r'include (?:every|all)|use (?:every|all)|全部|每张|每个', prompt, re.I):
@@ -610,6 +742,9 @@ class AgentEngine:
                     run.update(status='clarify', question='Travel Short is under 30 seconds. Choose a shorter duration or use Travel Vlog for a longer video.', message='Choose video length')
                     self.save(run); return
             if run['aspect'] not in ('16:9','9:16','1:1'): run['aspect']='16:9'
+            if not installed_skill and intent in ('plan','create','modify') and (run.get('skill') or {}).get('applicability'):
+                chosen = run['skill']
+                run['skillNotice'] = f"{chosen.get('title','Editing strategy')} · {str(chosen['applicability'])[:400]}"
             unsupported = brief.get('unsupported') or []
             question = str(brief.get('question') or '')
             # A determinate route is not a reason to reconfirm the same request.
@@ -631,6 +766,11 @@ class AgentEngine:
                 run.update(status='clarify', clarificationKind='materials', question='Add the footage or audio you want me to use. I will not search your entire disk.', message='Materials needed')
                 self.save(run); return
             wanted = finishing.request(brief.get('finishingRequest')) if intent in ('create','modify','plan') else finishing.request(None)
+            if intent in ('create', 'modify', 'plan'):
+                wanted, automatic_music = finishing.travel_defaults(wanted, run['prompt'],
+                    bool(installed_skill and intent in ('create', 'plan') and not run['previousTimeline'] and not run.get('editScope')),
+                    bool(music_catalog()) or any(self.library.get(mid)[0]['kind'] == 'audio' for mid in run['mediaIds']))
+                run['automaticMusic'] = automatic_music
             run['finishingRequest'] = wanted
             run['packaging'] = packaging.resolve(brief.get('packagingRequest'), run.get('previousPackaging'), short_skill, run['prompt'])
             if run.get('editScope') and (any(v != 'keep' for v in wanted.values()) or run['packaging'] != packaging.resolve({},run.get('previousPackaging'),short_skill)):
@@ -705,6 +845,11 @@ class AgentEngine:
                         if rejected: self.artifact(run,'notice',record['file']['name'],f'{rejected} low-quality/repetitive transcript entries were excluded. Review the source before treating the transcript as complete.')
                         if not saved and not speech.get('unavailable'):
                             with self.library.connect() as db: db.execute('INSERT OR REPLACE INTO agent_analysis VALUES (?,?)',(signature,json.dumps({'cues':cues,'rejected':rejected})))
+                    # Validate cached/library subtitles too, not just fresh ASR.
+                    # Reject rather than clip a hallucinated 30s sentence onto a 2s source.
+                    cues, invalid_cues = checked_cues(cues, (record.get('metadata') or {}).get('duration'))
+                    if invalid_cues:
+                        self.artifact(run,'notice',record['file']['name'],f'{invalid_cues} invalid or out-of-source transcript entries were excluded; dialogue remains unverified.')
                     for cue in cues:
                         start = number(cue.get('start'),0,86400); end=number(cue.get('end'),start,86400)
                         self.artifact(run,'subtitle',record['file']['name'],str(cue.get('text',''))[:1000],mediaId=media_id,start=start,end=end)
@@ -742,7 +887,7 @@ class AgentEngine:
                 # The bundled strategy is authoritative; client summaries cannot replace it.
                 inputs.pop('skill', None)
                 inputs['sourceContext'] = {mid: {'metadata': {k:v for k,v in (record.get('metadata') or {}).items()
-                    if k in ('duration','width','height','rotation','fps')},
+                    if k in ('duration','width','height','rotation','fps','capturedAt','mediaCreatedAt','dateSource','camera')},
                     'userProvidedContext': record.get('context') or {}} for mid,record in records.items()}
             inputs['sourceAudio'] = {k:bool((v.get('metadata') or {}).get('hasAudio')) for k,v in records.items()}
             inputs['transcriptEvidence'] = [{k:a[k] for k in ('mediaId','start','end','text')} for a in run['artifacts'] if a['type']=='subtitle']
@@ -768,15 +913,17 @@ class AgentEngine:
                     c=candidates[i]; self.artifact(run,'match',records[c['mediaId']]['file']['name'],str(match.get('reason','')),mediaId=c['mediaId'],start=c['start'],end=c['end'])
                 run.update(status='completed',message='Search complete',resultText=str(answer.get('summary','No matching clips.'))); self.save(run); return
             instruction = '''Plan an edit using only the supplied footage evidence. Return one compact JSON object:
-{"story":"one or two sentences describing the actual story","shots":[{"mediaId":"exact input mediaId","start":0,"end":3,"label":"specific short title","reason":"one sentence explaining this selection","section":"body"}],"limitations":[]}.
+{"story":"one or two short sentences explaining the arrangement: what opens the film, how the selected moments flow, and how it ends; at most 45 words, grounded in the proposed shots","shots":[{"mediaId":"exact input mediaId","start":0,"end":3,"label":"specific short title","reason":"one sentence explaining this selection","section":"body"}],"limitations":[]}.
 Replace the example with real values. Times are numeric source seconds, not timecodes or cumulative film positions.
+Use section intro/body/outro when the story has meaningful chapters; omit section for an undivided sequence. Preserve existing sections when only trimming a shot.
 For VIDEOS only, source positions satisfy 0 <= start < end <= sourceDurations[mediaId]. Never extend a video source.
 For PHOTOS, start=0 and end is the display duration. A missing video duration never excludes a photo.
 Do not reproduce input data.
 Use short English text by default. Do not invent subjects, events, locations or sounds. Prefer clear, stable, story-relevant footage.
 Use transcriptEvidence to preserve meaningful speech and reactions, not imagined dialogue. Respect evidenceLimits.
 Similarity is relative visual relevance, not quality or probability. Combine it with editorial advice, quality and motion evidence.
-Match duration when specified; do not repeat source ranges to fill time. Apply only explicitly requested finishing layers.
+Match duration when specified; do not repeat source ranges to fill time. A skill-required highlight intro may reference
+moments that appear completely again in the body. Apply resolved finishingRequest, including supported skill defaults.
 For modifications, preserve existing shot IDs and every field of unselected or locked shots. requestedEdit is a validated
 shot-duration constraint: actually change start/end and use its totalDuration, even if the router summary says otherwise.
 '''
@@ -803,9 +950,11 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
             records.update({k:v[0] for k,v in music_catalog().items()})
             inputs['editScope'] = run.get('editScope')
             inputs['requestedEdit'] = edit_constraint
+            inputs['finishingRequest'] = wanted
+            strict_story = bool(installed_skill and not short_skill and intent in ('create','plan') and not run['previousTimeline'])
             if run.get('editScope'):
                 instruction += 'Only edit editScope.shotIds. Keep unselected IDs, fields and relative order unchanged. Do not move selected clips across unselected clips. '
-            budget = min(3500, max(1200, (len(evidence) + len(run['previousTimeline'])) * 200 + 400))
+            budget = min(6000, max(1200, (len(evidence) + len(run['previousTimeline']) + (8 if strict_story else 0)) * 200 + 400))
             answer = {}
             try:
                 answer=self.models.ask(instruction+'INPUT: '+json.dumps(inputs,ensure_ascii=False),cancel,text_mode,max_tokens=budget)
@@ -821,6 +970,7 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
                 if short_skill and sum(s['end']-s['start'] for s in shots) > 29: raise ValueError('Travel Short must be at most 29 seconds.')
                 validate_edit_scope(shots,run['previousTimeline'],run.get('editScope'))
                 validate_requested_edit(shots, edit_constraint)
+                if strict_story: validate_story_structure(shots, records, run['prompt'])
                 if any(s['label'].lower() in ('story beat','shot') or s['reason'].lower()=='evidence' for s in shots): raise ValueError('Replace placeholder labels and reasons with actual footage evidence.')
                 if installed_skill and coverage_report(shots,{k:v for k,v in records.items() if v['kind'] in ('video','image')},run['coverageMode'])['requiresDecision']:
                     raise ValueError('Travel Vlog body coverage is incomplete. Give every file a meaningful appearance; intro flashes do not count. If impossible, explain the conflict without inventing shots.')
@@ -835,9 +985,13 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
                 if short_skill and sum(s['end']-s['start'] for s in shots) > 29: raise ValueError('Travel Short must be at most 29 seconds.')
                 validate_edit_scope(shots,run['previousTimeline'],run.get('editScope'))
                 validate_requested_edit(shots, edit_constraint)
+                if strict_story: validate_story_structure(shots, records, run['prompt'])
             if intent in ('create','plan') and explicit_duration and not run.get('previousTimeline'):
                 shots=fit_photo_duration(shots,records,run['duration'])
+            if strict_story: validate_story_structure(shots, records, run['prompt'])
             finish_proposal = answer.get('finishing', {})
+            if run.get('automaticMusic') and not finish_proposal.get('music'):
+                finish_proposal['music'] = finishing.background_music(records)
             if any(wanted[layer]=='add' and not finish_proposal.get(layer) for layer in ('music','narration')):
                 self.progress(key, 'Planning music and narration', 'plan')
                 finish_inputs = {'request':run['prompt'], 'story':answer.get('story',''),
@@ -851,6 +1005,10 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
                 finish_proposal = self.models.ask(finish_prompt,cancel,text_mode,max_tokens=2200).get('finishing',{})
             finishing_plan = finishing.resolve(finish_proposal, run.get('previousFinishing', {}), wanted, records, sum(s['end']-s['start'] for s in shots))
             run=self.get(key); run['timeline']=shots; run['finishing']=finishing_plan
+            run['editReceipt'] = edit_receipt(run)
+            # Publish the rationale with the validated plan, before rendering begins.
+            # Keep it separate from limitations and technical result details.
+            run['storySummary']=str(answer.get('story','')).strip()
             run['resultText']=str(answer.get('story',''))+'\n'+'\n'.join(map(str,answer.get('limitations',[])))
             detail = finishing.summary(finishing_plan, records)
             if detail: self.artifact(run,'finishing','Sound & transitions',detail)
@@ -914,7 +1072,7 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
         expected=sum(s['end']-s['start'] for s in shots)
         if (run.get('skillExecution') or {}).get('id') == SHORT_ID and expected > 29:
             raise ValueError('Travel Short must be at most 29 seconds.')
-        finish=finishing.validate(run.get('finishing',{}),records,expected)
+        finish=finishing.validate(run.get('finishing',{}),records,expected,shots)
         width,height={'16:9':(1280,720),'9:16':(720,1280),'1:1':(720,720)}[run['aspect']]
         pieces=[]
         render_started=time.monotonic(); reused=0
@@ -937,9 +1095,12 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
             record,source=self.library.get(shot['mediaId']); target=folder/f'v{run["version"]}-shot-{i}.mp4'
             stat=source.stat()
             design=designs[i]
-            transition=finishing.transition_filters(finish,i,len(shots),shot['end']-shot['start'])
+            transition=finishing.transition_filters(finish,i,len(shots),shot['end']-shot['start'],shots)
+            gain=agent_layers.clip_gain(finish,shot['id'])
+            if i and any(s['afterShotId']==shots[i-1]['id'] and s['beforeShotId']==shot['id'] for s in finish.get('seams',[])):
+                design['reveal']=False
             signature=hashlib.sha256(json.dumps([str(source),stat.st_size,stat.st_mtime_ns,
-                shot['start'],shot['end'],{k:v for k,v in design.items() if k not in ('id','shotId')},width,height,codec,transition,packaging.VERSION],sort_keys=True).encode()).hexdigest()
+                shot['start'],shot['end'],{k:v for k,v in design.items() if k not in ('id','shotId')},width,height,codec,transition,gain,packaging.VERSION],sort_keys=True).encode()).hexdigest()
             cached=cache_folder/(signature+'.mp4')
             if cached.is_file():
                 shutil.copy2(cached,target); pieces.append(target); reused+=1
@@ -954,17 +1115,19 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
             if not has_audio: args+=['-stream_loop','-1','-i',silence]
             extra,graph=packaging.filters(self,design,width,height,folder,cancel,1 if has_audio else 2)
             graph+=';[picture]'+(transition.lstrip(',') or 'null')+'[finished]'
-            args+=extra+['-t',str(design['durationFrames']/30),'-filter_complex_threads','1',
+            args+=extra+['-t',str(design['durationFrames']/30),'-filter_complex_threads','4' if design['motion'] else '1',
                    '-filter_complex',graph,'-map','[finished]','-map','0:a:0' if has_audio else '1:a:0',
-                   *codec,'-pix_fmt','yuv420p','-c:a','aac','-ar','48000','-ac','2','-movflags','+faststart',target]
+                   *codec,'-pix_fmt','yuv420p','-af',f'volume={gain}','-c:a','aac','-ar','48000','-ac','2','-movflags','+faststart',target]
             self.command(args,cancel,300); pieces.append(target)
             shutil.copy2(target,cached)
         listing=folder/f'v{run["version"]}-concat.txt'; listing.write_text('\n'.join("file '"+p.name+"'" for p in pieces))
         preview=folder/f'preview-v{run["version"]}.mp4'
-        needs_mix = finish.get('music') or finish['narration'] or finish['originalVolume'] != 1
-        base = folder/f'v{run["version"]}-picture.mp4' if needs_mix else preview
+        needs_mix = finish.get('music') or finish['narration'] or finish['originalVolume'] != 1 or finish.get('originalMuted')
+        sound_target = folder/f'v{run["version"]}-sound.mp4' if finish.get('captions') else preview
+        base = folder/f'v{run["version"]}-picture.mp4' if needs_mix else sound_target
         self.command(['ffmpeg','-v','error','-y','-f','concat','-safe','1','-i',listing,'-c','copy','-movflags','+faststart',base],cancel,300)
-        if needs_mix: finishing.mix(self,run,folder,base,preview,finish,expected,cancel)
+        if needs_mix: finishing.mix(self,run,folder,base,sound_target,finish,expected,cancel)
+        if finish.get('captions'): agent_layers.burn_captions(self,run,folder,sound_target,preview,finish,width,height,expected,codec,cancel)
         probe=json.loads(self.command(['ffprobe','-v','error','-show_format','-show_streams','-of','json',preview],cancel))
         measured=float(probe['format']['duration']); expected=sum(s['end']-s['start'] for s in shots)
         video=next((s for s in probe['streams'] if s['codec_type']=='video'),{})
@@ -983,7 +1146,7 @@ shot-duration constraint: actually change start/end and use its totalDuration, e
         look = ('Editorial Postcard' if settings['style']=='editorial-postcard' else 'City Notes') if settings['style']!='none' else 'full-image framing'
         effects = (', animated titles' if settings['motion'] != 'none' else ', titles') if any(d['text'] for d in designs) else ''
         if any(d['motion'] for d in designs): effects += ', gentle photo motion'
-        self.artifact(run,'preview',f'Travel film · v{run["version"]}',f'{measured:.1f}s · {run["aspect"]} · {sound} · {look}{effects}',path=str(preview))
+        self.artifact(run,'preview',f'Travel film · v{run["version"]}',f'{measured:.1f}s · {run["aspect"]} · {sound} · {look}{effects}',path=str(preview),timelineVersion=run['version'])
         run.update(status='completed',message='Preview ready. Review pacing and sound before exporting.',completed=len(shots),total=len(shots)); self.save(run)
 
     def close(self):

@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 enum MediaSearchScope: String, CaseIterable {
     case all = "Everything", name = "Names", content = "Scenes & shots"
@@ -16,9 +17,9 @@ enum MediaSearchScope: String, CaseIterable {
     }
     var explanation: String {
         switch self {
-        case .all: return "Names, descriptions, shots, transcripts, editing notes, places, devices and folder paths."
+        case .all: return "Names, analysis tags, descriptions, shots, transcripts, editing notes, places, devices and folder paths. Click a material tag to search for similar footage."
         case .name: return "Original filenames and saved titles."
-        case .content: return "Descriptions, subjects, actions, reactions, framing, camera movement and described sounds."
+        case .content: return "Saved analysis tags, descriptions, subjects, actions, reactions, framing, camera movement and described sounds."
         case .transcript: return "Saved speech transcripts and extracted subtitle tracks, not inferred dialogue."
         case .editing: return "Story roles, editing recommendations, reasons and Highlight picks."
         case .context: return "Saved location and device information; no guessed locations."
@@ -84,6 +85,9 @@ struct MediaSearchDocument {
             .init(.context, "Location", item.context?["location"], priority: 75),
             .init(.context, "Device", item.context?["device"], priority: 65)
         ]
+        for tag in item.searchTags {
+            fields.append(.init(tag.scope, "Tag", tag.text, priority: 65))
+        }
         for segment in item.segments {
             let time = Self.safeTime(segment.start, item: item)
             fields.append(.init(.content, "Shot", segment.label, start: time, segmentID: segment.id, priority: 85))
@@ -119,6 +123,126 @@ struct MediaSearchDocument {
             guard query.terms.contains(where: { field.folded.contains($0) }) else { return nil }
             return MediaSearchHit(id: index, label: field.label, text: field.text, start: field.start, segmentID: field.segmentID, priority: field.priority)
         }.sorted { $0.priority == $1.priority ? $0.id < $1.id : $0.priority > $1.priority }
+    }
+}
+
+struct MediaSearchTag: Identifiable {
+    let text: String
+    let scope: MediaSearchScope
+    let symbol: String
+    var id: String { MediaSearchQuery.fold(text) }
+}
+
+extension MediaItem {
+    /// Compact content chips, not repeated editorial classifications. Older imports
+    /// can reuse their saved descriptions without another vision-model request.
+    var contentTags: [MediaSearchTag] {
+        let shots = segments.compactMap(\.editorial)
+        let technical = Set(shots.flatMap { [$0.shot_size, $0.camera_motion, $0.capture_type] + $0.story_role }.map(MediaSearchQuery.fold))
+        let saved = (analysisTags ?? []).filter {
+            !technical.contains(MediaSearchQuery.fold($0)) && !MediaContentTags.generic.contains(MediaSearchQuery.fold($0))
+        }
+        let observations = ([displayVideoDescription?.full_description, description, shotAnalysis?.summary].compactMap { $0 }
+                            + shots.map(\.description)).joined(separator: "\n")
+        let extracted = MediaContentTags.extract(observations)
+        return MediaContentTags.normalized((saved + extracted).map { .init(text: $0, scope: .content, symbol: "number") })
+    }
+
+    /// Only saved model observations and structured editorial fields; no guessed metadata.
+    var searchTags: [MediaSearchTag] {
+        var tags = contentTags + (analysisTags ?? []).map { MediaSearchTag(text: $0, scope: .content, symbol: "number") }
+        let shots = segments.compactMap(\.editorial)
+        // Interleave categories, so one long list of shot sizes cannot hide all movement/roles.
+        for shot in shots {
+            tags.append(.init(text: shot.shot_size, scope: .content, symbol: "viewfinder"))
+            tags.append(.init(text: shot.camera_motion, scope: .content, symbol: "video"))
+            tags += shot.story_role.map { .init(text: $0, scope: .editing, symbol: "scissors") }
+            tags.append(.init(text: shot.capture_type, scope: .content, symbol: "camera"))
+        }
+        if shots.contains(where: \.isHighlight) { tags.append(.init(text: "Highlight", scope: .editing, symbol: "sparkles")) }
+        return MediaContentTags.normalized(tags)
+    }
+}
+
+/// Local linguistic extraction: every chip is an unchanged phrase from saved
+/// analysis, never a new model inference, translation, or inferred location.
+enum MediaContentTags {
+    static let generic: Set<String> = ["highlight", "action", "reaction", "transition", "establishing", "recommended", "keep", "wide shot", "medium shot", "close-up", "static", "tracking", "following", "panning right", "panning left", "pan right", "pan left", "handheld", "推荐", "动作", "转场", "全景", "跟拍", "特写"]
+    private static let boilerplate: Set<String> = ["camera", "shot", "scene", "video", "image", "photo", "footage", "frame", "view", "perspective", "movement", "motion", "pan", "push", "tracking", "panning", "background", "foreground", "distance", "side", "left", "right", "front", "moment", "sequence", "time", "second", "seconds", "vocalization", "dialogue", "audio", "sound", "composition", "镜头", "画面", "视频", "照片", "背景", "前景", "运镜"]
+    private static let cache: NSCache<NSString, NSArray> = {
+        let result = NSCache<NSString, NSArray>(); result.countLimit = 512; return result
+    }()
+
+    static func extract(_ description: String) -> [String] {
+        // Bound work for long analyses; the cache key includes the actual content,
+        // so a completed/revised analysis immediately replaces earlier tags.
+        let text = String(description.prefix(6000))
+        guard !text.isEmpty else { return [] }
+        if let result = cache.object(forKey: text as NSString) { return result.compactMap { $0 as? String } }
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        var candidates: [(text: String, score: Int)] = []
+        // Negated/uncertain clauses are deliberately omitted rather than turning
+        // "no people or boats" into misleading positive tags.
+        // Keep quoted dialogue/sign text searchable in the full description,
+        // but do not turn fragments of it into claims about visible subjects.
+        let visualText = text.replacingOccurrences(of: #"(?<!\w)'[^'\n]+'(?!\w)|"[^"\n]+"|“[^”\n]+”|\([^\)\n]*\)"#, with: " ", options: .regularExpression)
+        let clauses = visualText.components(separatedBy: CharacterSet(charactersIn: ".!?;,\n。！？；，"))
+        for clause in clauses where !clause.isEmpty {
+            let folded = MediaSearchQuery.fold(clause)
+            if folded.range(of: #"\b(no|not|without|neither|maybe|perhaps|possibly)\b|没有|未见|无人|可能|并非"#, options: .regularExpression) != nil { continue }
+            tagger.string = clause
+            var words: [(text: String, noun: Bool)] = []
+            func flush() {
+                defer { words = [] }
+                while words.last?.noun == false { words.removeLast() }
+                guard words.contains(where: { $0.noun }) else { return }
+                // Retain the noun and its nearest modifiers, not a whole sentence.
+                let phrase = Array(words.suffix(3))
+                let chinese = phrase.contains { $0.text.range(of: #"\p{Han}"#, options: .regularExpression) != nil }
+                let label = phrase.map(\.text).joined(separator: chinese ? "" : " ")
+                guard label.count >= 2, label.count <= 28 else { return }
+                // "a calm body of water" must not become the misleading chip
+                // "calm body" when the preposition closes the noun phrase.
+                if ["body", "kind", "type", "part", "sense", "word", "words", "speaker", "day", "beginning", "end", "lighting"].contains(MediaSearchQuery.fold(phrase.last?.text ?? "")) { return }
+                let nouns = phrase.filter(\.noun).count
+                candidates.append((label, min(phrase.count, 2) + (nouns > 1 ? 2 : 0)))
+            }
+            tagger.enumerateTags(in: clause.startIndex..<clause.endIndex, unit: .word, scheme: .lexicalClass, options: [.omitWhitespace]) { tag, range in
+                let word = String(clause[range])
+                let key = MediaSearchQuery.fold(word)
+                // Some short camera clauses tag "tracks"/"captures" as nouns.
+                let cameraVerb = ["tracks", "pans", "captures", "moves", "follows", "reveals"].contains(key)
+                if (tag == .noun || tag == .adjective), !cameraVerb, !boilerplate.contains(key), !generic.contains(key), word.count > 1 {
+                    words.append((word, tag == .noun))
+                } else { flush() }
+                return true
+            }
+            flush()
+        }
+        let ordered = candidates.enumerated().sorted { $0.element.score == $1.element.score ? $0.offset < $1.offset : $0.element.score > $1.element.score }
+        var seen = Set<String>()
+        var result: [String] = []
+        for candidate in ordered {
+            let key = MediaSearchQuery.fold(candidate.element.text)
+            guard !generic.contains(key), seen.insert(key).inserted else { continue }
+            // Avoid both "coffee cup" and "cup" taking up chip space.
+            if result.contains(where: { MediaSearchQuery.fold($0).hasSuffix(" " + key) }) { continue }
+            result.append(candidate.element.text)
+            if result.count == 8 { break }
+        }
+        cache.setObject(result as NSArray, forKey: text as NSString)
+        return result
+    }
+
+    static func normalized(_ tags: [MediaSearchTag]) -> [MediaSearchTag] {
+        var seen = Set<String>()
+        let empty = Set(["unknown", "none", "n/a", "unspecified", "not applicable", "未知", "无"])
+        return tags.compactMap { tag in
+            let text = tag.text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            let key = MediaSearchQuery.fold(text)
+            guard text.count >= 2, text.count <= 48, !empty.contains(key), seen.insert(key).inserted else { return nil }
+            return MediaSearchTag(text: text, scope: tag.scope, symbol: tag.symbol)
+        }
     }
 }
 

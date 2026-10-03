@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class WorkspaceStore: ObservableObject {
     let service = LocalService()
-    @Published var page: WorkspacePage? = .home { didSet { if page != .media { detail = nil; mediaReturnProjectID = nil } } }
+    @Published var page: WorkspacePage? = .home { didSet { if page != .media { detail = nil; mediaReturnProjectID = nil }; expandCompletedEditor() } }
     @Published private(set) var mediaReturnProjectID: String?
     var mediaBackTitle: String { mediaReturnProjectID == nil ? "Media" : "Conversation" }
     @Published var ready = false
@@ -19,7 +19,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var skills: [CreatorSkill] = []
     @Published var draft = Draft() { didSet { if restoredDraft { persistDraft() } } }
     @Published var projectDrafts: [String: Draft] = [:] { didSet { if restoredDraft { persistProjectDrafts() } } }
-    @Published var selectedProjectID: String?
+    @Published var selectedProjectID: String? { didSet { expandCompletedEditor() } }
     private var selectionProjectID: String?
     @Published var query = "" { didSet { refreshMediaSearch() } }
     @Published var category = MediaCategory.all { didSet { refreshMediaSearch() } }
@@ -36,12 +36,78 @@ final class WorkspaceStore: ObservableObject {
     @Published var detail: MediaItem?
     @Published var importing = false
     @Published var saving = false
-    @Published var agentRuns: [AgentRun] = []
+    @Published var agentRuns: [AgentRun] = [] { didSet { expandCompletedEditor() } }
     @Published var agentCapabilities: AgentCapabilities?
     @Published var agentMode = "local"
     @Published var agentActionPending = false
     @Published var editorProjectID: String?
+    private var presentedPreviews: [String: String] = [:]
+    func expandCompletedEditor() {
+        guard page == .project, let projectID = selectedProjectID,
+              let run = latestRun(for: projectID), run.status == "completed", !run.timeline.isEmpty,
+              let preview = run.preview else { return }
+        let key = "\(run.id):\(run.version):\(preview.id)"
+        guard presentedPreviews[projectID] != key else { return }
+        presentedPreviews[projectID] = key
+        editorProjectID = projectID; editorSelection = nil
+    }
     @Published var editorSelection: EditorSelection?
+    @Published var editorRequestedShotID: String?
+    @Published var editorReviewShotID: String?
+    @Published var editorComposerFocus = 0
+    @Published var editorPauseRequest = 0
+    @Published var editorAcceptedDraftRevision = 0
+    // Empty shotIds explicitly means the whole film; nil means not frozen yet.
+    @Published var composerEditTargets: [String: EditorSelection] = [:]
+    var composerTimelineRun: AgentRun? {
+        agentRuns.filter { $0.projectId == composerProjectID && !$0.timeline.isEmpty }.max { $0.updatedAt < $1.updatedAt }
+    }
+    var composerEditTarget: EditorSelection? {
+        guard let id = composerProjectID, let run = composerTimelineRun else { return nil }
+        if let fixed = composerEditTargets[id] { return fixed }
+        if editorProjectID == id, let selected = editorSelection, selected.runId == run.id { return selected }
+        return EditorSelection(runId: run.id, version: run.version, shotIds: [])
+    }
+    func freezeComposerTarget() {
+        guard let id = composerProjectID, composerEditTargets[id] == nil, let target = composerEditTarget else { return }
+        composerEditTargets[id] = target; editorPauseRequest += 1
+    }
+    func chooseComposerTarget(wholeFilm: Bool) {
+        guard let id = composerProjectID, let run = composerTimelineRun else { return }
+        composerEditTargets[id] = wholeFilm ? EditorSelection(runId: run.id, version: run.version, shotIds: []) : editorSelection
+        freezeComposerTarget(); editorPauseRequest += 1
+    }
+    // Presentation state belongs to the conversation, not its wide/compact view.
+    @Published var expandedConversationSections = Set<String>()
+    var conversationBookmarks: [String: (following: Bool, messageID: String?)] = [:]
+    func conversationSection(_ key: String) -> Binding<Bool> {
+        Binding(get: { self.expandedConversationSections.contains(key) }, set: { expanded in
+            if expanded { self.expandedConversationSections.insert(key) }
+            else { self.expandedConversationSections.remove(key) }
+        })
+    }
+    var composerVisibleIssue: String? {
+        return composerIssue
+    }
+    func usedShots(_ mediaID: String) -> (run: AgentRun, shots: [AgentShot], draft: Bool)? {
+        guard let projectID = selectedProjectID,
+              let run = agentRuns.filter({ $0.projectId == projectID && !$0.timeline.isEmpty }).max(by: { $0.updatedAt < $1.updatedAt }) else { return nil }
+        let draft = editorDrafts[run.id]
+        let source = draft?.shots ?? run.timeline
+        guard source.contains(where: { $0.mediaId == mediaID }) else { return nil }
+        return (run, source, draft?.dirty == true || run.preview == nil)
+    }
+    func openUsedShot(_ shotID: String, projectID: String) {
+        openEditor(projectID); editorRequestedShotID = shotID
+    }
+    var editorSelectionLabel: String {
+        guard let scope = composerEditTarget, let run = composerTimelineRun, !scope.shotIds.isEmpty else { return "Whole film" }
+        let shots = editorDrafts[run.id]?.shots ?? run.timeline
+        if scope.shotIds.count == 1, let index = shots.firstIndex(where: { scope.shotIds.contains($0.id) }) {
+            return "Clip \(index + 1) · \(shots[index].label)"
+        }
+        return "\(scope.shotIds.count) clips selected"
+    }
     @Published var editorDrafts: [String: EditorDraft] = [:] { didSet {
         guard restoredDraft else { return }
         do { try JSONEncoder().encode(editorDrafts).write(to: editorDraftsURL, options: .atomic) }
@@ -73,9 +139,18 @@ final class WorkspaceStore: ObservableObject {
         return run.status == "clarify" && run.clarificationKind == "materials" && !composerDraft.attachments.isEmpty
     }
     var composerIssue: String? {
-        if editorProjectID == composerProjectID, let run = editorTimelineRun, let edit = editorDrafts[run.id] {
-            if edit.dirty { return "Save timeline changes before asking Agent to edit." }
-            if edit.version != run.version { return "Reload the updated timeline before sending." }
+        if let run = composerTimelineRun {
+            if let target = composerEditTarget,
+               target.runId != run.id || target.version != run.version {
+                return "The edit changed. Choose the request scope again."
+            }
+            if let edit = editorDrafts[run.id], edit.version != run.version {
+                return "Reload the updated timeline before sending."
+            }
+            let shots = editorDrafts[run.id]?.shots ?? run.timeline
+            if let target = composerEditTarget, !Set(target.shotIds).isSubset(of: Set(shots.map(\.id))) {
+                return "A referenced clip was removed. Choose the request scope again."
+            }
         }
         if composerDraft.prompt.unicodeScalars.count > 5000 { return "Keep your request within 5,000 characters." }
         if blockingAgentRun != nil { return "Another project is running. You can keep writing here." }
@@ -97,7 +172,11 @@ final class WorkspaceStore: ObservableObject {
     }
     var composerDraft: Draft {
         get { draft(for: composerProjectID) }
-        set { setDraft(newValue, for: composerProjectID) }
+        set {
+            if !newValue.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { freezeComposerTarget() }
+            else if let id = composerProjectID { composerEditTargets[id] = nil }
+            setDraft(newValue, for: composerProjectID)
+        }
     }
     // The project keeps its source context; the composer shows only unsent additions.
     var composerPendingAttachments: [Attachment] {
@@ -278,16 +357,36 @@ final class WorkspaceStore: ObservableObject {
         saving = true
         let sourceID = composerProjectID
         let sourcePage = page
+        // Treat clips added in the editor as request attachments before taking the
+        // input snapshot, so the automatic save does not look like new user typing.
+        if let run = composerTimelineRun, let edit = editorDrafts[run.id], edit.dirty {
+            var value = composerDraft
+            let ids = Set(edit.shots.map(\.mediaId))
+            value.attach(items.filter { ids.contains($0.id) })
+            setDraft(value, for: sourceID)
+        }
         let submitted = composerDraft
         let effectivePrompt = optionPrompt ?? (submitted.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (activeAgentRun?.prompt ?? "") : submitted.prompt)
         let messageMediaIDs = composerPendingAttachments.map(\.id)
         let mode = agentMode
-        let editScope = editorProjectID == sourceID ? editorSelection : nil
+        let target = composerEditTarget
+        let baseRun = composerTimelineRun
+        let localEdit = baseRun.flatMap { editorDrafts[$0.id] }
+        editorPauseRequest += 1
         perform {
             defer { self.saving = false }
             struct Response: Decodable { var run: AgentRun }
             if let current = self.latestRun(for: sourceID), current.busy {
                 let _: Response = try await self.service.post("/api/desktop/agent/action", ["id": current.id, "action": "stop"], native: true)
+            }
+            var acceptedRun = baseRun
+            if let baseRun, let localEdit, localEdit.dirty {
+                let photos = Set(self.items.filter { $0.kind == "image" }.map(\.id))
+                let durations = Dictionary(uniqueKeysWithValues: self.items.compactMap { item in
+                    item.kind == "image" ? (item.id, 60.0) : item.metadata?.duration.map { (item.id, $0) }
+                })
+                if let issue = localEdit.validation(durations: durations, photoIDs: photos) { throw ServiceError(message: issue) }
+                acceptedRun = try await self.saveAgentTimeline(baseRun, shots: localEdit.shots, version: localEdit.version, finishing: localEdit.finishing)
             }
             if mode != "local", let config = CloudSettings.read() {
                 struct OK: Decodable { var ok: Bool }
@@ -297,7 +396,15 @@ final class WorkspaceStore: ObservableObject {
             var payload: [String: Any] = ["prompt": effectivePrompt, "mediaIds": submitted.attachments.map(\.id), "mode": mode, "requestId": UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(), "skill": NSNull()]
             payload["messageMediaIds"] = messageMediaIDs
             if let id = submitted.projectId { payload["id"] = id }
-            if let editScope { payload["editScope"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(editScope)) }
+            if let acceptedRun {
+                payload["editBase"] = ["runId": acceptedRun.id, "version": acceptedRun.version]
+                if var scope = target, !scope.shotIds.isEmpty {
+                    scope.version = acceptedRun.version
+                    payload["editScope"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(scope))
+                }
+                // Added timeline sources are part of the saved draft, even if they were not in the original composer snapshot.
+                payload["mediaIds"] = Array(Set(submitted.attachments.map(\.id) + (acceptedRun.mediaIds ?? []))).sorted()
+            }
             if let skill = submitted.skill { payload["skill"] = ["id": skill.id, "title": skill.title, "strategy": skill.strategy] }
             let response: Response = try await self.service.post("/api/desktop/agent/start", payload, native: true)
             self.agentRuns.removeAll { $0.id == response.run.id }
@@ -309,6 +416,7 @@ final class WorkspaceStore: ObservableObject {
     func completeSubmission(_ submitted: Draft, sourceID: String?, sourcePage: WorkspacePage?, projectID: String, preservePrompt: Bool = false) {
         let unchanged = draft(for: sourceID) == submitted
         if unchanged {
+            if let sourceID { composerEditTargets[sourceID] = nil }
             var next = submitted; next.prompt = preservePrompt ? submitted.prompt : ""; next.projectId = projectID
             projectDrafts[projectID] = next
             if sourceID == nil { draft = Draft() }
@@ -336,15 +444,59 @@ final class WorkspaceStore: ObservableObject {
             try await self.refresh()
         }
     }
-    func saveAgentTimeline(_ run: AgentRun, shots: [AgentShot], version: Int) async throws {
+    @discardableResult
+    func saveAgentTimeline(_ run: AgentRun, shots: [AgentShot], version: Int, finishing: AgentFinishing? = nil) async throws -> AgentRun {
             guard !agentActionPending else { throw ServiceError(message: "Wait for the current action to finish.") }
             agentActionPending = true
             defer { agentActionPending = false }
             struct Response: Decodable { var run: AgentRun }
             let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(shots))
-            let response: Response = try await self.service.post("/api/desktop/agent/action", ["id": run.id, "action": "timeline", "timeline": value, "version": version], native: true)
+            var payload: [String: Any] = ["id": run.id, "action": "timeline", "timeline": value, "version": version]
+            let known = Set(run.mediaIds ?? [])
+            let added = Set(shots.map(\.mediaId)).subtracting(known)
+            if !added.isEmpty { payload["additionalMediaIds"] = added.sorted() }
+            if let finishing { payload["finishing"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(finishing)) }
+            let response: Response = try await self.service.post("/api/desktop/agent/action", payload, native: true)
             agentRuns.removeAll { $0.id == response.run.id }; agentRuns.insert(response.run, at: 0)
-            try await self.refresh()
+            if !added.isEmpty {
+                var value = draft(for: run.projectId); value.attach(items.filter { added.contains($0.id) }); setDraft(value, for: run.projectId)
+            }
+            // A successful save is authoritative even if a subsequent list refresh fails.
+            if let cached = editorDrafts[run.id], cached.shots == shots, cached.finishing == finishing {
+                var accepted = cached
+                accepted.base = response.run.timeline; accepted.shots = response.run.timeline; accepted.version = response.run.version
+                accepted.finishing = response.run.finishing ?? .empty; accepted.baseFinishing = accepted.finishing
+                editorDrafts[run.id] = accepted; editorAcceptedDraftRevision += 1
+            }
+            if var target = composerEditTargets[run.projectId], target.runId == run.id, target.version == version {
+                target.version = response.run.version; composerEditTargets[run.projectId] = target
+            }
+            return response.run
+    }
+    func canUndoAgentEdit(_ run: AgentRun) -> Bool {
+        guard let receipt = run.editReceipt, receipt.hasChanges, !receipt.undone, receipt.version == run.version,
+              ["completed", "review", "failed"].contains(run.status), latestRun(for: run.projectId)?.id == run.id,
+              !agentActionPending, !saving, !agentRuns.contains(where: \.busy) else { return false }
+        return editorDrafts[run.id]?.dirty != true
+    }
+    func undoAgentEdit(_ run: AgentRun) {
+        guard canUndoAgentEdit(run) else { return }
+        agentActionPending = true; editorPauseRequest += 1
+        perform {
+            defer { self.agentActionPending = false }
+            struct Response: Decodable { var run: AgentRun }
+            let response: Response = try await self.service.post("/api/desktop/agent/action",
+                ["id": run.id, "action": "undo_edit", "version": run.version], native: true)
+            self.editorDrafts[run.id] = EditorDraft(run: response.run)
+            self.agentRuns.removeAll { $0.id == run.id }; self.agentRuns.insert(response.run, at: 0)
+            self.editorAcceptedDraftRevision += 1
+        }
+    }
+    func viewAgentEdit(_ run: AgentRun) {
+        guard latestRun(for: run.projectId)?.id == run.id else { return }
+        openEditor(run.projectId)
+        editorRequestedShotID = run.editReceipt?.changedShotIds.first ?? run.timeline.first?.id
+        editorReviewShotID = editorRequestedShotID
     }
     func saveCloudSettings(_ config: CloudSettings, mode: String) async throws {
         if config.model.isEmpty && mode == "local" { agentMode = mode; return }

@@ -1,7 +1,9 @@
 """Validated local finishing, independent of model/provider and original media storage."""
 import math
+import re
 from pathlib import Path
 from music_library import catalog, credit
+import agent_layers
 
 
 REQUEST_SCHEMA = '''For video edits also return finishingRequest:
@@ -44,9 +46,40 @@ def request(value):
     return result
 
 
-def validate(value, records, duration):
+def travel_defaults(wanted, prompt, enabled, music_available):
+    """First travel films get a music bed and fades; edits keep existing layers.
+
+    Explicit negatives win over both model output and skill defaults. Never add
+    narration by default, and never acquire music from outside the chosen inputs.
+    """
+    wanted = dict(wanted)
+    if re.search(r'\b(?:no|without)\s+(?:background\s+)?(?:music|bgm)\b|\boriginal (?:sound|audio) only\b|\bonly (?:the )?original (?:sound|audio)\b|不要(?:背景)?音乐|不加(?:背景)?音乐|不要配乐|不加配乐|仅(?:保留)?原声|只(?:保留|用)原声', prompt, re.I):
+        wanted['music'] = 'remove'
+    if re.search(r'\b(?:no|without)\s+(?:transitions?|fades?|effects)\b|不要(?:转场|特效)|不加(?:转场|特效)|硬切', prompt, re.I):
+        wanted['transition'] = 'none'
+    automatic_music = enabled and music_available and wanted['music'] == 'keep'
+    if automatic_music: wanted['music'] = 'add'
+    if enabled and wanted['transition'] == 'keep': wanted['transition'] = 'fade'
+    return wanted, automatic_music
+
+
+def background_music(records):
+    """Prefer imported music; use the warm travel catalog track otherwise."""
+    audio = [record for record in records.values() if record['kind'] == 'audio']
+    uploaded = [record for record in audio if not record.get('musicCredit')]
+    preferred = next((record for record in audio if record['id'] == 'music-life-of-riley'), None)
+    record = (uploaded[0] if uploaded else preferred or (audio[0] if audio else None))
+    if record is None: raise ValueError('No background music is available for this edit.')
+    return {'mediaId': record['id'], 'sourceStart': 0, 'volume': .18, 'loop': True, 'ducking': True}
+
+
+def validate(value, records, duration, shots=None):
     if not isinstance(value, dict): raise ValueError('Invalid finishing plan.')
     out = {'originalVolume': numeric(value.get('originalVolume', 1), 0, 1), 'narration': []}
+    for key in ('musicMuted', 'narrationMuted'):
+        if not isinstance(value.get(key, False), bool): raise ValueError('Invalid audio mute state.')
+        out[key] = value.get(key, False)
+    out['narrationVolume'] = numeric(value.get('narrationVolume', 1), 0, 1)
     music = value.get('music')
     if music is not None:
         if not isinstance(music, dict): raise ValueError('Invalid music track.')
@@ -79,11 +112,11 @@ def validate(value, records, duration):
     if not isinstance(transition, dict) or transition.get('kind') not in ('none', 'fade'):
         raise ValueError('Only cuts and fade-through-black transitions are supported.')
     out['transition'] = {'kind': transition['kind'], 'duration': numeric(transition.get('duration', .25), .05, 1)}
-    return out
+    return agent_layers.validate(value, out, duration, numeric, shots)
 
 
 def resolve(proposal, previous, wanted, records, duration):
-    """A model cannot add an unrequested layer, or silently drop a previous one."""
+    """Only requested/skill-default layers may change; preserve earlier layers."""
     if not isinstance(proposal, dict): raise ValueError('Invalid finishing proposal.')
     value = dict(previous or {})
     for layer in ('music', 'narration'):
@@ -91,12 +124,25 @@ def resolve(proposal, previous, wanted, records, duration):
         elif wanted[layer] == 'add':
             if not proposal.get(layer): raise ValueError('The requested ' + layer + ' is missing from the plan.')
             value[layer] = proposal[layer]
+            value[layer + 'Muted'] = False
     if wanted['transition'] != 'keep': value['transition'] = {'kind': wanted['transition'], 'duration': .25}
-    if wanted['originalAudio'] != 'keep': value['originalVolume'] = 0 if wanted['originalAudio'] == 'mute' else 1
+    if wanted['originalAudio'] != 'keep':
+        value['originalVolume'] = 0 if wanted['originalAudio'] == 'mute' else 1
+        value['originalMuted'] = wanted['originalAudio'] == 'mute'
     return validate(value, records, duration)
 
 
-def transition_filters(finishing, index, count, length):
+def transition_filters(finishing, index, count, length, shots=None):
+    if shots is not None:
+        filters=[]
+        for other, incoming in ((index-1,True),(index+1,False)):
+            if not 0 <= other < len(shots): continue
+            left,right=(shots[other],shots[index]) if incoming else (shots[index],shots[other])
+            seam=agent_layers.seam(finishing,left,right)
+            if seam['kind'] != 'fade': continue
+            fade=min(seam['duration'],(left['end']-left['start'])/3,(right['end']-right['start'])/3)
+            filters.append(f'fade=t={"in" if incoming else "out"}:st={0 if incoming else length-fade}:d={fade}')
+        return ','+','.join(filters) if filters else ''
     if finishing['transition']['kind'] != 'fade': return ''
     fade = min(finishing['transition']['duration'], length / 3)
     filters = []
@@ -109,10 +155,12 @@ def mix(engine, run, folder, base, target, finishing, duration, cancel):
     """All paths originate from the library or this task directory, never model output."""
     command = engine.command
     args = ['ffmpeg', '-v', 'error', '-y', '-i', base]
-    filters = [f'[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={finishing["originalVolume"]}[original]']
+    gain=0 if finishing.get('originalMuted') else finishing['originalVolume']
+    filters = [f'[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={gain}[original]']
     speech_labels = []
     import json
-    for index, cue in enumerate(finishing['narration']):
+    voice_gain = 0 if finishing.get('narrationMuted') else finishing.get('narrationVolume', 1)
+    for index, cue in enumerate(finishing['narration'] if voice_gain > 0 else []):
         engine.progress(run['id'], f'Recording narration {index+1}/{len(finishing["narration"])}', 'render')
         if not Path('/usr/bin/say').is_file(): raise ValueError('Local narration requires macOS system voices.')
         script = folder / f'v{run["version"]}-narration-{index}.txt'
@@ -127,11 +175,11 @@ def mix(engine, run, folder, base, target, finishing, duration, cancel):
             raise ValueError(f'Narration {index+1} needs {length:.1f}s, but has {cue["end"]-cue["start"]:.1f}s. Shorten the script or give it more time; speech was not cut off.')
         args += ['-i', audio]
         label = f'voice{index}'
-        filters.append(f'[{index+1}:a]aresample=48000,aformat=channel_layouts=stereo,adelay={round(cue["start"]*1000)}:all=1,apad,atrim=duration={duration}[{label}]')
+        filters.append(f'[{index+1}:a]aresample=48000,aformat=channel_layouts=stereo,volume={voice_gain},adelay={round(cue["start"]*1000)}:all=1,apad,atrim=duration={duration}[{label}]')
         speech_labels.append(f'[{label}]')
     foreground = '[original]' + ''.join(speech_labels)
     filters.append(f'{foreground}amix=inputs={1+len(speech_labels)}:duration=first:normalize=0[foreground]')
-    music = finishing.get('music')
+    music = None if finishing.get('musicMuted') else finishing.get('music')
     if music:
         engine.progress(run['id'], 'Mixing music and sound', 'render')
         bundled = catalog().get(music['mediaId'])

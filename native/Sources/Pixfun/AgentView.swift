@@ -8,8 +8,10 @@ struct AgentWorkspaceView: View {
     var compact = false
     @State private var height: CGFloat = 36
     @State private var focused = false
+    @State private var composerHasFocus = false
     @State private var modelSettings = false
-    @State private var followingLatest = true
+    @State private var scrollState = AgentScrollState()
+    @State private var visibleMessageID: String?
     @State private var showAttachments = false
     @State private var changeFiles = false
     @State private var confirmReplacement = false
@@ -45,55 +47,10 @@ struct AgentWorkspaceView: View {
             }
             .onChange(of: run.id) { _ in confirmReplacement = false }
             .onChange(of: run.busy) { busy in if !busy { confirmReplacement = false } }
+            .onChange(of: store.editorComposerFocus) { _ in focused = true }
     }
     var results: some View {
-                    VStack(alignment: .leading, spacing: 18) {
-                        AgentResultHeading(run: run)
-                        if let report = run.displayAnalysisReport {
-                            AgentAnalysisResults(run: run, report: report)
-                        } else if run.showsDirectEvidence {
-                            AgentEvidenceResults(run: run)
-                        } else {
-                        if let preview = run.preview { AgentVideoMessage(artifact: preview, aspect: run.aspect) }
-                        if !run.timeline.isEmpty {
-                            Button("Open editor") { store.openEditor(run.projectId) }.buttonStyle(PixfunButtonStyle(kind: .primary))
-                        }
-                        if !run.resultText.isEmpty && run.preview == nil {
-                            Text(run.resultText).font(.pixfun(15)).lineSpacing(5).textSelection(.enabled)
-                        }
-                        ForEach(run.artifacts.filter { $0.type == "finishing" || $0.type == "credits" }) { artifact in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(artifact.title).font(.pixfun(14, semibold: true))
-                                Text(artifact.text).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).textSelection(.enabled)
-                                if artifact.path != nil { Button("Export credits…") { store.exportArtifact(artifact) }.buttonStyle(PixfunButtonStyle(kind: .quiet)) }
-                            }
-                        }
-                        if !run.timeline.isEmpty { AgentTimelineResult(run: run).id(run.id) }
-                        if !run.resultText.isEmpty && run.preview != nil {
-                            DisclosureGroup("Editing notes") {
-                                Text(run.resultText).font(.pixfun(14)).lineSpacing(5).textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-                            }.font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
-                        }
-                        ForEach(run.artifacts.filter { $0.type == "skill" }) { artifact in
-                            DisclosureGroup(artifact.title) {
-                                Text(artifact.text).font(.pixfun(13)).textSelection(.enabled)
-                            }
-                        }
-                        if run.artifacts.contains(where: { ["analysis", "observation", "subtitle", "match", "notice"].contains($0.type) }) {
-                          if run.status == "failed" {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Saved results").font(.pixfun(14, semibold: true))
-                                AgentSourceResults(artifacts: run.artifacts.filter { !["finishing", "credits", "skill"].contains($0.type) })
-                            }
-                          } else {
-                          DisclosureGroup("Source results") {
-                            AgentSourceResults(artifacts: run.artifacts.filter { !["finishing", "credits", "skill"].contains($0.type) })
-                          }.font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
-                          }
-                        }
-                        }
-                    }
+        AgentRunResults(run: run, isCurrent: true)
     }
     var conversation: some View {
                 VStack(alignment: .leading, spacing: 16) {
@@ -105,7 +62,11 @@ struct AgentWorkspaceView: View {
                               VStack(alignment: .leading, spacing: 16) {
                                 VStack(alignment: .leading, spacing: 12) {
                                     let files = entry.sentAttachments(in: store.items)
-                                    if !files.isEmpty { AgentMessageAttachments(attachments: files) }
+                                    if !files.isEmpty {
+                                        DisclosureGroup("Files · \(files.count)", isExpanded: store.conversationSection("\(entry.id):files")) {
+                                            AgentMessageAttachments(attachments: files)
+                                        }.font(.pixfun(12))
+                                    }
                                     Text(entry.prompt).font(.pixfun(15)).lineSpacing(4).textSelection(.enabled)
                                 }
                                     .padding(16).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 14))
@@ -115,31 +76,38 @@ struct AgentWorkspaceView: View {
                                     Text("Referenced \(scope.shotIds.count) shot(s) · v\(scope.version)").font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
                                 }
                                 Label("Pixfun", systemImage: "sparkles").font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunGold)
-                                if let notice = entry.skillNotice {
+                                if let notice = entry.skillNotice, entry.preview == nil {
                                     Label(notice, systemImage: "wand.and.stars").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                                 }
                                 ForEach((entry.conversationHistory ?? []).filter { $0.state != "pending" || entry.id != run.id }) { decision in
                                     AgentDecisionHistory(decision: decision)
                                 }
+                                if let arrangement = entry.arrangementSummary {
+                                    Text(arrangement).font(.pixfun(14)).lineSpacing(4)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
                                 if entry.status == "failed" {
                                     AgentFailureCard(run: entry, canRetry: entry.id == run.id,
                                                      editingBlocked: compact && store.editorHasPendingChanges)
-                                } else if entry.id == run.id { AgentActivityView(run: entry) }
-                                if entry.busy { AgentPartialFindings(run: entry) }
+                                }
+                                if entry.busy {
+                                    AgentProgressTimeline(run: entry)
+                                    AgentActivityView(run: entry)
+                                } else {
+                                    if entry.status != "completed" && entry.progressUpdates?.isEmpty == false {
+                                        DisclosureGroup("Steps") { AgentProgressTimeline(run: entry, showMaterials: false) }
+                                            .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                                    }
+                                    if entry.id == run.id && entry.status != "failed" { AgentActivityView(run: entry) }
+                                }
                                 if !entry.question.isEmpty && (entry.id == run.id || entry.conversationHistory?.isEmpty != false) {
                                     Text(entry.displayQuestion).font(.pixfun(15)).lineSpacing(5).textSelection(.enabled)
                                         .padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(Color.pixfunGold).frame(width: 2) }
                                 }
-                                if compact && !entry.busy {
-                                    if !entry.resultText.isEmpty {
-                                        DisclosureGroup("Editing summary") { Text(entry.resultText).font(.pixfun(13)).lineSpacing(4).textSelection(.enabled) }
-                                    }
-                                    if entry.id == run.id && entry.status == "completed" {
-                                        Text("Review the preview, then select a shot to request another change.").font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
-                                    }
-                                } else if entry.id == run.id && !entry.busy {
+                                if entry.id == run.id && !entry.busy {
                                     results
-                                    if entry.status == "completed" { followUp }
+                                    if entry.status == "completed" && entry.preview == nil { analysisFollowUp }
                                 }
                                 else if !entry.busy { AgentPreviousResults(run: entry) }
                                 // Decisions belong to the message that requested them, not
@@ -160,26 +128,49 @@ struct AgentWorkspaceView: View {
                                         }.padding(16).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 12))
                                     }
                                 }
-                              }
+                              }.id(entry.id).background(GeometryReader { position in
+                                  Color.clear.preference(key: AgentMessagePositionPreference.self,
+                                      value: [entry.id: position.frame(in: .named("agent-conversation"))])
+                              })
                             }
                             Color.clear.frame(height: 1).id("conversation-bottom")
                               .background(GeometryReader { marker in
-                                  Color.clear.preference(key: AgentBottomPreference.self, value: marker.frame(in: .named("agent-conversation")).maxY)
+                                  Color.clear.preference(key: AgentBottomPreference.self, value: AgentScrollMetrics(bottom: marker.frame(in: .named("agent-conversation")).maxY))
                               })
                         }.frame(maxWidth: 800).frame(maxWidth: .infinity).padding(.vertical, 16)
+                            .background(GeometryReader { content in
+                                Color.clear.preference(key: AgentBottomPreference.self, value: AgentScrollMetrics(height: content.size.height))
+                            })
                       }.coordinateSpace(name: "agent-conversation")
-                        .onPreferenceChange(AgentBottomPreference.self) { y in followingLatest = y <= viewport.size.height + 70 }
-                        .onAppear { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
-                        .onChange(of: run.id) { _ in proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                        .onChange(of: store.expandedConversationSections) { _ in scrollState.followingLatest = false }
+                        .onPreferenceChange(AgentBottomPreference.self) { metrics in
+                            if scrollState.observe(bottom: metrics.bottom, height: metrics.height, viewport: viewport.size.height) {
+                                proxy.scrollTo("conversation-bottom", anchor: .bottom)
+                            }
+                        }
+                        .onPreferenceChange(AgentMessagePositionPreference.self) { positions in
+                            visibleMessageID = positions.filter { $0.value.maxY > 0 && $0.value.minY < viewport.size.height }
+                                .min { $0.value.minY < $1.value.minY }?.key
+                        }
+                        .onAppear {
+                            if let bookmark = store.conversationBookmarks[run.projectId], !bookmark.following, let id = bookmark.messageID {
+                                scrollState.followingLatest = false
+                                proxy.scrollTo(id, anchor: .top)
+                            } else { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                        }
+                        .onDisappear {
+                            store.conversationBookmarks[run.projectId] = (scrollState.followingLatest, visibleMessageID)
+                        }
+                        .onChange(of: run.id) { _ in scrollState.followingLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) }
                         .onChange(of: run.updatedAt) { _ in
-                            if followingLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                            if scrollState.followingLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
                         }
                         .onChange(of: confirmReplacement) { visible in
-                            if visible { followingLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                            if visible { scrollState.followingLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) }
                         }
                         .overlay(alignment: .bottomTrailing) {
-                            if !followingLatest {
-                                Button("Latest ↓") { followingLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+                            if !scrollState.followingLatest {
+                                Button("Latest ↓") { scrollState.followingLatest = true; proxy.scrollTo("conversation-bottom", anchor: .bottom) }
                                     .buttonStyle(PixfunButtonStyle(kind: .quiet)).padding(8)
                             }
                         }
@@ -221,11 +212,18 @@ struct AgentWorkspaceView: View {
     var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
-                if compact, let scope = store.editorSelection {
+                if store.composerTimelineRun != nil {
                     HStack {
-                        Label("\(scope.shotIds.count) selected · v\(scope.version)", systemImage: "film").font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                        Menu {
+                            Button("Whole film") { store.chooseComposerTarget(wholeFilm: true) }
+                            Button("Selected clips") { store.chooseComposerTarget(wholeFilm: false) }
+                                .disabled(store.editorSelection == nil)
+                        } label: {
+                            Label(store.editorSelectionLabel, systemImage: "film").font(.pixfun(12)).foregroundStyle(Color.pixfunGold).lineLimit(1)
+                        }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true)
+                            .help("Request scope stays fixed while you write")
+                            .accessibilityLabel("AI request scope: \(store.editorSelectionLabel)")
                         Spacer()
-                        Button { store.editorSelection = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Clear editing selection")
                     }.padding(.bottom, 4)
                 }
                 if !store.composerPendingAttachments.isEmpty || store.composerDraft.skill != nil {
@@ -258,7 +256,11 @@ struct AgentWorkspaceView: View {
                     }
                 }
                 PromptEditor(text: $store.composerDraft.prompt, height: $height, requestFocus: $focused,
-                             minimumHeight: 36, maximumHeight: 128, placeholder: run.status == "clarify" ? "Tell me your preference…" : "Describe what to create or change…", onSubmit: send)
+                             minimumHeight: 36, maximumHeight: 128, placeholder: run.status == "clarify" ? "Tell me your preference…" : "Describe what to create or change…", onSubmit: send,
+                             onFocusChange: {
+                                 composerHasFocus = $0
+                                 if $0 { store.freezeComposerTarget() }
+                             })
                     .frame(height: height)
                 HStack(spacing: 8) {
                     Menu {
@@ -288,12 +290,14 @@ struct AgentWorkspaceView: View {
                         }
                             .buttonStyle(PixfunButtonStyle(kind: .primary)).disabled(!store.canSubmitAgent)
                             .accessibilityLabel(store.canResumeWithMaterials && store.composerDraft.prompt.isEmpty ? "Continue" : "Send")
-                            .help("Enter to send · Shift–Enter for a new line").keyboardShortcut(.return, modifiers: .command)
+                            .help(store.composerIssue ?? "Enter to send · Shift–Enter for a new line").keyboardShortcut(.return, modifiers: .command)
                     }
                 }
             }.padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.pixfunLine))
+                .background(compact ? Color.pixfunStoryInput : Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 20))
+                .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(
+                    compact ? (composerHasFocus ? Color.pixfunGold.opacity(0.85) : Color.pixfunStoryInputLine) : Color.pixfunLine,
+                    lineWidth: compact && composerHasFocus ? 1.5 : 1))
             ComposerNotice()
         }
     }
@@ -302,17 +306,12 @@ struct AgentWorkspaceView: View {
         if run.busy { confirmReplacement = true }
         else { store.submitAgent(); focused = true }
     }
-    var followUp: some View {
+    var analysisFollowUp: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(run.preview != nil ? "What would you like to change?" : "Where would you like to go next?")
-                .font(.pixfun(15, semibold: true))
-            Text(run.preview != nil ? "Tell me which moment to change, or adjust the pacing, shot order, and length." : "Ask a follow-up, explore a specific moment, or ask me to turn these findings into a story.")
-                .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
             HStack(spacing: 8) {
-                ForEach(run.preview != nil ? ["Tighter pacing", "Stronger opening", "Shorten by 20%"] : ["Find highlights", "Plan a story", "Create a video"], id: \.self) { suggestion in
+                ForEach(["Find highlights", "Plan a story", "Create a video"], id: \.self) { suggestion in
                     Button(suggestion) {
-                        let seconds = max(1, run.timeline.reduce(0) { $0 + $1.end - $1.start } * 0.8)
-                        let prompts = ["Tighter pacing": "Make the pacing tighter while keeping the key story moments. Render the updated preview directly.", "Stronger opening": "Replace the opening with a stronger moment from my footage. Keep the rest of the story and render the updated preview.", "Shorten by 20%": "Shorten the total duration to \(String(format: "%.1f", seconds)) seconds while keeping the key moments. Render the updated preview.", "Find highlights": "Find the strongest moments in this footage and explain why they work.", "Plan a story": "Suggest a story structure with shot order and timing. Give me a plan only; do not render a video.", "Create a video": "Create a travel video from this footage using the story discussed so far. Keep original sound and render the preview directly."]
+                        let prompts = ["Find highlights": "Find the strongest moments in this footage and explain why they work.", "Plan a story": "Suggest a story structure with shot order and timing. Give me a plan only; do not render a video.", "Create a video": "Create a travel video from this footage using the story discussed so far. Keep original sound and render the preview directly."]
                         let value = prompts[suggestion] ?? suggestion
                         store.submitAgent(prompt: value)
                     }.buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!store.canApplyAgentOption)
@@ -381,26 +380,43 @@ struct AgentDecisionHistory: View {
     }
 }
 
-struct AgentPartialFindings: View {
-    @EnvironmentObject var store: WorkspaceStore
+struct AgentProgressTimeline: View {
     let run: AgentRun
-    var findings: [AgentArtifact] { run.artifacts.filter { ["analysis", "observation", "subtitle"].contains($0.type) && !$0.text.isEmpty } }
+    var showMaterials = true
     var body: some View {
-        if !findings.isEmpty {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Findings so far").font(.pixfun(15, semibold: true))
-                Text("Still analyzing. These findings may be refined.").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
-                ForEach(AgentSourceGroup.groups(findings)) { group in
-                    AgentMaterialSummaryCard(title: group.title, summary: group.summary, mediaID: group.findings.first?.mediaId)
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(run.visibleProgress) { update in
+                if update.kind == "stage", let label = update.label {
+                    Label(label, systemImage: "circle.fill").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                } else if showMaterials, let mediaID = update.mediaId {
+                    let findings = run.artifacts.filter { $0.mediaId == mediaID && ["analysis", "observation", "subtitle"].contains($0.type) && !$0.text.isEmpty }
+                    if let group = AgentSourceGroup.groups(findings).first {
+                        AgentMaterialSummaryCard(title: group.title, summary: group.summary, mediaID: mediaID)
+                    }
                 }
             }
         }
     }
 }
 
+private struct AgentMessagePositionPreference: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+private struct AgentScrollMetrics: Equatable {
+    var bottom: CGFloat = 0
+    var height: CGFloat = 0
+}
 private struct AgentBottomPreference: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+    static var defaultValue = AgentScrollMetrics()
+    static func reduce(value: inout AgentScrollMetrics, nextValue: () -> AgentScrollMetrics) {
+        let next = nextValue()
+        if next.height > 0 { value.height = next.height }
+        if next.bottom != 0 { value.bottom = next.bottom }
+    }
 }
 
 struct AgentActivityView: View {
@@ -409,7 +425,7 @@ struct AgentActivityView: View {
         if run.busy {
             HStack(spacing: 12) {
                 PixfunActivityIndicator(queued: run.status == "queued")
-                Text(run.stageLabel).font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunGold)
+                Text(run.activityLabel).font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunGold)
                     .fixedSize(horizontal: false, vertical: true)
             }.padding(.horizontal, 16).padding(.vertical, 13)
                 .background(Color.pixfunGold.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
@@ -463,43 +479,144 @@ struct AgentVideoMessage: View {
     @EnvironmentObject var store: WorkspaceStore
     let artifact: AgentArtifact
     let aspect: String
+    var editorProjectID: String? = nil
     @StateObject private var playback = AgentPlayback()
+    @State private var scrubbing = false
+    @State private var scrubTime = 0.0
+    @State private var resumeAfterScrub = false
+    @State private var expanded = false
+    @State private var previewWidth: CGFloat = 640
     var ratio: CGFloat { aspect == "9:16" ? 9/16 : aspect == "1:1" ? 1 : 16/9 }
+    var editorIsOpen: Bool { editorProjectID != nil && store.editorProjectID == editorProjectID }
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(artifact.title).font(.pixfun(16, semibold: true))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text(artifact.title).font(.pixfun(13, semibold: true)).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(aspect).font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
+            }.padding(.horizontal, 16).padding(.vertical, 12)
             Group {
                 if let issue = playback.issue {
                     VStack(spacing: 8) {
                         Image(systemName: "video.slash")
                         Text(issue).font(.pixfun(13))
                         Button("Reload preview") { playback.load(artifact.path) }
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.pixfunSurface)
+                    }.padding(18).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.pixfunSurface)
                 }
-                else if let player = playback.player {
-                    NativeVideoPlayer(player: player).overlay {
-                        if !playback.hasStarted, let poster = playback.poster {
+                else if let player = playback.player, !expanded {
+                    NativeVideoPlayer(player: player, showsControls: false).overlay {
+                        if (!playback.hasStarted || playback.currentTime < 0.001), let poster = playback.poster {
                             Image(nsImage: poster).resizable().scaledToFit().allowsHitTesting(false)
+                        }
+                    }.overlay {
+                        Color.clear.contentShape(Rectangle()).onTapGesture { playback.toggle() }.accessibilityHidden(true)
+                    }.overlay {
+                        if !playback.playing && playback.ready && !scrubbing {
+                            Button { playback.toggle() } label: {
+                                Image(systemName: "play.fill").font(.system(size: 22))
+                                    .frame(width: 56, height: 56).background(.black.opacity(0.6), in: Circle())
+                                    .overlay(Circle().strokeBorder(.white.opacity(0.25)))
+                            }.buttonStyle(.plain).foregroundStyle(.white).accessibilityLabel("Play video")
                         }
                     }
                 }
-                else { Color.black }
-            }.aspectRatio(ratio, contentMode: .fit).frame(maxHeight: 360)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .accessibilityLabel("Generated rough-cut video")
-            HStack {
-                Button { playback.toggle() } label: {
-                    Label(playback.playing ? "Pause" : "Play", systemImage: playback.playing ? "pause.fill" : "play.fill")
-                }.buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!playback.ready || playback.issue != nil)
-                Text(playback.durationLabel + " · " + aspect).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).help(artifact.text)
-                Spacer()
-                Button { store.exportArtifact(artifact) } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(playback.issue != nil)
+                else { Color.black.overlay { if !expanded { ProgressView().controlSize(.small) } } }
+            }.frame(height: min(340, previewWidth / ratio)).frame(maxWidth: .infinity)
+                .background(Color.black).clipped().accessibilityLabel("Generated video")
+            VStack(spacing: 6) {
+                Slider(value: Binding(get: { scrubbing ? scrubTime : min(playback.currentTime, playback.duration) }, set: { value in
+                    scrubTime = value; playback.seek(value)
+                }), in: 0...max(0.1, playback.duration), onEditingChanged: { editing in
+                    if editing {
+                        scrubTime = playback.currentTime; resumeAfterScrub = playback.playing
+                        playback.player?.pause(); scrubbing = true
+                    } else {
+                        scrubbing = false
+                        if resumeAfterScrub { playback.player?.play() }
+                    }
+                }).tint(Color.pixfunGold).accessibilityLabel("Video playback position")
+                    .disabled(!playback.ready || playback.issue != nil)
+                ViewThatFits(in: .horizontal) {
+                    controls
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) { transportControls; Spacer(minLength: 0) }
+                        HStack(spacing: 4) { editorAndExportControls; Spacer(minLength: 0) }
+                    }
+                }
+            }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10)
+        }.frame(maxWidth: 720).background(Color.pixfunSurface)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.onAppear { previewWidth = geometry.size.width }
+                        .onChange(of: geometry.size.width) { previewWidth = $0 }
+                }
             }
-        }.onAppear { if playback.player == nil { playback.load(artifact.path) } }
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .onChange(of: store.editorPauseRequest) { _ in playback.player?.pause() }
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.pixfunLine))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(isPresented: $expanded) {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text(artifact.title).font(.pixfun(14, semibold: true))
+                        Spacer()
+                        Button { expanded = false } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel("Close expanded preview").keyboardShortcut(.cancelAction)
+                    }
+                    if let player = playback.player { NativeVideoPlayer(player: player) }
+                }.padding(16).frame(width: 880, height: 560).background(Color.pixfunBackground)
+            }
+            .onAppear { if playback.player == nil { playback.load(artifact.path) } }
             .onChange(of: artifact.path) { _ in playback.load(artifact.path) }
             .onDisappear { playback.player?.pause() }
     }
+    var controls: some View {
+        HStack(spacing: 8) {
+            transportControls
+            Spacer(minLength: 4)
+            editorAndExportControls
+        }
+    }
+    @ViewBuilder var transportControls: some View {
+            Button { playback.toggle() } label: { Image(systemName: playback.playing ? "pause.fill" : "play.fill").frame(width: 18, height: 20) }
+                .buttonStyle(PixfunButtonStyle(kind: .quiet)).accessibilityLabel(playback.playing ? "Pause" : "Play")
+                .disabled(!playback.ready || playback.issue != nil)
+            Text(playback.issue != nil ? "Unavailable" : playback.ready ? "\(timestamp(scrubbing ? scrubTime : playback.currentTime)) / \(playback.durationLabel)" : "Loading…")
+                .font(.pixfun(11)).monospacedDigit().foregroundStyle(Color.pixfunMuted).fixedSize()
+    }
+    @ViewBuilder var editorAndExportControls: some View {
+            if let editorProjectID {
+                Button {
+                    playback.player?.pause()
+                    if editorIsOpen { store.closeEditor() }
+                    else { store.openEditor(editorProjectID) }
+                } label: {
+                    Label(editorIsOpen ? "Collapse" : "Edit", systemImage: editorIsOpen ? "chevron.down" : "slider.horizontal.3")
+                        .fixedSize()
+                }.buttonStyle(PixfunButtonStyle(kind: .primary))
+                    .help(editorIsOpen ? "Collapse editor" : "Open timeline editor")
+                    .accessibilityLabel(editorIsOpen ? "Collapse editor" : "Edit video")
+            }
+            Button { store.exportArtifact(artifact) } label: {
+                Label("Export", systemImage: "square.and.arrow.up").fixedSize()
+            }.buttonStyle(PixfunButtonStyle(kind: .quiet)).help("Export video").accessibilityLabel("Export video")
+                .disabled(!playback.ready || playback.issue != nil)
+            Button { playback.player?.pause(); expanded = true } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .frame(width: 18, height: 20)
+            }
+                .buttonStyle(PixfunButtonStyle(kind: .quiet)).help("Expand preview").accessibilityLabel("Expand preview").disabled(!playback.ready)
+    }
+}
+
+private final class PlayerTimeObservation {
+    let player: AVPlayer
+    var token: Any?
+    init(player: AVPlayer, update: @escaping @Sendable (CMTime) -> Void) {
+        self.player = player
+        token = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 30, preferredTimescale: 600), queue: .main, using: update)
+    }
+    deinit { if let token { player.removeTimeObserver(token) } }
 }
 
 @MainActor
@@ -510,7 +627,13 @@ final class AgentPlayback: ObservableObject {
     @Published private(set) var ready = false
     @Published private(set) var poster: NSImage?
     @Published private(set) var hasStarted = false
+    @Published private(set) var currentTime = 0.0
+    private var timeObserver: PlayerTimeObservation?
     private var posterGenerator: AVAssetImageGenerator?
+    var duration: Double {
+        guard let seconds = player?.currentItem?.duration.seconds, seconds.isFinite, seconds > 0 else { return 0 }
+        return seconds
+    }
     var durationLabel: String {
         guard ready, let seconds = player?.currentItem?.duration.seconds, seconds.isFinite else { return "Preview" }
         return timestamp(seconds)
@@ -519,6 +642,7 @@ final class AgentPlayback: ObservableObject {
     private var playbackObservation: NSKeyValueObservation?
     func load(_ path: String?) {
         player?.pause()
+        timeObserver = nil; currentTime = 0
         posterGenerator?.cancelAllCGImageGeneration(); posterGenerator = nil; poster = nil; hasStarted = false
         observation = nil; playbackObservation = nil; player = nil; issue = nil; ready = false; playing = false
         guard let path, FileManager.default.isReadableFile(atPath: path) else {
@@ -527,6 +651,14 @@ final class AgentPlayback: ObservableObject {
         }
         let item = AVPlayerItem(url: URL(fileURLWithPath: path))
         player = AVPlayer(playerItem: item)
+        if let player {
+            timeObserver = PlayerTimeObservation(player: player) { [weak self] time in
+                Task { @MainActor [weak self] in
+                    guard let self, self.player === player, time.seconds.isFinite else { return }
+                    self.currentTime = time.seconds
+                }
+            }
+        }
         let generator = AVAssetImageGenerator(asset: item.asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 1280, height: 720)
@@ -557,6 +689,12 @@ final class AgentPlayback: ObservableObject {
             }
         }
     }
+    func seek(_ seconds: Double) {
+        guard ready, seconds.isFinite, let player else { return }
+        player.pause(); hasStarted = true
+        currentTime = min(duration, max(0, seconds))
+        player.seek(to: CMTime(seconds: currentTime, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
     func toggle() {
         guard let player, ready, issue == nil else { return }
         if playing { player.pause() }
@@ -569,33 +707,101 @@ final class AgentPlayback: ObservableObject {
     }
 }
 
-struct AgentPreviousResults: View {
+struct AgentEditDetails: View {
     @EnvironmentObject var store: WorkspaceStore
     let run: AgentRun
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            AgentResultHeading(run: run)
+        // Limitations remain visible; routine notes share one collapsed entry.
+        ForEach(run.artifacts.filter { $0.type == "notice" }) { notice in
+            Text(notice.text).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).textSelection(.enabled)
+        }
+        DisclosureGroup("Details", isExpanded: store.conversationSection("\(run.id):details")) {
+            VStack(alignment: .leading, spacing: 16) {
+                if !run.arrangementDetails.isEmpty { Text(run.arrangementDetails).font(.pixfun(13)).textSelection(.enabled) }
+                AgentProgressTimeline(run: run, showMaterials: false)
+                ForEach(run.artifacts.filter { ["finishing", "credits", "skill"].contains($0.type) }) { artifact in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(artifact.title).font(.pixfun(13, semibold: true))
+                        Text(artifact.text).font(.pixfun(13)).textSelection(.enabled)
+                        if artifact.type == "credits", artifact.path != nil {
+                            Button("Export credits…") { store.exportArtifact(artifact) }
+                        }
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 10)
+        }.font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
+    }
+}
+
+/// Wide and compact conversations render the same results and disclosure keys.
+struct AgentRunResults: View {
+    @EnvironmentObject var store: WorkspaceStore
+    let run: AgentRun
+    var isCurrent = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if run.preview == nil { AgentResultHeading(run: run) }
+            if let receipt = run.editReceipt {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(receipt.summary).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    if isCurrent && receipt.hasChanges && !receipt.undone {
+                        HStack(spacing: 12) {
+                            Button("View") { store.viewAgentEdit(run) }
+                            Button("Undo change") { store.undoAgentEdit(run) }
+                                .disabled(!store.canUndoAgentEdit(run))
+                                .help(store.canUndoAgentEdit(run) ? "Restore the draft from before this request" : "Newer changes are kept; this edit can no longer be undone here")
+                        }.buttonStyle(.borderless).font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                    }
+                }
+            }
             if let report = run.displayAnalysisReport {
                 AgentAnalysisResults(run: run, report: report)
             } else if run.showsDirectEvidence {
                 AgentEvidenceResults(run: run)
             } else {
-            if let preview = run.preview { AgentVideoMessage(artifact: preview, aspect: run.aspect) }
-            if !run.resultText.isEmpty { Text(run.resultText).font(.pixfun(14)).textSelection(.enabled) }
-            if !run.timeline.isEmpty {
-                DisclosureGroup("Earlier story · \(run.timeline.count) shots") {
-                    ForEach(run.timeline) { shot in
-                        Text("\(shot.label) · \(timestamp(shot.start))–\(timestamp(shot.end))\n\(shot.reason)")
-                            .font(.pixfun(12)).textSelection(.enabled).padding(.vertical, 4)
+                if let preview = run.preview {
+                    AgentVideoMessage(artifact: preview, aspect: run.aspect,
+                                      editorProjectID: isCurrent && !run.timeline.isEmpty ? run.projectId : nil)
+                } else if isCurrent && !run.timeline.isEmpty && (run.editReceipt == nil || run.editReceipt?.hasChanges == false || run.editReceipt?.undone == true) {
+                    Button("Open editor") { store.openEditor(run.projectId) }
+                        .buttonStyle(PixfunButtonStyle(kind: .primary))
+                }
+                AgentRunMaterials(run: run)
+                AgentEditDetails(run: run)
+            }
+        }
+    }
+}
+
+struct AgentPreviousResults: View {
+    let run: AgentRun
+    var body: some View { AgentRunResults(run: run) }
+}
+
+struct AgentRunMaterials: View {
+    @EnvironmentObject var store: WorkspaceStore
+    let run: AgentRun
+    var materials: [AgentConversationMaterial] { AgentConversationMaterial.collect(run) }
+    var body: some View {
+        if !materials.isEmpty {
+            DisclosureGroup(isExpanded: store.conversationSection("\(run.id):materials")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(materials) { material in
+                        VStack(alignment: .leading, spacing: 6) {
+                            AgentMaterialSummaryCard(
+                                title: store.items.first { $0.id == material.mediaID }?.file.name ?? material.title,
+                                summary: material.summary, mediaID: material.mediaID)
+                            ForEach(Array(run.timeline.enumerated()).filter { $0.element.mediaId == material.mediaID }, id: \.element.id) { index, shot in
+                                Text("\(index + 1). \(shot.label) · \(String(format: "%.1f", shot.end-shot.start))s")
+                                    .font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
                     }
-                }
-            }
-            if run.artifacts.contains(where: { ["analysis", "observation", "subtitle", "match", "notice", "finishing", "credits", "skill"].contains($0.type) }) {
-                DisclosureGroup("Source results") {
-                    AgentSourceResults(artifacts: run.artifacts)
-                }
-            }
-            }
+                }.padding(.top, 8)
+            } label: {
+                Text("Materials · \(materials.count)").font(.pixfun(13, semibold: true))
+            }.help("Expand or collapse all materials")
         }
     }
 }
@@ -617,13 +823,8 @@ struct AgentResultHeading: View {
 struct AgentTimelineResult: View {
     @EnvironmentObject var store: WorkspaceStore
     let run: AgentRun
-    @State private var expanded: Bool
-    init(run: AgentRun) {
-        self.run = run
-        _expanded = State(initialValue: run.intent == "plan" && run.preview == nil)
-    }
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
+        DisclosureGroup(isExpanded: store.conversationSection("\(run.id):timeline")) {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(Array(run.timeline.enumerated()), id: \.element.id) { index, shot in
                     HStack(alignment: .top, spacing: 12) {
@@ -770,8 +971,10 @@ struct AgentAnalysisResults: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text(report.overview).font(.pixfun(15)).lineSpacing(5).textSelection(.enabled)
-            ForEach(report.materials) { material in
-                AgentMaterialSummaryCard(title: material.title, summary: material.content, mediaID: material.mediaId)
+            DisclosureGroup("Materials · \(report.materials.count)", isExpanded: store.conversationSection("\(run.id):materials")) {
+                ForEach(report.materials) { material in
+                    AgentMaterialSummaryCard(title: material.title, summary: material.content, mediaID: material.mediaId)
+                }
             }
             ForEach(run.artifacts.filter { $0.type == "notice" }) { notice in
                 Text("\(notice.title): \(notice.text)").font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).textSelection(.enabled)
