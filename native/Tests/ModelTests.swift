@@ -735,6 +735,38 @@ import Foundation
         check(!contentItem.analysisNeedsAttention && MediaWorkFilter.analyzing.includes(contentItem), "pending retry is not presented as a terminal failure")
         let retryDecoded = try JSONDecoder().decode(MediaAnalysisState.self, from: JSONEncoder().encode(contentItem.mediaAnalysis!))
         check(retryDecoded.attempt == 1 && retryDecoded.maxAttempts == 3, "retry budget survives decoding")
+        var partialAnalysis = item
+        partialAnalysis.mediaAnalysis = MediaAnalysisState(status: "failed", message: "Shot output failed validation")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "failed")
+        partialAnalysis.videoDescription = VideoDescription(status: "ready", title: "Saved description", full_description: "A saved view.")
+        check(partialAnalysis.attentionReason == .shotsIncomplete, "saved description does not disguise failed shot analysis as pending work")
+        check(partialAnalysis.processingLabel == nil, "terminal shot failure is not a waiting or running task")
+        check(MediaAttentionReason.shotsIncomplete.summary(count: 1, chinese: true) == "1 个素材分镜分析未完成", "summary identifies the unfinished stage in Chinese")
+        check(MediaAttentionReason.shotsIncomplete.summary(count: 2, chinese: false) == "2 files: shot analysis incomplete", "English summary identifies the same stage")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "running")
+        check(partialAnalysis.attentionReason == nil && partialAnalysis.processing, "manual stage retry suppresses the previous terminal issue")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "ready")
+        partialAnalysis.videoDescription = VideoDescription(status: "failed")
+        check(partialAnalysis.attentionReason == .descriptionIncomplete, "description failure has its own explanation")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "failed")
+        check(partialAnalysis.attentionReason == .videoAnalysisIncomplete, "both unfinished video stages are reported together")
+        partialAnalysis.missing = true
+        check(partialAnalysis.attentionReason == .originalMissing, "missing original takes priority over analysis recovery")
+        partialAnalysis.missing = false
+        partialAnalysis.status = "error"
+        check(partialAnalysis.attentionReason == .importIncomplete, "failed import is not confused with a failed model stage")
+        partialAnalysis.status = "ready"
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "ready")
+        partialAnalysis.videoDescription = VideoDescription(status: "ready")
+        check(partialAnalysis.attentionReason == .analysisIncomplete, "coordinator failure such as speech still remains actionable")
+        partialAnalysis.mediaAnalysis = MediaAnalysisState(status: "ready")
+        check(partialAnalysis.attentionReason == nil && !MediaWorkFilter.attention.includes(partialAnalysis), "complete results remove the warning instead of leaving pending work")
+        let completedBatch = Array(repeating: partialAnalysis, count: 14)
+        check(completedBatch.allSatisfy { $0.attentionReason == nil && !$0.processing }, "fully completed batch has no activity banner")
+        partialAnalysis.mediaAnalysis = MediaAnalysisState(status: "failed")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "failed")
+        let mixedBatch = Array(completedBatch.prefix(13)) + [partialAnalysis]
+        check(mixedBatch.filter { $0.attentionReason == .shotsIncomplete }.count == 1 && mixedBatch.allSatisfy { !$0.processing }, "13 complete and one partial failure show exactly one specific issue, not one queued item")
         var loadingItem = item
         loadingItem.status = "queued"
         check(loadingItem.processingLabel == "Queued…", "queued import shows on its cover")

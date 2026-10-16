@@ -388,10 +388,24 @@ struct MediaItem: Codable, Identifiable {
     var processing: Bool { processingLabel != nil }
     var analysisNeedsAttention: Bool {
         let failures = ["error", "failed", "cancelled", "interrupted"]
-        if ["queued", "running", "retrying"].contains(mediaAnalysis?.status ?? "") {
+        if ["queued", "running", "retrying"].contains(mediaAnalysis?.status ?? "") || shotAnalysis?.busy == true || videoDescription?.busy == true {
             return ["error", "cancelled"].contains(status)
         }
         return failures.contains(status) || failures.contains(mediaAnalysis?.status ?? "") || failures.contains(shotAnalysis?.status ?? "") || failures.contains(videoDescription?.status ?? "")
+    }
+    /// Saved tags/descriptions do not mean every analysis stage succeeded.
+    /// Keep terminal issues separate from queued work, including legacy imports.
+    var attentionReason: MediaAttentionReason? {
+        if missing == true { return .originalMissing }
+        guard analysisNeedsAttention else { return nil }
+        if ["error", "failed", "cancelled", "interrupted"].contains(status) { return .importIncomplete }
+        let failures = ["error", "failed", "cancelled", "interrupted"]
+        let shots = failures.contains(shotAnalysis?.status ?? "")
+        let description = failures.contains(videoDescription?.status ?? "")
+        if shots && description { return .videoAnalysisIncomplete }
+        if shots { return .shotsIncomplete }
+        if description { return .descriptionIncomplete }
+        return .analysisIncomplete
     }
     var processingLabel: String? {
         if mediaAnalysis?.status == "retrying" { return "Waiting to retry…" }
@@ -543,8 +557,30 @@ enum MediaWorkFilter: String {
         switch self {
         case .all: return true
         case .analyzing: return item.processingLabel != nil
-        case .attention: return item.missing == true || item.analysisNeedsAttention
+        case .attention: return item.attentionReason != nil
         }
+    }
+}
+enum MediaAttentionReason: String, CaseIterable {
+    case originalMissing = "Locate original file"
+    case importIncomplete = "Import incomplete"
+    case shotsIncomplete = "Shot analysis incomplete"
+    case descriptionIncomplete = "Description incomplete"
+    case videoAnalysisIncomplete = "Shot analysis and description incomplete"
+    case analysisIncomplete = "Analysis incomplete"
+
+    func summary(count: Int, chinese: Bool) -> String {
+        if chinese {
+            switch self {
+            case .originalMissing: return "\(count) 个素材需重新定位原文件"
+            case .importIncomplete: return "\(count) 个素材导入未完成"
+            case .shotsIncomplete: return "\(count) 个素材分镜分析未完成"
+            case .descriptionIncomplete: return "\(count) 个素材描述生成未完成"
+            case .videoAnalysisIncomplete: return "\(count) 个素材分镜和描述未完成"
+            case .analysisIncomplete: return "\(count) 个素材分析未完成"
+            }
+        }
+        return "\(count) \(count == 1 ? "file" : "files"): \(rawValue.lowercased())"
     }
 }
 enum MediaCategory: String, CaseIterable { case all = "All", video = "Videos", image = "Photos", favorites = "Favorites" }

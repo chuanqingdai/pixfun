@@ -4,6 +4,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../native/Sources/Pixfun/MediaView.swift'), 'utf8');
 
+test('terminal analysis issues identify the stage and affected card instead of looking like pending work', () => {
+  const overview = fs.readFileSync(path.join(__dirname, '../native/Sources/Pixfun/MediaLibraryOverview.swift'), 'utf8');
+  assert.ok(!overview.includes('个素材待处理'));
+  assert.match(overview, /parts.append\(contentsOf: attentionSummaries\)/);
+  assert.match(overview, /\$0.processingLabel == "Queued…"/);
+  assert.match(overview, /Button\("Retry failed analyses"\) \{ store.retryFailedAnalysis\(\) \}/);
+  assert.match(source, /else if let reason = item.attentionReason/);
+  assert.match(source, /Label\(LocalizedStringKey\(reason.rawValue\), systemImage: "exclamationmark.circle"\)/);
+});
+
 test('original metadata uses a taller player and compact factual rows with optional technical details', () => {
   assert.match(source, /frame\(height: 420\)\.background\(\.black\)/);
   assert.match(source, /frame\(width: 240, alignment: \.leading\)/);

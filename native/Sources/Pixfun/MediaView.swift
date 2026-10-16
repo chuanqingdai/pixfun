@@ -149,6 +149,12 @@ struct MediaCard: View {
                                     .background(Color.pixfunBackground.opacity(0.85), in: Capsule())
                                     .overlay(Capsule().strokeBorder(Color.black.opacity(0.25)))
                                     .padding(8).allowsHitTesting(false).accessibilityLabel(status)
+                            } else if let reason = item.attentionReason {
+                                Label(LocalizedStringKey(reason.rawValue), systemImage: "exclamationmark.circle")
+                                    .font(.pixfun(11, semibold: true)).foregroundStyle(Color.pixfunGold)
+                                    .padding(.horizontal, 8).padding(.vertical, 5)
+                                    .background(Color.pixfunBackground.opacity(0.9), in: Capsule())
+                                    .padding(8).allowsHitTesting(false)
                             }
                         }
                         .overlay(alignment: .topLeading) {

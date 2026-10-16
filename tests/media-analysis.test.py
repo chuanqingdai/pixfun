@@ -195,6 +195,18 @@ class Tests(unittest.TestCase):
         self.queue.schedule('v');self.wait('v')
         self.assertEqual(self.shots.forces,[False])
         self.assertEqual(self.lib.items['v']['mediaAnalysis']['status'],'failed')
+    def test_retry_partial_shot_failure_keeps_completed_description(self):
+        saved={'status':'ready','title':'Saved title','full_description':'Saved user-facing description'}
+        self.lib.items['v'].update(mediaAnalysis={'status':'failed'},
+                                   shotAnalysis={'status':'failed','message':'Incomplete JSON'},
+                                   videoDescription=copy.deepcopy(saved))
+        self.assertTrue(self.queue.schedule('v'))
+        self.wait('v')
+        self.assertEqual(self.shots.forces,[True])
+        self.assertEqual(self.desc.forces,[False])
+        self.assertEqual(self.lib.items['v']['videoDescription'],saved)
+        self.assertEqual(self.lib.items['v']['shotAnalysis']['status'],'ready')
+        self.assertEqual(self.lib.items['v']['mediaAnalysis']['status'],'ready')
     def test_description_resume_does_not_reobserve_completed_shots(self):
         self.lib.items['v']['shotAnalysis']={'status':'ready','sourceStamp':'fixture','revision':'fixture',
             'segments':[{'id':'s','start':0,'end':4,'label':'Saved shot'}]}

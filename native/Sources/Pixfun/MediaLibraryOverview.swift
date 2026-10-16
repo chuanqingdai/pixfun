@@ -6,8 +6,14 @@ struct MediaLibraryActivityView: View {
     private var materials: [MediaItem] { store.libraryItems }
     private var analyzing: Int { materials.filter { $0.processingLabel != nil }.count }
     private var attention: Int { materials.filter { MediaWorkFilter.attention.includes($0) }.count }
-    private var waiting: Int { materials.filter { $0.mediaAnalysis?.status == "queued" }.count }
-    private var retrying: Int { materials.filter { $0.mediaAnalysis?.status == "retrying" }.count }
+    private var attentionSummaries: [String] {
+        MediaAttentionReason.allCases.compactMap { reason in
+            let count = materials.filter { $0.attentionReason == reason }.count
+            return count > 0 ? reason.summary(count: count, chinese: store.language == .chinese) : nil
+        }
+    }
+    private var waiting: Int { materials.filter { $0.processingLabel == "Queued…" }.count }
+    private var retrying: Int { materials.filter { $0.processingLabel == "Waiting to retry…" }.count }
     private var transfers: [SyncDevice] { store.syncSnapshot?.devices.filter { $0.busy || $0.checking } ?? [] }
     private var syncIssue: Bool {
         store.syncStatusUnavailable || store.syncSnapshot?.archiveError != nil ||
@@ -22,8 +28,12 @@ struct MediaLibraryActivityView: View {
                 }
                 Text(statusLine).font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunInk)
                     .lineLimit(1).truncationMode(.tail).help(detail)
+                if materials.contains(where: { $0.mediaAnalysis?.status == "failed" && $0.missing != true && !$0.processing }) {
+                    Button("Retry failed analyses") { store.retryFailedAnalysis() }
+                        .buttonStyle(.borderless).font(.pixfun(12)).tint(.pixfunGold)
+                }
             }.frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
         }
     }
     private var statusLine: String {
@@ -34,7 +44,7 @@ struct MediaLibraryActivityView: View {
             if running > 0 { parts.append("正在分析 \(running) 个素材") }
             if waiting > 0 { parts.append("\(waiting) 个排队中") }
             if retrying > 0 { parts.append("\(retrying) 个等待重试") }
-            if attention > 0 { parts.append("\(attention) 个素材待处理") }
+            parts.append(contentsOf: attentionSummaries)
             if syncIssue { parts.append("同步异常") }
             if store.syncSnapshot?.archiving == true { parts.append("正在备份") }
             return parts.joined(separator: " · ")
@@ -46,9 +56,7 @@ struct MediaLibraryActivityView: View {
             parts.append("\(first.processed)/\(first.total) ready")
         }
         if !transfers.isEmpty, analyzing > 0 { parts.append("\(analyzing) analyzing") }
-        if attention > 0, !transfers.isEmpty || analyzing > 0 || syncIssue {
-            parts.append("\(attention) need attention")
-        }
+        if attention > 0, !transfers.isEmpty || analyzing > 0 || syncIssue { parts.append(contentsOf: attentionSummaries) }
         return parts.joined(separator: " · ")
     }
     private var headline: String {
@@ -58,13 +66,21 @@ struct MediaLibraryActivityView: View {
         }
         if analyzing > 0 { return "Analyzing \(analyzing) \(analyzing == 1 ? "file" : "files")" }
         if syncIssue { return store.syncStatusUnavailable ? "Sync status unavailable" : "Sync needs attention" }
-        if attention > 0 { return "\(attention) \(attention == 1 ? "file needs" : "files need") attention" }
+        if attention > 0 { return attentionSummaries.joined(separator: " · ") }
         return "Backing up verified copies"
     }
     private var detail: String {
+        if attention > 0 {
+            let files = materials.compactMap { item in
+                item.attentionReason.map { item.name + " · " + $0.summary(count: 1, chinese: store.language == .chinese) }
+            }.joined(separator: "\n")
+            let note = store.language == .chinese
+                ? "已完成的标签和描述仍可查看，可重试未完成的分析。"
+                : "Completed tags and descriptions remain available. You can retry incomplete analysis."
+            return note + "\n" + files
+        }
         if store.language == .chinese {
             if analyzing > 0 { return "可以先浏览素材，分析完成后将更新标签和内容搜索。" }
-            if attention > 0 { return "已完成的分析结果已保留。打开对应素材可重试分析或重新定位原文件。" }
             return "已导入的素材可正常使用，详情请查看同步任务。"
         }
         if let first = transfers.first {
@@ -73,7 +89,6 @@ struct MediaLibraryActivityView: View {
         }
         if analyzing > 0 { return "Browse now. Content search and filters update as analysis finishes." + (attention > 0 ? " \(attention) files need attention." : "") }
         if syncIssue { return "Open Media Sync for the current issue. Existing library items remain available." }
-        if attention > 0 { return "Other files are ready to use. Open affected files to retry analysis or locate originals." }
         return "Your working copies are available while the backup continues."
     }
 }

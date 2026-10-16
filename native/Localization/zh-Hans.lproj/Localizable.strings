@@ -738,6 +738,12 @@
 "Enter a vision model ID." = "请输入视觉模型名称。";
 "Waiting to retry…" = "等待重试…";
 "Retry failed analyses" = "重试失败的分析";
+"Locate original file" = "需重新定位原文件";
+"Import incomplete" = "导入未完成";
+"Shot analysis incomplete" = "分镜分析未完成";
+"Description incomplete" = "描述生成未完成";
+"Shot analysis and description incomplete" = "分镜和描述未完成";
+"Analysis incomplete" = "分析未完成";
 "Reading visual evidence locally" = "正在读取画面信息";
 "Improving readability using saved evidence" = "正在整理描述，复用已完成的分析";
 "Delete…" = "删除…";
