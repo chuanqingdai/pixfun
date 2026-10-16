@@ -59,18 +59,54 @@ class ShotTests(unittest.TestCase):
     # Use the existing isolated library/model fixture without inheriting its tests.
     setUp=base.AgentTests.setUp
     tearDown=base.AgentTests.tearDown
+    def use_short_continuous_fixture(self):
+        item,_=self.library.get(self.asset)
+        self.library.patch(self.asset,metadata={**item['metadata'],'duration':3})
+        original=self.agent.command
+        def command(args,*rest,**kwargs):
+            # Control the detected-cut input; still extract actual fixture frames.
+            if any('select=gt(scene' in str(arg) for arg in args): return b''
+            return original(args,*rest,**kwargs)
+        self.agent.command=command
+
     def test_direct_shot_output_completes_without_model_retry(self):
+        self.use_short_continuous_fixture()
         original=self.models.ask
         responses=[]
+        focus={'category':'people','description':'穿格子衣服的人','reason':'镜头持续跟随这个人',
+               'attention':['camera_following'],'activities':[{'category':'walking','reason':'这个人沿道路步行'}]}
         def flat(prompt,*args,**kwargs):
             result=original(prompt,*args,**kwargs)
             if 'EDITORIAL_SHOT' in prompt:
                 responses.append(prompt)
+                result['shots'][0]['primary_subjects']=[focus]
                 return result['shots'][0]
             return result
         self.models.ask=flat
-        _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        with patch.object(self.agent,'observe',side_effect=AssertionError('Short path must reuse the shot vision call')):
+            _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
         self.assertEqual(len(responses),len(result['output']['shots']))
+        self.assertEqual(result['focusVersion'],2)
+        self.assertEqual([t['id'] for t in result['tags']],['subject:people','activity:walking'])
+        self.assertEqual(result['tags'][1]['evidence'][0]['subjectDescription'],'穿格子衣服的人')
+
+    def test_direct_missing_focus_repairs_once_then_preserves_shot_without_guessing(self):
+        self.use_short_continuous_fixture()
+        original=self.models.ask; responses=[]
+        def malformed(prompt,*args,**kwargs):
+            result=original(prompt,*args,**kwargs)
+            if 'EDITORIAL_SHOT' in prompt:
+                responses.append(prompt)
+                result['shots'][0].pop('primary_subjects',None)
+                result['shots'][0]['description']='A child walks with cyclists in the background.'
+            return result
+        self.models.ask=malformed
+        _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        self.assertEqual(len(responses),2)
+        self.assertIn('valid primary_subjects',responses[1])
+        self.assertEqual(result['focusVersion'],2)
+        self.assertEqual(result['tags'],[],'Modern malformed focus must not fall back to keywords')
+        self.assertEqual(result['output']['shots'][0]['description'],'A child walks with cyclists in the background.')
 
     def test_multiple_shots_receive_bounded_correction_not_first_shot_selection(self):
         original=self.models.ask; responses=[]

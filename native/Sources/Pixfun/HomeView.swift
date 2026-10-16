@@ -19,7 +19,6 @@ struct BriefComposer: View {
     @EnvironmentObject var store: WorkspaceStore
     @State private var writing = false
     @State private var editorHeight: CGFloat = 120
-    @State private var modelSettings = false
     @State private var pendingExample: AgentExample?
     @State private var confirmReplacement = false
     var body: some View {
@@ -49,7 +48,7 @@ struct BriefComposer: View {
                             .modifier(ComposerAttachmentHint(active: store.needsComposerMaterials && !store.importing && !store.saving))
                         Button(action: store.beginSelection) { ComposerToolLabel(title: "From Media", symbol: "photo.on.rectangle") }
                         Spacer(minLength: 8)
-                        Button { modelSettings = true } label: { ComposerToolLabel(title: "Models", symbol: "slider.horizontal.3") }
+                        Button { store.settingsPresented = true } label: { ComposerToolLabel(title: "Models", symbol: "slider.horizontal.3") }
                             .help("Model settings")
                         if store.importing || store.saving { ProgressView().controlSize(.small) }
                         Button(action: store.submitAgent) { Image(systemName: "arrow.up").font(.system(size: 20, weight: .medium)).frame(width: 16, height: 40) }.buttonStyle(PixfunButtonStyle(kind: .primary)).accessibilityLabel("Send to Agent").help(store.needsComposerMaterials ? "Add files or choose From Media first" : "Send to Agent")
@@ -91,7 +90,6 @@ struct BriefComposer: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
         }.onChange(of: store.composerDraft.skill) { _ in writing = true }
-            .sheet(isPresented: $modelSettings) { AgentSettingsView() }
             .alert("Replace your draft?", isPresented: $confirmReplacement) {
                 Button("Cancel", role: .cancel) { pendingExample = nil }
                 Button("Use example") {

@@ -25,12 +25,16 @@ const app = path.join(staging, 'Pixfun.app');
 const contents = path.join(app, 'Contents'), resources = path.join(contents, 'Resources');
 fs.mkdirSync(path.join(contents, 'MacOS'), {recursive:true});
 fs.mkdirSync(resources, {recursive:true});
+fs.cpSync(path.join(root, 'native/Localization'), resources, {recursive:true});
 fs.cpSync(path.join(root, 'native/Music'), path.join(resources, 'Music'), {recursive:true});
 fs.copyFileSync(path.join(scratch, 'release/Pixfun'), path.join(contents, 'MacOS/Pixfun'));
 fs.chmodSync(path.join(contents, 'MacOS/Pixfun'), 0o755);
 for (const [source, destination] of [
   ['build-desktop/backend', 'backend'], ['build-desktop/media/bin', 'bin'],
   ['scripts/agent-model-worker.py', 'agent-model-worker.py'],
+  ['scripts/vf_media_catalog.py', 'vf_media_catalog.py'],
+  ['scripts/vf_beauty.py', 'vf_beauty.py'],
+  ['scripts/agent_process_security.py', 'agent_process_security.py'],
   ['.desktop-venv/lib/python3.9/site-packages/cv2/LICENSE.txt', 'licenses/opencv/LICENSE.txt'],
   ['.desktop-venv/lib/python3.9/site-packages/cv2/LICENSE-3RD-PARTY.txt', 'licenses/opencv/LICENSE-3RD-PARTY.txt'],
   ['.desktop-venv/lib/python3.9/site-packages/numpy-1.26.4.dist-info/LICENSE.txt', 'licenses/numpy/LICENSE.txt'],
@@ -77,6 +81,8 @@ fs.writeFileSync(path.join(contents, 'Info.plist'), `<?xml version="1.0" encodin
 <key>CFBundleIdentifier</key><string>com.pixfun.native</string>
 <key>CFBundleName</key><string>Pixfun</string>
 <key>CFBundleDisplayName</key><string>Pixfun</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>200</string>
@@ -84,6 +90,7 @@ fs.writeFileSync(path.join(contents, 'Info.plist'), `<?xml version="1.0" encodin
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSLocalNetworkUsageDescription</key><string>Receive photos and videos from phones you pair with Pixfun over your local Wi-Fi.</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>`);
