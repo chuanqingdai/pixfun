@@ -98,14 +98,16 @@ struct MediaLibraryWelcomeView: View {
     private var source: SyncDevice? { store.syncSnapshot?.devices.first { $0.busy || $0.checking || $0.needsAttention } ?? store.syncSnapshot?.devices.first }
     private var isFirstVisit: Bool { source == nil && !store.importing && !store.syncStatusUnavailable }
     var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 0) {
             if isFirstVisit {
-                VStack(spacing: 16) {
-                    Text("Turn your photos and videos\ninto searchable memories.")
-                        .font(.pixfun(38, semibold: true)).lineSpacing(2)
-                    Text("Bring your media together. Let local AI help you\nfind the moments you remember.")
-                        .font(.pixfun(16)).lineSpacing(5).foregroundStyle(Color.pixfunMuted)
-                }.fixedSize(horizontal: false, vertical: true)
+                LibraryWelcomeArtwork()
+                    .frame(maxWidth: 1080)
+                    .padding(.bottom, 20)
+                Text("Turn your photos and videos\ninto searchable memories.")
+                    .font(.pixfun(34, semibold: true)).lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 720)
+                    .padding(.bottom, 22)
             } else {
                 VStack(spacing: 16) {
                     if source?.busy == true || source?.checking == true || store.importing {
@@ -116,30 +118,29 @@ struct MediaLibraryWelcomeView: View {
                     Text(LocalizedStringKey(title)).font(.pixfun(28, semibold: true))
                     Text(detail).font(.pixfun(14)).foregroundStyle(Color.pixfunMuted)
                         .fixedSize(horizontal: false, vertical: true)
-                }.padding(.vertical, 20)
+                }.padding(.vertical, 20).padding(.bottom, 4)
             }
             VStack(spacing: 12) {
                 ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) { manualImportButton; syncButton }
+                    HStack(spacing: 14) { manualImportButton; syncButton }
                     VStack(spacing: 12) { manualImportButton; syncButton }
                 }
                 if !isFirstVisit {
                     Text("Imported files appear here as they arrive.")
                         .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 }
-                Label("Your storage. Your originals, untouched.", systemImage: "checkmark.shield")
-                    .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
             }
-            if isFirstVisit { LibraryWelcomeWorkflow().padding(.top, 16) }
-        }.multilineTextAlignment(.center).padding(.horizontal, 24).padding(.vertical, 28)
-            .padding(.top, isFirstVisit ? 48 : 0)
-            .frame(maxWidth: 880).frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: 720)
+            if isFirstVisit { LibraryWelcomeWorkflow().padding(.top, 28) }
+        }.multilineTextAlignment(.center).padding(.horizontal, 24).padding(.vertical, 30)
+            .padding(.top, isFirstVisit ? 4 : 0)
+            .frame(maxWidth: 1120).frame(maxWidth: .infinity, alignment: .center)
     }
     private var manualImportButton: some View {
         Button { store.pick() } label: {
             Text("Import photos & videos")
-                .font(.pixfun(16, semibold: true))
-                .padding(.horizontal, 24).frame(minHeight: 56)
+                .font(.pixfun(15, semibold: true))
+                .padding(.horizontal, 20).frame(minHeight: 48)
                 .fixedSize(horizontal: true, vertical: false)
         }.buttonStyle(PixfunButtonStyle(kind: .primary))
             .disabled(store.importing)
@@ -149,8 +150,8 @@ struct MediaLibraryWelcomeView: View {
     private var syncButton: some View {
         Button { store.navigate(.mediaSync) } label: {
             Text(LocalizedStringKey(isFirstVisit ? "Set up sync" : "View Media Sync"))
-                .font(.pixfun(16, semibold: true))
-                .padding(.horizontal, 16).frame(minHeight: 56)
+                .font(.pixfun(14))
+                .padding(.horizontal, 16).frame(minHeight: 48)
                 .fixedSize(horizontal: true, vertical: false)
         }.buttonStyle(PixfunButtonStyle(kind: .secondary))
             .accessibilityHint("Go to Media Sync to connect a device or set up folder sync")
@@ -169,33 +170,53 @@ struct MediaLibraryWelcomeView: View {
     }
 }
 
+/// The approved promotional artwork is decorative. Copy and actions remain
+/// native below it so they stay localized, selectable and accessible.
+struct LibraryWelcomeArtwork: View {
+    static let image: NSImage? = {
+        guard let url = Bundle.main.url(forResource: "welcome-reference", withExtension: "png", subdirectory: "Welcome"),
+              let original = NSImage(contentsOf: url),
+              let bitmap = original.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let illustration = bitmap.cropping(to: CGRect(x: 0, y: 0, width: bitmap.width,
+                  height: Int(Double(bitmap.height) * 450.0 / 1058.0))) else { return nil }
+        return NSImage(cgImage: illustration, size: NSSize(width: illustration.width, height: illustration.height))
+    }()
+
+    var body: some View {
+        if let image = Self.image {
+            Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// A static explanation, not fake media or a second set of navigation controls.
 private struct LibraryWelcomeWorkflow: View {
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 40) {
-                step(0).frame(width: 220)
-                step(1).frame(width: 220)
-                step(2).frame(width: 220)
+            HStack(alignment: .top, spacing: 48) {
+                step(0).frame(width: 248)
+                step(1).frame(width: 248)
+                step(2).frame(width: 248)
             }
-            HStack(alignment: .top, spacing: 24) {
-                step(0).frame(width: 180)
-                step(1).frame(width: 180)
-                step(2).frame(width: 180)
+            HStack(alignment: .top, spacing: 28) {
+                step(0).frame(width: 190)
+                step(1).frame(width: 190)
+                step(2).frame(width: 190)
             }
-            VStack(spacing: 32) {
-                step(0)
-                step(1)
-                step(2)
+            VStack(spacing: 30) {
+                step(0).frame(maxWidth: 320, alignment: .leading)
+                step(1).frame(maxWidth: 320, alignment: .leading)
+                step(2).frame(maxWidth: 320, alignment: .leading)
             }.frame(maxWidth: .infinity)
         }
-        .padding(.vertical, 28).frame(maxWidth: .infinity)
+        .padding(.top, 28).padding(.bottom, 20).frame(maxWidth: 940)
         .overlay(alignment: .top) { Rectangle().fill(Color.pixfunLine).frame(height: 1) }
         .accessibilityElement(children: .contain)
     }
 
     private func step(_ index: Int) -> some View {
-        VStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             Group {
                 if index == 0 {
                     HStack(spacing: 7) {
@@ -211,13 +232,14 @@ private struct LibraryWelcomeWorkflow: View {
                     Image(systemName: "magnifyingglass").font(.system(size: 32, weight: .light))
                 }
             }.foregroundStyle(Color.pixfunGold).frame(height: 52).accessibilityHidden(true)
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 9) {
                 Text(["Bring your media", "Auto-sync new files", "Find the moment"][index])
                     .font(.pixfun(15, semibold: true)).foregroundStyle(Color.pixfunInk)
-                Text(["Scan with your phone\nor connect a card or drive.", "From connected cards\nand folders you set up.", "AI makes scenes and\nspoken words searchable."][index])
-                    .font(.pixfun(13)).lineSpacing(4).foregroundStyle(Color.pixfunMuted)
+                Text(["Scan with your phone, or connect a memory card or drive.", "Automatically import new media from cards and folders you set up.", "Describe a scene or enter dialogue to find matching media and moments."][index])
+                    .font(.pixfun(13)).fontWeight(.regular).lineSpacing(5).foregroundStyle(Color.pixfunMuted)
             }
-        }.multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
             .accessibilityElement(children: .combine)
     }
 }

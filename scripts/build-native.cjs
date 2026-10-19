@@ -59,6 +59,7 @@ for (const skill of skills.filter(skill => skill.source)) {
 }
 fs.mkdirSync(path.join(resources, 'Fonts'), {recursive:true});
 fs.mkdirSync(path.join(resources, 'Brand'), {recursive:true});
+fs.cpSync(path.join(root, 'native/Welcome/Assets'), path.join(resources, 'Welcome'), {recursive:true});
 fs.copyFileSync(path.join(root, 'public/images/pixfun-lockup-v2.png'), path.join(resources, 'Brand/pixfun-lockup-v2.png'));
 for (const font of ['dm-sans-regular.ttf', 'dm-sans-semibold.ttf', 'DM-Sans-OFL.txt']) {
   fs.copyFileSync(path.join(root, 'public/fonts', font), path.join(resources, 'Fonts', font));

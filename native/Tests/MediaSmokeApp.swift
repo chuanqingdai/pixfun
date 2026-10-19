@@ -26,6 +26,29 @@ import SwiftUI
         let shot = EditorialShot(shot_id:"canonical-a", start_time:"00:00:00.000", end_time:"00:00:06.000", description:"Water flows past a stone wall, with cars visible on the road above.", shot_size:"Wide shot", capture_type:"Static", camera_motion:"Slow pan", story_role:["Establishing"], dialogue:"", reaction:"", audio:[], importance_score:78, duplicate_candidate:false, unusable_candidate:false, edit_recommendation:.init(level:"Recommended", recommended_duration_sec:3, reason:"Introduces the riverside setting before the walkers appear."))
         evidenceItem.shotAnalysis = .init(status:"ready", segments:[.init(id:"canonical-a", label:shot.description, start:0, end:6, boundary:.init(type:"video_start"), editorial:shot)], revision:"fixture")
         let assets = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("public/media/travel")
+        if CommandLine.arguments.contains("--welcome-only") {
+            precondition(LibraryWelcomeArtwork.image != nil, "The welcome illustration must be bundled")
+            precondition(abs(LibraryWelcomeArtwork.image!.size.width / LibraryWelcomeArtwork.image!.size.height - 1487.0 / 450.0) < 0.02,
+                         "Only the illustration crop should be rendered above native copy and controls")
+            store.items = []; store.syncSnapshot = nil
+            for (name, width, height, chinese) in [("welcome-reference", 1487.0, 1058.0, true), ("welcome-zh-wide", 1120.0, 760.0, true), ("welcome-zh-narrow", 420.0, 1100.0, true), ("welcome-en", 760.0, 760.0, false)] {
+                let view = MediaLibraryWelcomeView().environmentObject(store)
+                    .environment(\.locale, Locale(identifier: chinese ? "zh-Hans" : "en"))
+                    .foregroundStyle(Color.pixfunInk).environment(\.colorScheme, .dark)
+                    .frame(width: width, height: height, alignment: .top).background(Color.pixfunBackground)
+                let host = NSHostingView(rootView: view)
+                let rect = NSRect(x: 0, y: 0, width: width, height: height)
+                let window = NSWindow(contentRect: rect, styleMask: [.borderless], backing: .buffered, defer: false)
+                window.contentView = host; host.frame = rect
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+                let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent(name + ".png"))
+                print("Rendered \(name)")
+            }
+            return
+        }
         for (state, width) in [("settings-places",620.0), ("wide", 1120.0), ("narrow", 760.0), ("filtered", 760.0), ("empty", 760.0), ("first-use",760.0), ("sample-only",760.0), ("waiting",760.0), ("analyzing",760.0), ("attention",760.0), ("selected",760.0), ("creation",960.0), ("navigation",1120.0), ("evidence-detail",1000.0), ("evidence-detail-multiple",1000.0), ("evidence-detail-failed",760.0), ("evidence-detail-capture",1000.0), ("evidence-tags",650.0)] {
             store.items = baseline; store.page = .media; store.selecting = false; store.selection = []
             store.syncSnapshot = nil

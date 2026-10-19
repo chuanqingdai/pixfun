@@ -256,9 +256,9 @@
 "Added by you" = "手动添加";
 "Observed in sampled frames · category normalized from saved tags" = "来自抽样画面 · 分类已统一";
 "Uncheck incorrect tags or add your own. Corrections survive reanalysis; original observations stay intact." = "取消勾选错误标签，或添加自定义标签。重新分析会保留你的修改，不覆盖原始观察记录。";
-"Turn your photos and videos\ninto searchable memories." = "让照片和视频\n成为随时可找到的回忆。";
+"Turn your photos and videos\ninto searchable memories." = "让照片和视频\n成为随时可找到的回忆";
 "Bring your media together. Let local AI help you\nfind the moments you remember." = "汇集你的素材，让本地 AI\n帮你找到记忆中的每个瞬间。";
-"Import photos & videos" = "手动导入照片与视频";
+"Import photos & videos" = "导入照片与视频";
 "Set up sync" = "设置同步";
 "View Media Sync" = "查看素材同步";
 "Your storage. Your originals, untouched." = "存储由你掌控，原始文件不变。";
@@ -270,6 +270,9 @@
 "Scan with your phone\nor connect a card or drive." = "用手机扫码，\n或连接存储卡和硬盘。";
 "From connected cards\nand folders you set up." = "同步已连接存储卡\n和指定文件夹中的新素材。";
 "AI makes scenes and\nspoken words searchable." = "用 AI 搜索画面内容\n和视频中的对白。";
+"Scan with your phone, or connect a memory card or drive." = "手机扫码导入，或连接存储卡、硬盘。";
+"Automatically import new media from cards and folders you set up." = "自动导入所选文件夹与存储卡中的新增素材。";
+"Describe a scene or enter dialogue to find matching media and moments." = "描述画面或输入对白，找到对应素材与片段。";
 "Your library is empty" = "素材库为空";
 "Adding your first files" = "正在添加首批素材";
 "Your first import is on its way" = "首批素材正在导入";
