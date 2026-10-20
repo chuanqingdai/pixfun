@@ -37,6 +37,7 @@ console.log(app);
 if (sidebarPreview || mediaPreview) {
   const resources = path.join(contents, 'Resources');
   fs.mkdirSync(path.join(resources, 'Brand'), {recursive:true});
+  fs.cpSync(path.join(root, 'native/Welcome/Assets'), path.join(resources, 'Welcome'), {recursive:true});
   fs.mkdirSync(path.join(resources, 'Fonts'), {recursive:true});
   fs.copyFileSync(path.join(root, 'public/images/pixfun-lockup-v2.png'), path.join(resources, 'Brand/pixfun-lockup-v2.png'));
   for (const font of ['dm-sans-regular.ttf','dm-sans-semibold.ttf']) fs.copyFileSync(path.join(root, 'public/fonts', font), path.join(resources, 'Fonts', font));

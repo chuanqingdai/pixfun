@@ -102,6 +102,29 @@ import MapKit
             }
             return
         }
+        if CommandLine.arguments.contains("--welcome-only") {
+            precondition(LibraryWelcomeArtwork.image != nil, "The welcome illustration must be bundled")
+            precondition(abs(LibraryWelcomeArtwork.image!.size.width / LibraryWelcomeArtwork.image!.size.height - 1487.0 / 450.0) < 0.02,
+                         "Only the illustration crop should be rendered above native copy and controls")
+            store.items = []; store.syncSnapshot = nil
+            for (name, width, height, chinese) in [("welcome-reference", 1487.0, 1058.0, true), ("welcome-zh-wide", 1120.0, 760.0, true), ("welcome-zh-narrow", 420.0, 1100.0, true), ("welcome-en", 760.0, 760.0, false)] {
+                let view = MediaLibraryWelcomeView().environmentObject(store)
+                    .environment(\.locale, Locale(identifier: chinese ? "zh-Hans" : "en"))
+                    .foregroundStyle(Color.pixfunInk).environment(\.colorScheme, .dark)
+                    .frame(width: width, height: height, alignment: .top).background(Color.pixfunBackground)
+                let host = NSHostingView(rootView: view)
+                let rect = NSRect(x: 0, y: 0, width: width, height: height)
+                let window = NSWindow(contentRect: rect, styleMask: [.borderless], backing: .buffered, defer: false)
+                window.contentView = host; host.frame = rect
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+                let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent(name + ".png"))
+                print("Rendered \(name)")
+            }
+            return
+        }
         for (state, width) in [("settings-places",620.0), ("wide", 1120.0), ("narrow", 760.0), ("filtered", 760.0), ("empty", 760.0), ("first-use",760.0), ("sample-only",760.0), ("waiting",760.0), ("analyzing",760.0), ("attention",760.0), ("selected",760.0), ("creation",960.0), ("navigation",1120.0), ("evidence-detail",1000.0), ("evidence-detail-multiple",1000.0), ("evidence-detail-failed",760.0), ("evidence-detail-capture",1000.0), ("evidence-tags",650.0)] {
             store.items = baseline; store.page = .media; store.selecting = false; store.selection = []
             store.syncSnapshot = nil
