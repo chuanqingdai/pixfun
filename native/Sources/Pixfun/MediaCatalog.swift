@@ -1,5 +1,13 @@
 import Foundation
 
+enum CatalogFailure {
+    /// A dismissed view or stopped request is not a failed visual search.
+    static func message(_ error: Error) -> String? {
+        guard !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return nil }
+        return error.localizedDescription
+    }
+}
+
 enum MediaSearchMerge {
     /// Keep exact/text matches first, then add visual-only matches once per file.
     static func combine(text: [MediaSearchResult], visual: [CatalogHit], allowed: [MediaSearchResult]) -> [MediaSearchResult] {

@@ -21,10 +21,12 @@ test('place consent is off by default and saved only by settings confirmation', 
   const settings = read('AppSettingsView.swift');
   assert.match(settings, /isOn: \$draft.onlinePlaceNames/);
   const confirm = settings.slice(settings.indexOf('private func confirm()'));
-  assert.match(confirm, /store.savePlaceSettings\(names: draft.onlinePlaceNames, boundaries: draft.onlinePlaceBoundaries\)/);
+  assert.match(confirm, /store.savePlaceSettings\(names: draft.onlinePlaceNames, boundaries: draft.onlinePlaceBoundaries, fallback: draft.onlinePlaceFallback\)/);
   assert.doesNotMatch(settings.slice(0, settings.indexOf('private func confirm()')), /savePlaceSettings\(/);
   assert.match(read('AppLanguage.swift'), /var onlinePlaceBoundaries = false/);
   assert.match(settings, /isOn: \$draft.onlinePlaceBoundaries/);
+  assert.match(settings, /isOn: \$draft.onlinePlaceFallback/);
+  assert.match(read('AppLanguage.swift'), /var onlinePlaceFallback = false/);
 });
 
 test('boundary lookup is bounded, opt-in and independent of video analysis', () => {
@@ -50,4 +52,18 @@ test('library refresh overlays local cache and keeps source coordinates searchab
   assert.match(read('MediaView.swift'), /Text\(LocalizedStringKey\(item.locationAttribution\)\)/);
   assert.match(store, /\/api\/desktop\/analysis\/place/);
   assert.match(read('MediaSearch.swift'), /item.locationGroup/);
+});
+
+test('backup geocoder verifies polygons, caches containment and respects public service limits', () => {
+  const fallback = read('PlaceFallbackLookup.swift');
+  assert.match(fallback, /geometry.contains\(query\)/);
+  assert.match(fallback, /polygon_geojson/);
+  assert.match(fallback, /count < 30/);
+  assert.match(fallback, /interval: TimeInterval = 1.1/);
+  assert.match(fallback, /PixfunPlaceFallbackEndpoint/);
+  assert.match(fallback, /guard defaults.bool\(forKey: Self.consentKey\)/);
+  assert.match(fallback, /20_000/);
+  assert.doesNotMatch(fallback, /清华|圆明园|百里|sourcePath|file.name/);
+  assert.match(read('PlaceBoundaryLookup.swift'), /placeBoundaryBlockedEndpoint/);
+  assert.match(read('PlaceNameResolver.swift'), /:boundaries:fallback/);
 });

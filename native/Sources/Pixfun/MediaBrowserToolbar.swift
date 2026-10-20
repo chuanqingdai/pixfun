@@ -16,15 +16,6 @@ struct MediaBrowserToolbar: View {
                     sourceAndSearch
                 }
             }
-            if store.catalogBusy || store.catalogError != nil {
-                HStack(spacing: 8) {
-                    if store.catalogBusy { ProgressView().controlSize(.small) }
-                    Text(store.catalogMessage).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
-                    Spacer()
-                    if store.catalogBusy { Button("Stop") { store.stopCatalog() }.buttonStyle(.plain) }
-                    else { Button("Dismiss") { store.catalogError = nil }.buttonStyle(.plain) }
-                }
-            }
             HStack(alignment: .top, spacing: 12) {
                 MediaTagFlow(spacing: 10) {
                     Menu {

@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, urlparse
 from transcript_quality import checked_cues
-from media_metadata import location_from_tags
+from media_metadata import location_from_tags, device_id_from_tags
 
 
 ROOT = Path(__file__).resolve().parent
@@ -140,7 +140,8 @@ def probe_media(source: Path) -> dict:
         "dateSource": "QuickTime creationdate" if tags.get("com.apple.quicktime.creationdate") else "Container creation_time" if tags.get("creation_time") else None,
         "camera": tags.get("com.apple.quicktime.model") or tags.get("model"),
         "location": location_from_tags(tags),
-        "captureMetadataVersion": 1,
+        "captureMetadataVersion": 2,
+        "captureDeviceID": device_id_from_tags(tags),
         "duration": round(duration, 2),
         "durationLabel": format_duration(duration),
         "width": width,

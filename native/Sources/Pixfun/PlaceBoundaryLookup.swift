@@ -9,13 +9,14 @@ enum PlaceBoundaryPolicy {
         var id: Int64
         var tags: [String: String]?
     }
-    struct Match: Equatable {
+    struct Match: Codable, Equatable {
         var name: String
         var id: String
         var kind: String
         var relation: String
         var city: String? = nil
         var region: String? = nil
+        var shortName: String? = nil
     }
     static func query(_ query: PlaceQuery) -> String {
         let point = "\(query.latitude),\(query.longitude)"
@@ -69,17 +70,17 @@ enum PlaceBoundaryPolicy {
     }
     static func applying(_ match: Match, to original: PlaceAddress?, language: String) -> PlaceAddress {
         var address = original ?? PlaceAddress()
-        if address.city == nil { address.city = match.city }
-        if address.region == nil { address.region = match.region }
+        address.city = match.city ?? address.city
+        address.region = match.region ?? address.region
         address.area = match.name
         address.boundaryID = match.id
         address.areaRelation = match.relation
         address.placeKind = match.kind
-        let chinese = language == "zh-Hans"
-        var context = (match.kind == "lake" ? address.region : address.city) ?? address.region ?? ""
-        if chinese, context.hasSuffix("市") || context.hasSuffix("省") { context.removeLast() }
-        let name = match.name + (match.relation == "nearby" ? (chinese ? "附近" : " vicinity") : "")
-        address.displayName = [context, name].filter { !$0.isEmpty }.joined(separator: " ")
+        address.shortName = match.shortName
+        address.shortNameSource = match.shortName == nil ? nil : "map-short-name"
+        address.displayName = PlaceCaption.make(city: address.city, region: address.region, area: match.name,
+                                              shortName: match.shortName, relation: match.relation,
+                                              kind: match.kind, chinese: language == "zh-Hans")
         return address
     }
 }
@@ -90,17 +91,38 @@ enum PlaceBoundaryPolicy {
     static let consentKey = "onlinePlaceBoundariesEnabled"
     private let defaults: UserDefaults
     private let session: URLSession
+    private let fallback: PlaceFallbackLookup
     private var nextRequest = Date.distantPast
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.fallback = PlaceFallbackLookup(defaults: defaults)
+        self.nextRequest = Date(timeIntervalSince1970: defaults.double(forKey: "placeBoundaryRetryAfter"))
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 25
         config.timeoutIntervalForResource = 30
         config.httpCookieStorage = nil
         session = URLSession(configuration: config)
     }
+    func cachedMatch(_ query: PlaceQuery) -> PlaceBoundaryPolicy.Match? { fallback.cachedMatch(query) }
     func lookup(_ query: PlaceQuery) async throws -> PlaceBoundaryPolicy.Match? {
+        if let cached = fallback.cachedMatch(query) { return cached }
+        var unavailable: Error?
+        do { if let match = try await overpass(query) { return match } }
+        catch {
+            try Task.checkCancellation()
+            unavailable = error
+        }
+        guard defaults.bool(forKey: PlaceFallbackLookup.consentKey) else {
+            if let unavailable { throw unavailable }
+            return nil
+        }
+        return try await fallback.lookup(query)
+    }
+    private func overpass(_ query: PlaceQuery) async throws -> PlaceBoundaryPolicy.Match? {
         try Task.checkCancellation()
+        let endpoint = Bundle.main.object(forInfoDictionaryKey: "PixfunBoundaryEndpoint") as? String
+            ?? "https://overpass-api.de/api/interpreter"
+        guard defaults.string(forKey: "placeBoundaryBlockedEndpoint") != endpoint else { throw URLError(.resourceUnavailable) }
         let now = Date()
         guard now >= nextRequest else { throw URLError(.resourceUnavailable) }
         let day = Int(now.timeIntervalSince1970 / 86400)
@@ -112,8 +134,6 @@ enum PlaceBoundaryPolicy {
         guard count < 100 else { throw URLError(.resourceUnavailable) }
         defaults.set(count + 1, forKey: "placeBoundaryRequestCount")
         nextRequest = now.addingTimeInterval(5)
-        let endpoint = Bundle.main.object(forInfoDictionaryKey: "PixfunBoundaryEndpoint") as? String
-            ?? "https://overpass-api.de/api/interpreter"
         guard let url = URL(string: endpoint), url.scheme == "https", url.host != nil else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -124,6 +144,10 @@ enum PlaceBoundaryPolicy {
         request.httpBody = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B").data(using: .utf8)
         do {
             let (bytes, response) = try await session.bytes(for: request)
+            if let http = response as? HTTPURLResponse, [403, 406].contains(http.statusCode) {
+                // Respect denial across restarts; do not rotate identities or mirrors.
+                defaults.set(endpoint, forKey: "placeBoundaryBlockedEndpoint")
+            }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw URLError(.badServerResponse) }
             var data = Data()
             for try await byte in bytes {
@@ -136,6 +160,7 @@ enum PlaceBoundaryPolicy {
             return PlaceBoundaryPolicy.match(result, language: query.language)
         } catch {
             nextRequest = Date().addingTimeInterval(15 * 60)
+            defaults.set(nextRequest.timeIntervalSince1970, forKey: "placeBoundaryRetryAfter")
             throw error
         }
     }

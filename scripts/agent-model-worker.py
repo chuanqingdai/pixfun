@@ -15,7 +15,10 @@ os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
-runtime = Path(os.environ.get('PIXFUN_VF_ROOT', str(Path.home() / 'work/visionflow/vf-agent')))
+required_version = '0.9.1'
+configured_runtime = os.environ.get('PIXFUN_VF_ROOT')
+preferred_runtime = Path.home() / 'work/visionflow/vf-agent-0.9.1'
+runtime = Path(configured_runtime) if configured_runtime else (preferred_runtime if preferred_runtime.is_dir() else Path.home() / 'work/visionflow/vf-agent')
 sys.path.insert(0, str(runtime))
 sys.path.insert(0, str(runtime / 'scripts'))
 engine = None
@@ -23,14 +26,17 @@ preprocess_only = '--preprocess-only' in sys.argv
 for line in sys.stdin:
     try:
         job = json.loads(line)
-        light = job.get('operation') in {'inspect', 'motion'} or (job.get('operation') == 'catalog' and job.get('action') == 'sample')
+        light = job.get('operation') in {'inspect', 'motion', 'story'} or (job.get('operation') == 'catalog' and job.get('action') == 'sample')
         if preprocess_only and not light:
             raise ValueError('Inference is prohibited in the preprocessing worker')
         declared = re.search(r'^version\s*=\s*"([0-9][^"]*)"', (runtime/'pyproject.toml').read_text(), re.M)
-        if not declared or declared.group(1) != '0.7.0':
-            raise RuntimeError('VisionFlow 0.7.0 is required; incompatible runtime was not loaded.')
+        if not declared or declared.group(1) != required_version:
+            raise RuntimeError(f'VisionFlow {required_version} is required; incompatible runtime was not loaded.')
         with contextlib.redirect_stdout(sys.stderr):
-            if job['operation'] == 'catalog':
+            if job['operation'] == 'story':
+                from vf_story import handle
+                value = handle(job)
+            elif job['operation'] == 'catalog':
                 if job.get('action') != 'sample':
                     engine = None; gc.collect()
                     import mlx.core as mx
@@ -40,6 +46,10 @@ for line in sys.stdin:
                 if job.get('action') != 'sample':
                     import torch
                     if torch.backends.mps.is_available(): torch.mps.empty_cache()
+            elif job['operation'] == 'hyperframes':
+                engine = None; gc.collect()
+                from vf_hyperframes import render
+                value = render(job, runtime)
             elif job['operation'] == 'beauty':
                 engine = None; gc.collect()
                 from vf_beauty import score

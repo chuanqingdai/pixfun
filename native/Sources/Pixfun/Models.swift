@@ -5,6 +5,7 @@ struct Metadata: Codable {
     var width: Double?; var height: Double?; var duration: Double?; var fps: Double?; var hasAudio: Bool?
     var capturedAt: String? = nil
     var camera: String? = nil
+    var captureDeviceID: String? = nil
     var location: CaptureLocation? = nil
     var videoCodec: String? = nil
     var audioCodec: String? = nil
@@ -35,6 +36,8 @@ struct Metadata: Codable {
 }
 struct CaptureLocation: Codable {
     var name: String?; var latitude: Double?; var longitude: Double?; var altitude: Double?; var source: String?
+    var datum: String? = nil
+    var horizontalAccuracy: Double? = nil
     // Native local-cache overlay; never written into the source file or model evidence.
     var resolvedName: String? = nil
     var coordinates: String? {
@@ -43,6 +46,18 @@ struct CaptureLocation: Codable {
         return String(format: "%.5f, %.5f", locale: Locale(identifier: "en_US_POSIX"), latitude, longitude)
     }
     var label: String? { name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? name : (resolvedName ?? coordinates) }
+}
+struct LocationReview: Codable {
+    var version: Int?; var source: String?; var place: String?
+    var latitude: Double?; var longitude: Double?
+    var originalLatitude: Double?; var originalLongitude: Double?
+    var anchorMediaId: String?; var confirmedAt: Double?
+    var validCoordinates: (Double, Double)? {
+        guard source == "user-confirmed", let latitude, let longitude,
+              latitude.isFinite, longitude.isFinite,
+              (-90...90).contains(latitude), (-180...180).contains(longitude) else { return nil }
+        return (latitude, longitude)
+    }
 }
 struct Segment: Codable, Identifiable {
     var id: String; var label: String; var start: Double; var end: Double
@@ -232,15 +247,43 @@ struct ResolvedPlace: Codable, Equatable {
     var boundaryID: String? = nil
     var areaRelation: String? = nil
     var placeKind: String? = nil
+    var city: String? = nil
+    var region: String? = nil
+    var shortName: String? = nil
+    var shortNameSource: String? = nil
+    var compactLabel: String {
+        displayName ?? PlaceCaption.make(city: city ?? PlaceCaption.city(in: label),
+                                        region: region, area: area, shortName: shortName,
+                                        relation: areaRelation, kind: placeKind, chinese: language == "zh-Hans") ?? label
+    }
     var supported: Bool {
         if version == 2 { return provider == "apple-geocoder" }
         guard version == 3, provider == "apple-osm", let id = boundaryID, let name = displayName,
-              let area, !area.isEmpty, name.contains(area), label.contains(area),
+              let area, !area.isEmpty, (name.contains(area) || shortName.map { name.contains($0) } == true), label.contains(area),
               ["campus", "lake", "scenic", "park", "attraction"].contains(placeKind ?? "") else { return false }
         if areaRelation == "inside" { return id.range(of: #"^(area|way)/[1-9][0-9]*$"#, options: .regularExpression) != nil }
         return areaRelation == "nearby" && placeKind == "lake" &&
             id.range(of: #"^(way|relation)/[1-9][0-9]*$"#, options: .regularExpression) != nil &&
-            name.hasSuffix(area + (language == "zh-Hans" ? "附近" : " vicinity"))
+            name.hasSuffix((shortName ?? area) + (language == "zh-Hans" ? "附近" : " vicinity"))
+    }
+}
+/// Presentation only: never derive a destination from a road, nearby POI,
+/// image content or another media item's coordinates.
+enum PlaceCaption {
+    static func city(in label: String) -> String? {
+        label.components(separatedBy: " · ").first { $0.hasSuffix("市") && !$0.contains("区") }
+    }
+    static func context(_ value: String?, chinese: Bool) -> String {
+        var text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if chinese, text.hasSuffix("市") || text.hasSuffix("省") { text.removeLast() }
+        return text
+    }
+    static func make(city: String?, region: String?, area: String?, shortName: String? = nil,
+                     relation: String? = nil, kind: String? = nil, chinese: Bool) -> String? {
+        guard let area, !area.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let parent = context((kind == "lake" ? region : city) ?? region, chinese: chinese)
+        let name = (shortName ?? area) + (relation == "nearby" ? (chinese ? "附近" : " vicinity") : "")
+        return [parent, name].filter { !$0.isEmpty }.joined(separator: " ")
     }
 }
 
@@ -257,13 +300,14 @@ struct MediaItem: Codable, Identifiable {
     var analysisEvidence: MediaEvidence? = nil
     var tagCorrections: TagCorrections? = nil
     var resolvedPlace: ResolvedPlace? = nil
+    var locationReview: LocationReview? = nil
     var validResolvedPlace: ResolvedPlace? {
         guard let place = resolvedPlace, place.supported,
               place.latitude == metadata?.location?.latitude, place.longitude == metadata?.location?.longitude else { return nil }
         return place
     }
     var locationGroup: String? {
-        hasSavedPlaceName ? recordedLocation : validResolvedPlace?.displayName ?? validResolvedPlace?.area ?? recordedLocation
+        hasSavedPlaceName ? recordedLocation : validResolvedPlace?.compactLabel ?? recordedLocation
     }
     var locationGroupKey: String? {
         if !hasSavedPlaceName, let place = validResolvedPlace, let id = place.boundaryID {
@@ -358,17 +402,20 @@ struct MediaItem: Codable, Identifiable {
         return message
     }
     var recordedLocation: String? {
+        if let value = locationReview?.place?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty { return value }
         if let value = context?["location"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !value.isEmpty, !["unknown", "unspecified", "none", "n/a", "未知", "无"].contains(value.lowercased()) { return value }
         if metadata?.location?.name?.isEmpty != false, let place = validResolvedPlace { return place.label }
         return metadata?.location?.label
     }
     var hasSavedPlaceName: Bool {
+        if locationReview?.place?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { return true }
         if let value = context?["location"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !value.isEmpty, !["unknown", "unspecified", "none", "n/a", "未知", "无"].contains(value.lowercased()) { return true }
         return metadata?.location?.name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
     var locationAttribution: String {
+        if locationReview?.validCoordinates != nil { return "User-confirmed location · Original file metadata retained" }
         if !hasSavedPlaceName, validResolvedPlace?.provider == "apple-osm" {
             return "Location context · © OpenStreetMap contributors (ODbL) · Not proof of visible landmarks"
         }
@@ -527,10 +574,11 @@ struct CreatorSkill: Codable, Identifiable {
     var chosen: ChosenSkill { ChosenSkill(id: id, title: title, strategy: strategy, applicability: applicability) }
 }
 enum WorkspacePage: String, CaseIterable, Identifiable {
-    case home = "Create", media = "Library", skills = "Templates", project = "Projects", mediaSync = "Media Sync"
-    static let mediaPages: [WorkspacePage] = [.media, .mediaSync]
+    case home = "Create", media = "Library", mediaMap = "Media map", skills = "Templates", project = "Projects", mediaSync = "Media Sync"
+    static let mediaPages: [WorkspacePage] = [.media, .mediaMap, .mediaSync]
     static let creationPages: [WorkspacePage] = [.home, .project, .skills]
-    static let primaryPages: [WorkspacePage] = mediaPages + creationPages
+    // Preserve existing command-number shortcuts; the map is Command-6.
+    static let primaryPages: [WorkspacePage] = [.media, .mediaSync] + creationPages + [.mediaMap]
     // Keep route identifiers stable; navigation labels describe the destination.
     var navigationTitle: String {
         switch self { case .home: return "New video"; case .skills: return "Skills"; default: return rawValue }
@@ -538,7 +586,7 @@ enum WorkspacePage: String, CaseIterable, Identifiable {
     var isCreation: Bool { Self.creationPages.contains(self) }
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .home: return "sparkles"; case .media: return "photo.on.rectangle.angled"; case .skills: return "wand.and.stars"; case .project: return "folder"; case .mediaSync: return "arrow.triangle.2.circlepath" }
+        switch self { case .home: return "sparkles"; case .media: return "photo.on.rectangle.angled"; case .mediaMap: return "map"; case .skills: return "wand.and.stars"; case .project: return "folder"; case .mediaSync: return "arrow.triangle.2.circlepath" }
     }
 }
 enum MediaAddedRange: String, CaseIterable {

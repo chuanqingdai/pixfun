@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 /// Real Media views with an isolated in-memory library. No service, source-file
 /// changes, saved drafts, uploads or access to the user's production library.
@@ -26,6 +27,81 @@ import SwiftUI
         let shot = EditorialShot(shot_id:"canonical-a", start_time:"00:00:00.000", end_time:"00:00:06.000", description:"Water flows past a stone wall, with cars visible on the road above.", shot_size:"Wide shot", capture_type:"Static", camera_motion:"Slow pan", story_role:["Establishing"], dialogue:"", reaction:"", audio:[], importance_score:78, duplicate_candidate:false, unusable_candidate:false, edit_recommendation:.init(level:"Recommended", recommended_duration_sec:3, reason:"Introduces the riverside setting before the walkers appear."))
         evidenceItem.shotAnalysis = .init(status:"ready", segments:[.init(id:"canonical-a", label:shot.description, start:0, end:6, boundary:.init(type:"video_start"), editorial:shot)], revision:"fixture")
         let assets = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("public/media/travel")
+        if CommandLine.arguments.contains("--map-only") {
+            // Synthetic points and existing local photos, never the user's database.
+            var fixtures: [MediaItem] = []
+            for index in 0..<8 {
+                var item = baseline[0]
+                item.id = "map-fixture-\(index)"; item.file.name = "Sample \(index + 1).mov"
+                let lat = index < 6 ? 48.85 + Double(index / 2) * 0.003 : (index == 6 ? 51.50 : 41.90)
+                let lon = index < 6 ? 2.32 + Double(index / 2) * 0.003 : (index == 6 ? -0.12 : 12.49)
+                item.metadata = .init(capturedAt: "2026-09-16T14:\(String(format: "%02d", index * 5)):00+0200", camera: "Fixture camera", captureDeviceID: "camera-sha256:fixture",
+                                      location: .init(latitude: lat, longitude: lon, source: "file-metadata", datum: "WGS84", horizontalAccuracy: 5))
+                item.coverUrl = assets.appendingPathComponent(["luxury.jpg", "city.jpg", "food.jpg"][index % 3]).path
+                fixtures.append(item)
+            }
+            // Compare selection states at the same width: footer wrapping may change
+            // naturally between wide and narrow windows.
+            var stableMapHeights: [CGFloat: CGFloat] = [:]
+            for state in ["global", "region", "order", "numbers", "narrow-unselected", "narrow", "composer", "consent", "empty"] {
+                store.items = state == "empty" ? [] : (state == "global" ? fixtures : Array(fixtures.prefix(6)))
+                store.ready = true; store.page = .mediaMap
+                if ["order", "numbers", "narrow-unselected", "narrow"].contains(state) {
+                    for index in store.items.indices {
+                        store.items[index].metadata?.location?.latitude = 48.85 + Double(index) * 0.0015
+                        store.items[index].metadata?.location?.longitude = 2.32 + Double(index) * 0.0015
+                        if state != "order" {
+                            store.items[index].metadata?.location?.horizontalAccuracy = nil
+                            store.items[index].metadata?.location?.datum = nil
+                            store.items[index].metadata?.captureDeviceID = nil
+                        }
+                    }
+                }
+                store.resetMediaFilters()
+                let ordered = ["order", "numbers", "narrow"].contains(state)
+                if state == "composer" {
+                    precondition(store.prepareMapCreation(Array(fixtures.prefix(3)).map(\.id), replaceDraft: true))
+                    precondition(store.draft.attachments.count == 3 && store.agentRuns.isEmpty && !store.saving)
+                }
+                let content = state == "composer" ? AnyView(WorkspaceView()) : AnyView(HStack(spacing: 0) {
+                    PixfunSidebar().frame(width: 216)
+                    MediaMapView(initialDay: state == "order" ? "2026-09-16" : "", initialOrder: ordered,
+                                 initialSelection: ordered ? Set(store.items.map(\.id)) : (state == "region" ? ["map-fixture-0", "map-fixture-1"] : []), mapEnabled: state != "consent")
+                })
+                let view = content
+                    .environmentObject(store).environment(\.locale, Locale(identifier: "zh-Hans"))
+                    .environment(\.colorScheme, .dark).tint(.pixfunGold)
+                let host = NSHostingView(rootView: view)
+                let rect = NSRect(x: 0, y: 0, width: state.hasPrefix("narrow") ? 960 : 1280, height: 740)
+                let window = NSWindow(contentRect: rect, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                window.title = "素材地图 · 独立测试预览"; window.contentView = host; host.frame = rect
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(4))
+                let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("map-\(state).png"))
+                func maps(_ view: NSView) -> [MKMapView] { (view as? MKMapView).map { [$0] } ?? view.subviews.flatMap(maps) }
+                if let map = maps(host).first {
+                    let points = map.annotations.filter { !($0 is MKClusterAnnotation) && !($0 is MKUserLocation) }.count
+                    precondition(points == store.items.count, "Every fixture has a map annotation")
+                    if let stableMapHeight = stableMapHeights[rect.width] {
+                        precondition(abs(map.frame.height - stableMapHeight) < 1,
+                                     "Selecting thumbnails must not resize and recenter the map")
+                    } else { stableMapHeights[rect.width] = map.frame.height }
+                    if state == "order" { precondition(map.overlays.contains { $0 is MKPolyline }, "Sequence overlay missing") }
+                    if state == "numbers" || state == "narrow" { precondition(!map.overlays.contains { $0 is MKPolyline }, "Uncertain GPS must not create a route") }
+                    print("Rendered map-\(state): \(points) source annotations, \(map.overlays.count) overlays")
+                    print("Map frame \(map.frame), visible annotation views \(map.annotations.compactMap { map.view(for: $0) }.count)")
+                } else { precondition(["consent", "empty", "composer"].contains(state), "Map missing") }
+                if state == "composer" {
+                    func editors(_ view: NSView) -> [NSTextView] { (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(editors) }
+                    precondition(editors(host).contains { $0.string == store.draft.prompt && $0.isEditable }, "Default request must reach the existing editable composer")
+                    print("Rendered existing Agent composer with three attachments and editable default request; no run created")
+                }
+                window.orderOut(nil)
+            }
+            return
+        }
         for (state, width) in [("settings-places",620.0), ("wide", 1120.0), ("narrow", 760.0), ("filtered", 760.0), ("empty", 760.0), ("first-use",760.0), ("sample-only",760.0), ("waiting",760.0), ("analyzing",760.0), ("attention",760.0), ("selected",760.0), ("creation",960.0), ("navigation",1120.0), ("evidence-detail",1000.0), ("evidence-detail-multiple",1000.0), ("evidence-detail-failed",760.0), ("evidence-detail-capture",1000.0), ("evidence-tags",650.0)] {
             store.items = baseline; store.page = .media; store.selecting = false; store.selection = []
             store.syncSnapshot = nil

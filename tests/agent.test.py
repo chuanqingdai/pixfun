@@ -25,6 +25,13 @@ class FakeModels:
     vision='fixture-vlm'; speech='fixture-asr'
     def __init__(self): self.calls=[]; self.requests=[]; self.routerPatch={}; self.intent='analyze'; self.fail=False
     def capabilities(self): return {'baseURL':'https://api.openai.com/v1','model':'fixture','visionModel':'fixture'}
+    def story(self, payload, cancel):
+        # Coordinator contract double. Native engine/worker integration is tested
+        # separately in story-engine.test.py, without mocked engine modules.
+        self.calls.append(('story', payload['action']))
+        if payload['action'] == 'context': return {'hints':{'items':[]}, 'guidance':'Fixture director guidance'}
+        return {'timeline':payload['shots'], 'version':'fixture-story', 'path':str(Path(payload['folder'])/'story.json'),
+                'chapters':1, 'qc':{'status':'attention_flags_only'}, 'coverage':[]}
     def ask(self,prompt,cancel,mode='local',images=None,max_tokens=1800):
         self.calls.append((mode,bool(images)))
         self.requests.append(prompt)
@@ -35,6 +42,9 @@ class FakeModels:
                 {'mediaId':row['mediaId'],'content':row['content'],'suggestion':'Fixture use suggestion'} for row in data['materials']]}
         if 'task router' in prompt:
             return {'intent':self.intent,'summary':'Fixture routing result','duration':3,'aspect':'16:9','question':'Which outcome?' if self.intent=='clarify' else '', **self.routerPatch}
+        if 'Plan sound for this validated video edit' in prompt:
+            data=json.loads(prompt.split('INPUT: ')[1])
+            return {'finishing':{'music':{'mediaId':data['musicSources'][0]['mediaId'],'sourceStart':0,'volume':.18,'loop':True,'ducking':True}}}
         if 'EDIT_BOUNDARY' in prompt: return {'split':False,'reason':'Fixture continuous action'}
         if 'EDITORIAL_SHOT' in prompt:
             start,end=re.search(r'start_time=(\d+:\d+:\d+\.\d+)，end_time=(\d+:\d+:\d+\.\d+)',prompt).groups()
@@ -52,10 +62,22 @@ class FakeModels:
     def close(self): pass
 
 
-def wait(agent,key,timeout=40):
+def wait(agent,key,timeout=40,approve_review=True):
     deadline=time.monotonic()+timeout
     while time.monotonic()<deadline:
         run=agent.get(key)
+        # Most legacy contracts exercise the planner/renderer after the new
+        # mandatory trip gate. Confirm through the public action, exactly as
+        # the conversation button does; the staged-flow test below inspects
+        # the pause itself without this helper.
+        if run['status'] == 'clarify' and run.get('clarificationKind') == 'trip_confirmation':
+            agent.action({'id': key, 'action': 'confirm_trip'})
+            time.sleep(.05)
+            continue
+        if run['status'] == 'review' and approve_review:
+            agent.action({'id': key, 'action': 'approve'})
+            time.sleep(.05)
+            continue
         if run['status'] not in ('queued','running'): return run
         time.sleep(.05)
     raise AssertionError('Task timeout')
@@ -74,6 +96,23 @@ def write_test_tone(path):
 
 
 class AgentTests(unittest.TestCase):
+    def test_story_workflow_pauses_for_trip_and_resumes_saved_highlights(self):
+        self.models.intent = 'plan'
+        started = self.start('Plan a travel story')
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            paused = self.agent.get(started['id'])
+            if paused['status'] == 'clarify': break
+            time.sleep(.05)
+        else: self.fail('Trip confirmation did not appear')
+        self.assertEqual(paused.get('clarificationKind'), 'trip_confirmation')
+        self.assertTrue(paused.get('highlightCandidates'))
+        self.assertEqual(paused['stage'], 'trip')
+        analyzed = len([request for request in self.models.requests if 'EDITORIAL_SHOT' in request])
+        finished = wait(self.agent, self.agent.action({'id': paused['id'], 'action': 'confirm_trip'})['id'])
+        self.assertEqual(finished['status'], 'completed')
+        self.assertEqual(len([request for request in self.models.requests if 'EDITORIAL_SHOT' in request]), analyzed)
+
     def edit_fixture(self):
         # Persist a baseline and accepted edit without inference or rendering.
         with patch.object(self.agent, 'dispatch'):
@@ -91,6 +130,31 @@ class AgentTests(unittest.TestCase):
         changed['editReceipt'] = edit_receipt(changed)
         self.agent.save(changed)
         return baseline, changed
+
+    def test_legacy_plan_cannot_skip_route_confirmation(self):
+        baseline, _ = self.edit_fixture()
+        baseline.update(prompt='Create a travel video', intent='plan', previousTimeline=[], tripConfirmation=None)
+        self.agent.save(baseline)
+        with patch.object(self.agent, 'dispatch') as dispatch:
+            paused = self.agent.action({'id':baseline['id'], 'action':'approve'})
+        self.assertEqual(paused['clarificationKind'], 'trip_confirmation')
+        dispatch.assert_not_called()
+        self.assertFalse(any(d.get('selected') == 'approve' for d in paused['conversationHistory']))
+        self.models.intent = 'create'
+        reviewed = wait(self.agent, self.agent.action({'id':baseline['id'], 'action':'confirm_trip'})['id'], approve_review=False)
+        self.assertEqual(reviewed['status'], 'review', reviewed['message'])
+        self.assertFalse(any(a['type'] == 'preview' for a in reviewed['artifacts']))
+
+    def test_retry_cannot_skip_unconfirmed_script(self):
+        self.models.intent = 'create'
+        run = wait(self.agent, self.start('Create a video')['id'], approve_review=False)
+        self.assertEqual(run['status'], 'review')
+        run.update(status='failed', message='Interrupted before confirmation')
+        self.agent.save(run)
+        with patch.object(self.agent, 'dispatch') as dispatch:
+            paused = self.agent.action({'id':run['id'], 'action':'retry'})
+        self.assertEqual(paused['status'], 'review')
+        dispatch.assert_not_called()
 
     def test_edit_receipt_and_undo_restore_exact_saved_draft(self):
         baseline, changed = self.edit_fixture()
@@ -225,11 +289,11 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(run['status'], 'completed', run['message'])
         self.assertEqual(run['question'], '')
         self.assertTrue(any(a['type']=='preview' for a in run['artifacts']))
-        self.assertFalse(run.get('conversationHistory'))
+        self.assertEqual([d['kind'] for d in run['conversationHistory'] if d['state'] == 'answered'], ['trip', 'script'])
 
     def test_explicit_plan_approval_is_respected_and_only_once(self):
         self.models.intent = 'create'
-        run = wait(self.agent, self.start('Create a 3-second video. Show me the plan for approval before rendering.')['id'])
+        run = wait(self.agent, self.start('Create a 3-second video.')['id'], approve_review=False)
         self.assertEqual(run['status'], 'review', run['message'])
         self.assertFalse(any(a['type']=='preview' for a in run['artifacts']))
         done = wait(self.agent, self.agent.action({'id':run['id'], 'action':'approve'})['id'])
@@ -469,22 +533,109 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(report['coverage']['status'],'NEEDS_REVIEW')
         self.assertTrue(any(a['type']=='preview' for a in r['artifacts']))
         self.models.intent='modify'
-        follow=wait(self.agent,self.start('总时长改成6秒',id=r['projectId'])['id'])
+        follow=wait(self.agent,self.start('总时长改成6秒',id=r['projectId'],skill=skill)['id'])
         self.assertEqual(follow['skillExecution']['version'],'5.4')
         self.assertEqual(follow['duration'],6)
         changed=self.agent.action({'id':follow['id'],'action':'timeline','version':1,'timeline':follow['timeline']})
         updated_report=json.loads(Path(next(a['path'] for a in changed['artifacts'] if a['type']=='skill')).read_text())
         self.assertEqual(updated_report['timelineVersion'],2)
         self.assertEqual(updated_report['coverage']['mode'],'selected')
-    def test_default_travel_skill_and_explicit_alternative(self):
+    def test_default_engine_requires_confirmation_without_loading_a_skill(self):
         self.models.intent='create'
-        r=wait(self.agent,self.start('Make a travel edit')['id'])
-        self.assertEqual(r['skillExecution']['id'],'visionflow-travel-director')
-        self.assertIn('Travel Vlog ·',r['skillNotice'])
-        self.assertIn('route-led',r['skillNotice'])
-        self.assertTrue(r['contentLedDuration'])
+        with patch('travel_skill.SOURCE',Path('/missing-skill')):
+            r=wait(self.agent,self.start('Make a travel edit')['id'])
+        self.assertEqual(r['status'],'completed',r['message'])
+        self.assertIsNone(r['skill'])
+        self.assertNotIn('skillExecution',r)
+        self.assertNotIn('skillNotice',r)
+        self.assertEqual(r['tripConfirmation']['status'], 'confirmed')
+        self.assertEqual(r['storyExecution']['version'], 'fixture-story')
+        self.assertIn(('story', 'context'), self.models.calls)
+        self.assertIn(('story', 'compile'), self.models.calls)
+        planner = next(p for p in self.models.requests if 'Plan an edit using only' in p)
+        self.assertIn('Fixture director guidance', planner)
+        self.assertIn('3 short paragraphs', planner)
+        self.assertIn('180-320 Chinese characters', planner)
+        self.assertIn('different days or disconnected places', planner)
+        self.assertNotIn('at most 45 words', planner)
+        self.assertIn('storyEvidence', json.loads(planner.split('INPUT: ')[1]))
+        self.assertFalse(r['automaticMusic'])
+        self.assertFalse(any(a['type']=='skill' for a in r['artifacts']))
+        self.assertFalse(any('原始叙事规则' in p for p in self.models.requests))
         other=wait(self.agent,self.start('Make an edit',skill={'id':'food-tour','title':'Food tour','strategy':'Food'})['id'])
         self.assertNotIn('skillNotice',other)
+
+    def test_agent_uses_real_story_compiler_and_renders_without_skill(self):
+        gateway = ModelGateway(self.agent.root)
+        self.addCleanup(gateway.close)
+        if not gateway.capabilities().get('localStory'): self.skipTest('VisionFlow runtime unavailable')
+        self.models.intent = 'create'
+        with patch.object(self.models, 'story', side_effect=gateway.story):
+            run = wait(self.agent, self.start('Create a short film')['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertIsNone(run['skill'])
+        self.assertEqual(gateway.observations['story'], 'verified')
+        self.assertTrue(Path(run['storyExecution']['path']).is_file())
+        story = json.loads(Path(run['storyExecution']['path']).read_text())
+        self.assertEqual(story['beats'][0]['clips'][0]['record_id'], run['timeline'][0]['mediaId'])
+        self.assertEqual(story['beats'][0]['clips'][0]['instance'], run['timeline'][0]['id'])
+        self.assertTrue(any(a['type'] == 'preview' and Path(a['path']).is_file() for a in run['artifacts']))
+        revised = self.agent.action({'id':run['id'], 'action':'timeline', 'version':run['version'], 'timeline':run['timeline']})
+        self.assertTrue(revised['storyExecution']['stale'])
+        self.assertEqual(revised['storyExecution']['timelineVersion'], 1)
+
+    def test_story_failure_is_visible_not_silent_fallback(self):
+        self.models.intent = 'plan'
+        with patch.object(self.models, 'story', side_effect=RuntimeError('Story compiler unavailable')):
+            run = wait(self.agent, self.start('Plan a short film')['id'])
+        self.assertEqual(run['status'], 'failed')
+        self.assertIn('Story compiler unavailable', run['message'])
+        self.assertFalse(run.get('timeline'))
+
+    def test_analysis_and_search_do_not_compile_a_story(self):
+        for intent in ('analyze', 'search'):
+            self.models.intent = intent
+            with patch.object(self.models, 'story', side_effect=AssertionError('Unexpected story call')):
+                run = wait(self.agent, self.start('Find an interesting moment' if intent == 'search' else 'Analyze footage')['id'])
+            self.assertEqual(run['status'], 'completed', run['message'])
+
+    def test_invalid_story_chapters_get_one_model_repair(self):
+        self.models.intent = 'plan'
+        original = self.models.ask
+        def ask(prompt, *args, **kwargs):
+            result = original(prompt, *args, **kwargs)
+            if 'Plan an edit using only' in prompt and 'Repair the invalid proposal' not in prompt:
+                result['beats'] = [{'first':99}]
+            return result
+        with patch.object(self.models, 'ask', side_effect=ask):
+            run = wait(self.agent, self.start('Plan a short film')['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        self.assertTrue(any('Story chapters must partition' in p for p in self.models.requests))
+
+    def test_text_skill_invocation_and_followup_without_inheritance(self):
+        self.models.intent='plan'
+        first=wait(self.agent,self.start('使用 Travel Vlog，规划旅行视频')['id'])
+        self.assertEqual(first['skillExecution']['id'],'visionflow-travel-director')
+        follow=wait(self.agent,self.start('重新规划，只用引擎能力',id=first['projectId'])['id'])
+        self.assertEqual(follow['status'],'completed',follow['message'])
+        self.assertIsNone(follow['skill'])
+        self.assertNotIn('skillExecution',follow)
+        self.assertNotIn('skillNotice',follow)
+
+    def test_retry_clears_legacy_implicit_skill_rules(self):
+        self.models.intent='plan'
+        with patch.object(self.agent,'dispatch'):
+            run=self.start('Make a travel plan')
+        run.update(status='failed',stage='plan',skillExecution={'id':'visionflow-travel-director'},
+                   skillNotice='Travel Vlog',coverageMode='all_usable_unique',automaticMusic=True,
+                   contentLedDuration=True)
+        self.agent.save(run)
+        retried=wait(self.agent,self.agent.action({'id':run['id'],'action':'retry'})['id'])
+        self.assertEqual(retried['status'],'completed',retried['message'])
+        self.assertNotIn('skillExecution',retried)
+        self.assertNotIn('skillNotice',retried)
+        self.assertEqual(retried['coverageMode'],'selected')
+        self.assertFalse(retried['automaticMusic'])
     def test_mixed_media_reaches_planning_without_type_confirmation(self):
         photo=self.library.register([str(ROOT/'public/media/travel/story/coffee.jpg')])['items'][0]['id']
         self.models.intent='plan'
@@ -577,6 +728,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(r['status'],'completed',r['message']); self.assertEqual(len(calls),1)
         self.assertTrue(any(a['type']=='subtitle' for a in r['artifacts']))
         self.models.intent='create'
+        self.models.routerPatch={'finishingRequest':{'music':'add'}}
         mixed=wait(self.agent,self.start('剪辑视频和背景音乐',mediaIds=[self.asset,audio])['id'])
         # Mixed visual/audio edits are supported now; verify the selected audio
         # reaches the actual preview instead of expecting the old limitation.
@@ -594,7 +746,7 @@ class AgentTests(unittest.TestCase):
         self.models.intent='create'; r=wait(self.agent,self.start('Create 3 seconds')['id'])
         self.assertEqual(r['status'],'completed',r['message'])
         self.assertTrue(list(self.agent.root.glob('*/preview*')))
-        self.assertFalse(any(item['status']=='review' for item in r.get('conversationHistory', [])))
+        self.assertTrue(any(item['status']=='review' and item.get('selected')=='approve' for item in r.get('conversationHistory', [])))
         with self.assertRaisesRegex(ValueError, 'pending'):
             self.agent.action({'id':r['id'],'action':'approve'})
         with self.assertRaises(ValueError): self.agent.action({'id':r['id'],'action':'timeline','version':99,'timeline':r['timeline']})

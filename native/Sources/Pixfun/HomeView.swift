@@ -66,7 +66,7 @@ struct BriefComposer: View {
                             pendingExample = example
                             confirmReplacement = true
                         } else {
-                            store.composerDraft.prompt = example.applying(to: store.composerDraft.prompt)
+                            store.composerDraft.prompt = store.language.text(example.applying(to: store.composerDraft.prompt))
                             writing = true
                         }
                     } label: {
@@ -76,7 +76,7 @@ struct BriefComposer: View {
                                 .foregroundStyle(Color.pixfunGold)
                                 .frame(width: 18)
                                 .accessibilityHidden(true)
-                            Text(example.outcome).font(.pixfun(13))
+                            Text(LocalizedStringKey(example.outcome)).font(.pixfun(13))
                                 .lineLimit(1).minimumScaleFactor(0.9)
                             Spacer(minLength: 8)
                             Image(systemName: "arrow.up.left")
@@ -93,7 +93,7 @@ struct BriefComposer: View {
             .alert("Replace your draft?", isPresented: $confirmReplacement) {
                 Button("Cancel", role: .cancel) { pendingExample = nil }
                 Button("Use example") {
-                    if let example = pendingExample { store.composerDraft.prompt = example.prompt; writing = true }
+                    if let example = pendingExample { store.composerDraft.prompt = store.language.text(example.prompt); writing = true }
                     pendingExample = nil
                 }
             } message: { Text("This example will replace your text. Your attached files will stay.") }
@@ -107,7 +107,7 @@ struct ComposerToolLabel: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol).font(.system(size: 14, weight: .regular)).frame(width: 16, height: 16)
-            Text(title).lineLimit(1)
+            Text(LocalizedStringKey(title)).lineLimit(1)
         }.fixedSize(horizontal: true, vertical: false)
     }
 }

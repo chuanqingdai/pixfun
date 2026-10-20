@@ -41,7 +41,9 @@ struct PixfunApp: App {
             }
             CommandMenu("Workspace") {
                 ForEach(Array(WorkspacePage.primaryPages.enumerated()), id: \.element.id) { index, page in
+                  if page != .mediaMap || store.hasMediaMap {
                     Button(page.navigationTitle) { store.navigate(page) }.keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
+                  }
                 }
             }
         }
@@ -67,6 +69,12 @@ struct WorkspaceView: View {
                         case .media:
                             if let item = store.detail { MediaDetailView(initialItem: item).id(item.id) }
                             else { MediaView() }
+                        case .mediaMap:
+                            ZStack {
+                                MediaMapView().opacity(store.detail == nil ? 1 : 0)
+                                    .allowsHitTesting(store.detail == nil).accessibilityHidden(store.detail != nil)
+                                if let item = store.detail { MediaDetailView(initialItem: item).id(item.id) }
+                            }
                         case .mediaSync: MediaSyncView(service: store.service, showMedia: { store.openSyncedMedia($0, name: $1) })
                         case .home, .skills, .project: CreationWorkspaceView()
                         }
@@ -108,7 +116,7 @@ struct PixfunSidebar: View {
                 .padding(.top, 18).padding(.bottom, 20)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 22) {
-                    navigationGroup("Media", pages: WorkspacePage.mediaPages)
+                    navigationGroup("Media", pages: store.sidebarMediaPages)
                     navigationGroup("Create", pages: WorkspacePage.creationPages, beta: true)
                 }
             }

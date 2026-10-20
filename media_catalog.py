@@ -10,13 +10,13 @@ from media_evidence import canonical_shots, shot_revision
 
 def source_key(source):
     stat = source.stat()
-    return hashlib.sha256(f'{source.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:vf-sample-070-v1'.encode()).hexdigest()
+    return hashlib.sha256(f'{source.resolve()}:{stat.st_size}:{stat.st_mtime_ns}:vf-sample-091-v1'.encode()).hexdigest()
 
 
 def sampling(agent, source, cancel):
     if cancel.is_set(): raise AgentCancelled()
     folder = agent.root/'catalogs'/source_key(source)
-    # VisionFlow 0.7 fingerprint contract. Cache hits need neither a helper
+    # VisionFlow 0.9.1 fingerprint contract. Cache hits need neither a helper
     # process nor the model lock, and never unload the resident vision model.
     saved = folder/'observation.json'
     def stamp():
@@ -156,7 +156,7 @@ class MediaCatalog:
                         if (shot_revision(current) if current else None) != revision:
                             raise ValueError('Shot boundaries changed during indexing')
                         self.library.patch(key, vectorIndex={'status':result['status'],'sourceKey':stamp,
-                            'shotRevision':revision, 'engineVersion':'0.7.0','message':result.get('message','')})
+                            'shotRevision':revision, 'engineVersion':'0.9.1','message':result.get('message','')})
                         if result['status'] != 'ready': failures.append(key)
                     except AgentCancelled: raise
                     except Exception:

@@ -53,6 +53,11 @@ struct AppSettingsView: View {
                             .labelsHidden().toggleStyle(.switch).disabled(!draft.onlinePlaceNames)
                             .accessibilityIdentifier("settings.placeBoundaries")
                     }
+                    settingRow("Verify places with a backup service", hint: "When boundary lookup is unavailable, send only recorded coordinates to Nominatim (OpenStreetMap). Names are used only after polygon containment is verified. Results are cached; originals are never uploaded.") {
+                        Toggle("Verify places with a backup service", isOn: $draft.onlinePlaceFallback)
+                            .labelsHidden().toggleStyle(.switch).disabled(!draft.onlinePlaceNames || !draft.onlinePlaceBoundaries)
+                            .accessibilityIdentifier("settings.placeFallback")
+                    }
                     Link("© OpenStreetMap contributors · ODbL", destination: URL(string: "https://www.openstreetmap.org/copyright")!)
                         .font(.system(size: 11))
                 }
@@ -146,7 +151,7 @@ struct AppSettingsView: View {
         // Use the saved locale, never the tentative language selection.
         .environment(\.locale, store.language.locale)
         .onAppear {
-            draft = AppSettingsDraft(language: store.language, cloud: CloudSettings.read() ?? CloudSettings(), mode: store.agentMode, onlinePlaceNames: store.onlinePlaceNames, onlinePlaceBoundaries: store.onlinePlaceBoundaries)
+            draft = AppSettingsDraft(language: store.language, cloud: CloudSettings.read() ?? CloudSettings(), mode: store.agentMode, onlinePlaceNames: store.onlinePlaceNames, onlinePlaceBoundaries: store.onlinePlaceBoundaries, onlinePlaceFallback: store.onlinePlaceFallback)
             original = draft
             cloudExpanded = draft.mode != "local"
         }
@@ -192,8 +197,8 @@ struct AppSettingsView: View {
                     original.cloud = draft.cloud; original.mode = draft.mode
                 }
                 if draft.language != original.language { try await store.saveLanguage(draft.language) }
-                if draft.onlinePlaceBoundaries != original.onlinePlaceBoundaries || draft.onlinePlaceNames != original.onlinePlaceNames {
-                    store.savePlaceSettings(names: draft.onlinePlaceNames, boundaries: draft.onlinePlaceBoundaries)
+                if draft.onlinePlaceBoundaries != original.onlinePlaceBoundaries || draft.onlinePlaceNames != original.onlinePlaceNames || draft.onlinePlaceFallback != original.onlinePlaceFallback {
+                    store.savePlaceSettings(names: draft.onlinePlaceNames, boundaries: draft.onlinePlaceBoundaries, fallback: draft.onlinePlaceFallback)
                 }
                 dismiss()
             } catch { self.error = error.localizedDescription }

@@ -6,6 +6,10 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var name: String { self == .chinese ? "简体中文" : "English" }
     var locale: Locale { Locale(identifier: rawValue) }
+    func text(_ key: String) -> String {
+        let bundle = Bundle.main.path(forResource: rawValue, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
+        return bundle.localizedString(forKey: key, value: key, table: nil)
+    }
     static var saved: AppLanguage {
         AppLanguage(rawValue: UserDefaults.standard.string(forKey: "appLanguage") ?? "zh-Hans") ?? .chinese
     }
@@ -18,6 +22,7 @@ struct AppSettingsDraft: Equatable {
     var mode = "local"
     var onlinePlaceNames = false
     var onlinePlaceBoundaries = false
+    var onlinePlaceFallback = false
     func requiresCloudSave(comparedTo original: Self) -> Bool {
         cloud != original.cloud || mode != original.mode
     }

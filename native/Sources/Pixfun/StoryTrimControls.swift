@@ -1,6 +1,35 @@
 import SwiftUI
 import AVKit
 
+/// A compact optional row inside the existing trim controls, not another tool.
+struct StorySpeechHints: View {
+    let kind: String
+    let inPoint: StorySpeechBoundary?
+    let outPoint: StorySpeechBoundary?
+    let disabled: Bool
+    let choose: (StorySpeechBoundary, Bool) -> Void
+    var body: some View {
+        if inPoint != nil || outPoint != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(LocalizedStringKey(kind == "subtitle" ? "Subtitle boundary reference · check the original audio" : "Speech boundary reference · check the original audio")).font(.pixfun(10))
+                HStack {
+                    if let inPoint { choice(inPoint, leading: true) }
+                    Spacer(minLength: 3)
+                    if let outPoint { choice(outPoint, leading: false) }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    func choice(_ point: StorySpeechBoundary, leading: Bool) -> some View {
+        Button { choose(point, leading) } label: {
+            HStack(spacing: 3) {
+                Text(LocalizedStringKey(leading ? "In" : "Out"))
+                Text("→ \(StoryTimeline.timecode(point.time))").monospacedDigit()
+            }
+        }.buttonStyle(.plain).foregroundStyle(Color.pixfunGold).help(point.text).disabled(disabled)
+    }
+}
+
 /// Return/focus loss commits a valid value; Escape restores it. No extra Apply button.
 struct StoryTimeField: View {
     let value: Double
@@ -22,7 +51,9 @@ struct StoryTimeField: View {
             .focused($focused).accessibilityLabel(label)
             .help(invalid ? invalidHelp : label)
             .onAppear { text = formatted }
-            .onChange(of: value) { next in if !focused { text = format(next); invalid = false } }
+            // Explicit boundary choices, slider edits and undo must update the
+            // displayed time even if AppKit leaves this text field focused.
+            .onChange(of: value) { next in text = format(next); invalid = false }
             .onChange(of: focused) { active in if !active { apply() } }
             .onSubmit { apply() }
             .onExitCommand { text = formatted; invalid = false; focused = false }
@@ -41,6 +72,7 @@ struct StorySourceRange: View {
     let start: Double
     let end: Double
     let enabled: Bool
+    var speechBoundaries: [StorySpeechBoundary] = []
     let changing: (ClosedRange<Double>, Int) -> Void
     let editing: (Bool) -> Void
     @State private var frames: [NSImage] = []
@@ -60,6 +92,11 @@ struct StorySourceRange: View {
                 Color.black.opacity(0.65).frame(width: max(0, left))
                 Color.black.opacity(0.65).frame(width: max(0, geo.size.width - right)).offset(x: right)
                 Rectangle().strokeBorder(Color.pixfunGold, lineWidth: 2).frame(width: max(2, right - left)).offset(x: left)
+                ForEach(speechBoundaries.filter { $0.time.isFinite && $0.time >= 0 && $0.time <= length }.prefix(80)) { mark in
+                    Rectangle().fill(Color.pixfunGold.opacity(0.85)).frame(width: 1, height: 9)
+                        .offset(x: min(geo.size.width - 1, geo.size.width * mark.time / max(0.25, length)), y: 15)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
                 handle.offset(x: max(0, left - 5))
                 handle.offset(x: min(geo.size.width - 10, right - 5))
                 StoryRangeTracking(start: start, end: end, length: length, enabled: enabled, changing: changing, editing: editing)
@@ -128,19 +165,60 @@ struct StoryRangeTracking: NSViewRepresentable {
 }
 
 struct StoryReplacementPicker: View {
+    @EnvironmentObject var store: WorkspaceStore
     let items: [MediaItem]
-    let current: String
-    let choose: (MediaItem) -> Void
+    let shot: AgentShot
+    let runID: String
+    let version: Int
+    let shots: [AgentShot]
+    let choose: (MediaItem, StoryReplacement?) async throws -> Void
     @Environment(\.dismiss) var dismiss
     @State private var query = ""
+    @State private var recommendations: [StoryReplacement] = []
+    @State private var loading = true
+    @State private var unavailable = false
+    @State private var applying = false
+    @State private var failure: String?
+    var matches: [MediaItem] { items.filter { $0.id != shot.mediaId && ($0.matches(query) || query.isEmpty) } }
+    var suggestions: [StoryReplacement] { recommendations.filter { c in items.contains { $0.id == c.mediaId && ($0.matches(query) || query.isEmpty || c.description.localizedCaseInsensitiveContains(query)) } } }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Replace with project media").font(.pixfun(17, semibold: true)); Spacer(); Button("Cancel") { dismiss() } }
+            HStack { Text("Replace with project media").font(.pixfun(17, semibold: true)); Spacer(); Button("Cancel") { dismiss() }.disabled(applying) }
             TextField("Search project media…", text: $query).textFieldStyle(.roundedBorder)
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(items.filter { $0.id != current && ($0.matches(query) || query.isEmpty) }) { item in
-                        Button { choose(item) } label: {
+                    if loading { ProgressView("Finding alternatives from saved analysis…").font(.pixfun(12)) }
+                    else if unavailable {
+                        HStack {
+                            Text("Suggestions unavailable. You can still choose project media.")
+                            Button("Retry") { Task { await loadSuggestions() } }
+                        }.font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    } else if recommendations.isEmpty {
+                        Text("No suitable alternatives in saved analysis. Choose project media below.").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    }
+                    if !suggestions.isEmpty {
+                        Text("Suggested moments · same duration").font(.pixfun(12, semibold: true)).frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(suggestions) { candidate in
+                            if let item = items.first(where: { $0.id == candidate.mediaId }) {
+                                Button { apply(item, candidate) } label: {
+                                    HStack(spacing: 12) {
+                                        ServiceImage(path: item.cover).frame(width: 80, height: 54).clipped().cornerRadius(6)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(item.name).font(.pixfun(13, semibold: true)).lineLimit(1)
+                                            Text(LocalizedStringKey(candidate.reasonKey)).font(.pixfun(11)).foregroundStyle(Color.pixfunGold)
+                                            Text("\(StoryTimeline.timecode(candidate.start))–\(StoryTimeline.timecode(candidate.end))").font(.pixfun(11)).monospacedDigit()
+                                            Text(candidate.description).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(2)
+                                        }
+                                        Spacer()
+                                    }.padding(8).contentShape(Rectangle())
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                        Divider()
+                    }
+                    Text("All project media").font(.pixfun(12, semibold: true)).frame(maxWidth: .infinity, alignment: .leading)
+                    ForEach(matches) { item in
+                        Button { apply(item, nil) } label: {
                             HStack(spacing: 12) {
                                 ServiceImage(path: item.cover).frame(width: 80, height: 54).clipped().cornerRadius(6)
                                 VStack(alignment: .leading, spacing: 4) {
@@ -153,10 +231,34 @@ struct StoryReplacementPicker: View {
                         }.buttonStyle(.plain)
                     }
                 }
-                if items.filter({ $0.id != current && ($0.matches(query) || query.isEmpty) }).isEmpty {
+                if matches.isEmpty && suggestions.isEmpty && !loading {
                     Text("No matching project media").font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).padding()
                 }
             }
+            .disabled(applying)
+            if applying { ProgressView("Replacing clip…").font(.pixfun(12)) }
+            if let failure { Text(failure).font(.pixfun(12)).foregroundStyle(.orange) }
         }.padding(20).frame(width: 520, height: 420).background(Color.pixfunBackground)
+            .interactiveDismissDisabled(applying)
+            .task { await loadSuggestions() }
+    }
+    func loadSuggestions() async {
+        loading = true; unavailable = false
+        do {
+            let payload = try StoryAssistance.payload(runID: runID, version: version, shots: shots, action: "replace", shotID: shot.id)
+            let result: StoryAssistance = try await store.service.post("/api/desktop/agent/editor-assist", payload, native: true)
+            try Task.checkCancellation()
+            recommendations = result.recommendations
+        } catch { if !Task.isCancelled { unavailable = true } }
+        loading = false
+    }
+    func apply(_ item: MediaItem, _ candidate: StoryReplacement?) {
+        guard !applying else { return }
+        applying = true; failure = nil
+        Task {
+            do { try await choose(item, candidate) }
+            catch { failure = error.localizedDescription }
+            applying = false
+        }
     }
 }

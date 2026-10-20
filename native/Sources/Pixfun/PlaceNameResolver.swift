@@ -28,6 +28,8 @@ struct PlaceAddress: Codable {
     var areaRelation: String? = nil
     var placeKind: String? = nil
     var boundaryRetry: Bool? = nil
+    var shortName: String? = nil
+    var shortNameSource: String? = nil
     var label: String? {
         var parts: [String] = []
         let areaLabel = areaRelation == "nearby" ? displayName : area
@@ -41,6 +43,7 @@ struct PlaceAddress: Codable {
 
 @MainActor final class PlaceNameResolver {
     static let consentKey = "onlinePlaceNamesEnabled"
+    static let aliasesKey = "placeDisplayAliases.v1"
     private static let cacheKey = "placeNamesCache.v3"
     struct Entry: Codable { let address: PlaceAddress; let savedAt: Date }
     typealias Lookup = (PlaceQuery) async throws -> PlaceAddress?
@@ -53,6 +56,7 @@ struct PlaceAddress: Codable {
     private let canRequest: () -> Bool
     private let useBoundaries: () -> Bool
     private let boundaryLookup: BoundaryLookup
+    private let cachedBoundary: (PlaceQuery) -> PlaceBoundaryPolicy.Match?
     private var cache: [String: Entry]
     private var failures: [String: Date] = [:]
     private var pending: [PlaceQuery] = []
@@ -64,12 +68,14 @@ struct PlaceAddress: Codable {
 
     init(defaults: UserDefaults = .standard, interval: TimeInterval = 5, retryDelay: TimeInterval = 300,
          now: @escaping () -> Date = Date.init, canRequest: @escaping () -> Bool = { true },
-         useBoundaries: (() -> Bool)? = nil, lookup: Lookup? = nil, boundaryLookup: BoundaryLookup? = nil) {
+         useBoundaries: (() -> Bool)? = nil, lookup: Lookup? = nil, boundaryLookup: BoundaryLookup? = nil,
+         cachedBoundary: ((PlaceQuery) -> PlaceBoundaryPolicy.Match?)? = nil) {
         self.defaults = defaults; self.interval = interval; self.retryDelay = retryDelay; self.now = now
         self.lookup = lookup ?? Self.appleLookup; self.canRequest = canRequest
         self.useBoundaries = useBoundaries ?? { defaults.bool(forKey: PlaceBoundaryLookup.consentKey) }
         let boundaries = PlaceBoundaryLookup(defaults: defaults)
         self.boundaryLookup = boundaryLookup ?? { try await boundaries.lookup($0) }
+        self.cachedBoundary = cachedBoundary ?? { boundaries.cachedMatch($0) }
         self.cache = defaults.data(forKey: Self.cacheKey).flatMap { try? JSONDecoder().decode([String: Entry].self, from: $0) } ?? [:]
     }
 
@@ -96,7 +102,9 @@ struct PlaceAddress: Codable {
         }
     }
 
-    private func key(_ query: PlaceQuery) -> String { query.key + (useBoundaries() ? ":boundaries" : ":apple") }
+    private func key(_ query: PlaceQuery) -> String {
+        query.key + (useBoundaries() ? (defaults.bool(forKey: PlaceFallbackLookup.consentKey) ? ":boundaries:fallback" : ":boundaries") : ":apple")
+    }
 
     func cached(_ query: PlaceQuery) -> String? {
         guard let entry = cache[key(query)], now().timeIntervalSince(entry.savedAt) <
@@ -107,27 +115,66 @@ struct PlaceAddress: Codable {
     func resolved(_ query: PlaceQuery) -> ResolvedPlace? {
         guard let entry = cache[key(query)], let label = cached(query) else { return nil }
         let enriched = entry.address.boundaryID != nil
-        return ResolvedPlace(version: enriched ? 3 : 2, label: label, area: entry.address.area,
+        return formatted(ResolvedPlace(version: enriched ? 3 : 2, label: label, area: entry.address.area,
                              nearbyName: entry.address.nearbyName, latitude: query.latitude,
                              longitude: query.longitude, language: query.language,
                              provider: enriched ? "apple-osm" : "apple-geocoder", resolvedAt: entry.savedAt.timeIntervalSince1970,
                              displayName: entry.address.displayName, boundaryID: entry.address.boundaryID,
-                             areaRelation: entry.address.areaRelation, placeKind: entry.address.placeKind)
+                             areaRelation: entry.address.areaRelation, placeKind: entry.address.placeKind,
+                             city: entry.address.city, region: entry.address.region,
+                             shortName: entry.address.shortName, shortNameSource: entry.address.shortNameSource))
+    }
+
+    private func formatted(_ original: ResolvedPlace) -> ResolvedPlace {
+        var place = original
+        place.city = place.city ?? PlaceCaption.city(in: place.label)
+        if let area = place.area {
+            let city = PlaceCaption.context(place.city, chinese: place.language == "zh-Hans")
+            let aliases = defaults.dictionary(forKey: Self.aliasesKey) as? [String: String] ?? [:]
+            // Explicit naming preferences are scoped to city AND canonical area.
+            if let alias = aliases[city + "|" + area]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !city.isEmpty, !alias.isEmpty, alias.count <= 200 {
+                place.shortName = alias
+                place.shortNameSource = "user-alias"
+            }
+        }
+        place.displayName = PlaceCaption.make(city: place.city, region: place.region, area: place.area,
+                                            shortName: place.shortName, relation: place.areaRelation,
+                                            kind: place.placeKind, chinese: place.language == "zh-Hans")
+        return place
     }
 
     func applyingCache(to items: [MediaItem], language: String) -> [MediaItem] {
-        items.map { original in
+        var changed = false
+        let mapped: [MediaItem] = items.map { original -> MediaItem in
             var item = original
             item.metadata?.location?.resolvedName = nil
             if let query = item.placeQuery(language: language) {
-                if let place = resolved(query) { item.resolvedPlace = place }
+                // Local geometry is cheap and independent of the online queue.
+                // New imports must not delay already-verified areas behind
+                // dozens of unrelated network lookups.
+                if useBoundaries(), resolved(query)?.version != 3, let match = cachedBoundary(query) {
+                    let old = item.validResolvedPlace
+                    let address = cache[key(query)]?.address ?? cache[query.key + ":boundaries"]?.address ??
+                        cache[query.key + ":apple"]?.address ??
+                        PlaceAddress(region: old?.region, city: old?.city ?? old.flatMap { PlaceCaption.city(in: $0.label) })
+                    cache[key(query)] = Entry(address: PlaceBoundaryPolicy.applying(match, to: address, language: language), savedAt: now())
+                    changed = true
+                }
+                if let place = resolved(query),
+                   place.version == 3 || item.validResolvedPlace?.version != 3 || item.validResolvedPlace?.language != language {
+                    item.resolvedPlace = place
+                }
                 if item.resolvedPlace?.language != language { item.resolvedPlace = nil }
                 if item.resolvedPlace?.language == language, let place = item.validResolvedPlace {
+                    item.resolvedPlace = formatted(place)
                     item.metadata?.location?.resolvedName = place.label
                 }
             }
             return item
         }
+        if changed, let saved = try? JSONEncoder().encode(cache) { defaults.set(saved,forKey:Self.cacheKey) }
+        return mapped
     }
 
     func schedule(_ queries: [PlaceQuery], enabled: Bool, foreground: Bool) {

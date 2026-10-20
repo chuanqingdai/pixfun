@@ -11,15 +11,17 @@ test('every skill begins with a distinct scope and a boundary',()=>{
  const native=fs.readFileSync('native/Sources/Pixfun/SkillsView.swift','utf8');
  assert(native.indexOf('skill.applicability')<native.indexOf('Story framework'));
 });
-test('all skill covers use distinct real photography with recorded sources',()=>{
+test('editorial covers retain their photography sources and motion covers remain distinct',()=>{
  const crypto=require('node:crypto');
  const provenance=require('../public/media/travel/skill-photo-covers.json');
  assert.equal(new Set(skills.map(skill=>skill.image)).size,skills.length);
  const hashes=skills.map(skill=>{
+  if(skill.category!=='motion'){
   assert.match(skill.image,/^skill-.+-photo-v3$/);
   const cover=provenance.covers.find(cover=>cover.id===skill.id);
   assert.equal(cover.image,skill.image);assert.equal(cover.kind,'real stock footage still');
   assert(/^https:\/\/(mixkit.co\/free-stock-video\/|www.pexels.com\/video\/)/.test(cover.url));
+  }else{assert.match(skill.image,/^skill-.+-travel-v3$/);}
   const data=fs.readFileSync(`public/media/travel/${skill.image}.jpg`);
   assert.equal(data.readUInt16BE(0),0xffd8,'Cover must be a JPEG');
   assert(data.length>20000,'Cover must not be an empty placeholder');
@@ -27,8 +29,10 @@ test('all skill covers use distinct real photography with recorded sources',()=>
  });
  assert.equal(new Set(hashes).size,skills.length);
 });
-test('ten creator skills carry material-specific editorial strategies',()=>{
- assert.equal(skills.length,10);assert.equal(new Set(skills.map(t=>t.id)).size,10);
+test('ten editorial and three motion skills retain their scoped strategies',()=>{
+ assert.equal(skills.length,13);assert.equal(new Set(skills.map(t=>t.id)).size,13);
+ assert.equal(skills.filter(s=>s.category!=='motion').length,10);
+ assert.deepEqual(skills.filter(s=>s.category==='motion').map(s=>s.id),['motion-titles','journey-route','highlight-counter']);
  for(const skill of skills){assert(skill.structure.length>=3);assert.equal(skill.materials.length,2);assert(skill.sound&&skill.pacing&&skill.avoid);assert(fs.existsSync(`public/media/travel/${skill.image}.jpg`));assert(!skill.stage);}
  const food=skills.find(skill=>skill.id==='food-tour');
  const brief=buildBrief(food,'Keep it under 3 minutes.');assert(brief.includes('Food tour'));assert(brief.includes(food.sound));assert(brief.includes(food.beats[0]));assert(brief.includes('Keep it under 3 minutes.'));

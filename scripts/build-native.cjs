@@ -1,5 +1,6 @@
 'use strict';
-// Offline, native macOS build. No Electron, browser runtime, or npm download.
+// Offline native macOS UI build; includes the separate local motion-render runtime.
+// No Electron UI or npm download during packaging.
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
@@ -32,6 +33,10 @@ fs.chmodSync(path.join(contents, 'MacOS/Pixfun'), 0o755);
 for (const [source, destination] of [
   ['build-desktop/backend', 'backend'], ['build-desktop/media/bin', 'bin'],
   ['scripts/agent-model-worker.py', 'agent-model-worker.py'],
+  ['scripts/vf_story.py', 'vf_story.py'],
+  ['scripts/vf_hyperframes.py', 'vf_hyperframes.py'],
+  ['scripts/vf_travel_graphics.py', 'vf_travel_graphics.py'],
+  ['scripts/hyperframes-templates', 'hyperframes-templates'],
   ['scripts/vf_media_catalog.py', 'vf_media_catalog.py'],
   ['scripts/vf_beauty.py', 'vf_beauty.py'],
   ['scripts/agent_process_security.py', 'agent_process_security.py'],
@@ -48,6 +53,12 @@ for (const [source, destination] of [
   fs.cpSync(sourcePath, path.join(resources, destination), {recursive:true, verbatimSymlinks:true});
 }
 const {skills, buildBrief} = require('../public/desktop-skills.js');
+const hfRuntime = path.join(root, 'build-native/hyperframes-runtime');
+for (const entry of ['node', 'NODE-LICENSE', 'node_modules', 'package.json', 'package-lock.json', 'showcase']) {
+  const source = path.join(hfRuntime, entry);
+  if (!fs.existsSync(source)) throw new Error(`Missing motion-render resource: ${source}`);
+  fs.cpSync(source, path.join(resources, 'HyperFrames', entry), {recursive:true, verbatimSymlinks:true});
+}
 fs.writeFileSync(path.join(resources, 'skills.json'), JSON.stringify(skills.map(skill => ({...skill, strategy:buildBrief(skill, '')})), null, 2));
 fs.mkdirSync(path.join(resources, 'SkillCovers'), {recursive:true});
 for (const skill of skills.filter(skill => skill.source)) {
@@ -99,6 +110,11 @@ run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
 if (process.argv.includes('--stage-only')) {
   console.log(`Native app staged (installed app unchanged): ${app}`);
   process.exit(0);
+}
+try { require('./native-install-safety.cjs').assertAppStopped(destinationApp); }
+catch (error) {
+  console.error(`${error.message}\nVerified update remains staged at: ${app}`);
+  process.exit(1);
 }
 if (fs.existsSync(destinationApp)) fs.renameSync(destinationApp, path.join(staging, 'Previous-Pixfun.app'));
 fs.renameSync(app, destinationApp);

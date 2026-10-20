@@ -86,6 +86,7 @@ struct MediaSearchDocument {
             .init(.content, "Description", item.description, priority: 80),
             .init(.content, "Video summary", item.shotAnalysis?.summary, priority: 80),
             .init(.context, "Location", item.recordedLocation, priority: 75),
+            .init(.context, "Place label", item.locationGroup, priority: 75),
             .init(.context, "Recorded coordinates", item.metadata?.location?.coordinates, priority: 70),
             .init(.context, "Device", item.context?["device"], priority: 65)
         ]
@@ -274,7 +275,9 @@ enum MediaTagPresentation {
                 return a == b ? $0.text.localizedStandardCompare($1.text) == .orderedAscending : a < b
             }.first
         }
-        let candidates = [best(.location) ?? best(.scene), best(.activity), best(.subject), best(.scene)].compactMap { $0 }
+        // Read as where → who/what → doing what. Missing evidence is skipped;
+        // a scene is supplementary, never a substitute for a verified location.
+        let candidates = [best(.location), best(.subject), best(.activity), best(.scene)].compactMap { $0 }
         var texts = Set<String>(), facets = Set<MediaFacet>()
         return Array(candidates.filter {
             guard !facets.contains($0.facet), !texts.contains(MediaSearchQuery.fold($0.text)) else { return false }

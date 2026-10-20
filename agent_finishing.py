@@ -112,6 +112,9 @@ def validate(value, records, duration, shots=None):
     if not isinstance(transition, dict) or transition.get('kind') not in ('none', 'fade'):
         raise ValueError('Only cuts and fade-through-black transitions are supported.')
     out['transition'] = {'kind': transition['kind'], 'duration': numeric(transition.get('duration', .25), .05, 1)}
+    if 'motionTitle' in value:
+        from agent_hyperframes import validate_title
+        out['motionTitle'] = validate_title(value['motionTitle'])
     return agent_layers.validate(value, out, duration, numeric, shots)
 
 
@@ -210,6 +213,10 @@ def mix(engine, run, folder, base, target, finishing, duration, cancel):
 
 def summary(finishing, records):
     lines = []
+    graphic = finishing.get('motionTitle')
+    if graphic and graphic.get('kind') != 'none':
+        label = str(graphic.get('total', ''))+' '+graphic['text'] if graphic['kind']=='counter' else graphic['text']
+        lines.append('Motion graphic: '+label.strip())
     if finishing.get('music'):
         m = finishing['music']
         lines.append('Music: ' + records[m['mediaId']]['file']['name'] + (' · auto-ducking' if m['ducking'] else ''))
