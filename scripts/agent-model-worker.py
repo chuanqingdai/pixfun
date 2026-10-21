@@ -4,22 +4,57 @@ import json
 import os
 from pathlib import Path
 import sys
+sys.dont_write_bytecode = True
 import gc
 import ast
+import re
 import subprocess
 from types import SimpleNamespace
 
 os.environ['HF_HUB_OFFLINE'] = '1'
+os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
-runtime = Path(os.environ.get('PIXFUN_VF_ROOT', str(Path.home() / 'work/visionflow/vf-agent')))
+required_version = '0.9.1'
+configured_runtime = os.environ.get('PIXFUN_VF_ROOT')
+preferred_runtime = Path.home() / 'work/visionflow/vf-agent-0.9.1'
+runtime = Path(configured_runtime) if configured_runtime else (preferred_runtime if preferred_runtime.is_dir() else Path.home() / 'work/visionflow/vf-agent')
+sys.path.insert(0, str(runtime))
 sys.path.insert(0, str(runtime / 'scripts'))
 engine = None
+preprocess_only = '--preprocess-only' in sys.argv
 for line in sys.stdin:
     try:
         job = json.loads(line)
+        light = job.get('operation') in {'inspect', 'motion', 'story'} or (job.get('operation') == 'catalog' and job.get('action') == 'sample')
+        if preprocess_only and not light:
+            raise ValueError('Inference is prohibited in the preprocessing worker')
+        declared = re.search(r'^version\s*=\s*"([0-9][^"]*)"', (runtime/'pyproject.toml').read_text(), re.M)
+        if not declared or declared.group(1) != required_version:
+            raise RuntimeError(f'VisionFlow {required_version} is required; incompatible runtime was not loaded.')
         with contextlib.redirect_stdout(sys.stderr):
-            if job['operation'] == 'motion':
+            if job['operation'] == 'story':
+                from vf_story import handle
+                value = handle(job)
+            elif job['operation'] == 'catalog':
+                if job.get('action') != 'sample':
+                    engine = None; gc.collect()
+                    import mlx.core as mx
+                    mx.clear_cache()
+                from vf_media_catalog import handle
+                value = handle(job)
+                if job.get('action') != 'sample':
+                    import torch
+                    if torch.backends.mps.is_available(): torch.mps.empty_cache()
+            elif job['operation'] == 'hyperframes':
+                engine = None; gc.collect()
+                from vf_hyperframes import render
+                value = render(job, runtime)
+            elif job['operation'] == 'beauty':
+                engine = None; gc.collect()
+                from vf_beauty import score
+                value = score(job['images'])
+            elif job['operation'] == 'motion':
                 # Reuse VisionFlow's analysis functions without its CLI side effects.
                 # Its CLI assumes VideoToolbox; our decoder uses the bundled portable FFmpeg.
                 module = ast.parse((runtime / 'scripts/vf_motion.py').read_text())
@@ -50,6 +85,7 @@ for line in sys.stdin:
                        'spikes':result['spikes'] if result else []}
             elif job['operation'] == 'inspect':
                 import cv2
+                cv2.setNumThreads(1)
                 from vf_agent import photo_metrics
                 # Use the app's own YuNet/SFace pipeline for people. Never trigger InsightFace downloads here.
                 photo_metrics._faces = lambda image: []
@@ -106,7 +142,7 @@ for line in sys.stdin:
                     import mlx_whisper
                     result = mlx_whisper.transcribe(job['source'], path_or_hf_repo=job['model'], verbose=False,
                         word_timestamps=False, condition_on_previous_text=False)
-                    value = {'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
+                    value = {'language': result.get('language'), 'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
                                       for s in result.get('segments', []) if s.get('text', '').strip()]}
             elif job['operation'] == 'ask':
                 if engine is None:

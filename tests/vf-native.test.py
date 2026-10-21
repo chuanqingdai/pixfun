@@ -42,14 +42,33 @@ class NativeCatalogTests(unittest.TestCase):
         validate_source(r,Path(source)); self.source.write_bytes(b'changed')
         with self.assertRaises(FileNotFoundError): validate_source(r,Path(source))
 
+    def test_cached_capture_metadata_reaches_map_without_guessing(self):
+        data=self.shot['metadata']['media']['data']
+        data['format']={'tags':{'com.apple.quicktime.location.ISO6709':'+39.9000+116.4000/',
+                               'com.apple.quicktime.model':'Test Camera',
+                               'com.apple.quicktime.creationdate':'2024-10-01T12:00:00+08:00'}}
+        r,_=project_asset([self.shot])
+        self.assertEqual(r['metadata']['location']['latitude'],39.9)
+        self.assertEqual(r['metadata']['camera'],'Test Camera')
+        self.assertIn('Trip',r['analysisTags'])
+        self.assertNotIn('com.apple.quicktime.model',r['analysisTags'])
+        self.assertEqual(r['metadata']['capturedAt'],'2024-10-01T12:00:00+08:00')
+        data['format']={'tags':{'creation_time':'2026-10-21T00:00:00Z'}}
+        r,_=project_asset([self.shot])
+        self.assertIsNone(r['metadata']['capturedAt'])
+        self.assertIsNone(r['metadata']['location'])
+
     def test_refresh_preserves_edits_removal_and_does_not_enqueue(self):
         with patch.object(self.library,'enqueue',side_effect=AssertionError('must not rescan')):
             self.bridge.sync(); r=self.library.list()[0]
-            self.library.patch(r['id'],favorite=True,title='My title',description='My note',context={'location':'Corrected'})
+            self.library.patch(r['id'],favorite=True,title='My title',description='My note',context={'location':'Corrected'},tagCorrections={'hidden':['dog'],'added':[]},locationReview={'label':'Reviewed place'},importedAt=12345)
             self.bridge.sync(); again=self.library.list()[0]
             self.assertEqual(len(self.library.list()),1)
             self.assertEqual(again['title'],'My title'); self.assertTrue(again['favorite'])
             self.assertEqual(again['context']['location'],'Corrected')
+            self.assertEqual(again['tagCorrections']['hidden'],['dog'])
+            self.assertEqual(again['locationReview']['label'],'Reviewed place')
+            self.assertEqual(again['importedAt'],12345)
             with self.library.connect() as db: db.execute('UPDATE media SET removed=1')
             self.bridge.sync(); self.assertEqual(self.library.list(),[])
             self.assertTrue((self.library.directory/'before-visionflow.sqlite3').is_file())
@@ -75,6 +94,16 @@ class NativeCatalogTests(unittest.TestCase):
         self.assertEqual(received[0]['tag'],'Trip')
         self.assertEqual(rows[0]['start'],1.2)
         self.assertEqual(rows[0]['mediaId'],self.library.list()[0]['id'])
+
+    def test_proxy_is_not_exported_as_an_original(self):
+        from agent_export import SourceSnapshot
+        from types import SimpleNamespace
+        self.shot['context']['original_source'] = str(self.root/'camera-original.mp4')
+        self.bridge.sync(); record=self.library.list()[0]
+        engine=SimpleNamespace(library=self.library)
+        with self.assertRaisesRegex(ValueError, '代理'):
+            SourceSnapshot(engine, {'timeline':[{'mediaId':record['id']}], 'mediaIds':[record['id']]})
+        self.assertTrue(self.source.is_file())
 
     def test_same_frame_display_repair_invalidates_cover_url(self):
         self.bridge.sync(); before=self.library.list()[0]['coverUrl']

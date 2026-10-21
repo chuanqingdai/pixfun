@@ -5,15 +5,90 @@ import UniformTypeIdentifiers
 @MainActor
 final class WorkspaceStore: ObservableObject {
     let service = LocalService()
-    @Published var page: WorkspacePage? = .home { didSet { if page != .media { detail = nil; mediaReturnProjectID = nil }; expandCompletedEditor() } }
+    @Published private(set) var language = AppLanguage.saved
+    @Published var settingsPresented = false
+    @Published private(set) var onlinePlaceNames = UserDefaults.standard.bool(forKey: PlaceNameResolver.consentKey)
+    @Published private(set) var onlinePlaceBoundaries = UserDefaults.standard.bool(forKey: PlaceBoundaryLookup.consentKey)
+    @Published private(set) var onlinePlaceFallback = UserDefaults.standard.bool(forKey: PlaceFallbackLookup.consentKey)
+    private lazy var placeNames: PlaceNameResolver = {
+        let resolver = PlaceNameResolver(canRequest: { NSApp?.isActive == true })
+        resolver.onChange = { [weak self, weak resolver] in
+            guard let self, let resolver else { return }
+            self.items = resolver.applyingCache(to: self.items, language: self.language.rawValue)
+            self.persistPlaceNames()
+        }
+        return resolver
+    }()
+    private var savedPlaces: [String: ResolvedPlace] = [:]
+    private var placeWriteTask: Task<Void, Never>?
+    private var placeWriteRetry = Date.distantPast
+    private func persistPlaceNames() {
+        guard ready, onlinePlaceNames, placeWriteTask == nil, Date() >= placeWriteRetry else { return }
+        let changes = items.compactMap { item -> (String, ResolvedPlace)? in
+            guard !item.hasSavedPlaceName, let place = item.validResolvedPlace,
+                  place.language == language.rawValue, savedPlaces[item.id] != place else { return nil }
+            return (item.id, place)
+        }
+        guard !changes.isEmpty else { return }
+        placeWriteTask = Task { [weak self] in
+            guard let self else { return }
+            defer { placeWriteTask = nil }
+            for (id, place) in changes {
+                guard !Task.isCancelled, onlinePlaceNames, place.language == language.rawValue else { break }
+                do {
+                    struct Response: Decodable { var ok: Bool }
+                    let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(place))
+                    let response: Response = try await service.post("/api/desktop/analysis/place", ["id": id, "place": value], native: true)
+                    if response.ok { savedPlaces[id] = place }
+                } catch { placeWriteRetry = Date().addingTimeInterval(30); break }
+            }
+        }
+    }
+    func saveOnlinePlaceNames(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: PlaceNameResolver.consentKey)
+        onlinePlaceNames = enabled
+        updatePlaceNames()
+    }
+    func saveOnlinePlaceBoundaries(_ enabled: Bool) {
+        placeNames.cancel()
+        UserDefaults.standard.set(enabled, forKey: PlaceBoundaryLookup.consentKey)
+        onlinePlaceBoundaries = enabled
+        updatePlaceNames()
+    }
+    func savePlaceSettings(names: Bool, boundaries: Bool, fallback: Bool = false) {
+        placeNames.cancel()
+        UserDefaults.standard.set(names, forKey: PlaceNameResolver.consentKey)
+        UserDefaults.standard.set(boundaries, forKey: PlaceBoundaryLookup.consentKey)
+        onlinePlaceNames = names
+        onlinePlaceBoundaries = boundaries
+        UserDefaults.standard.set(fallback, forKey: PlaceFallbackLookup.consentKey)
+        onlinePlaceFallback = fallback
+        updatePlaceNames()
+    }
+    private func updatePlaceNames() {
+        items = placeNames.applyingCache(to: items, language: language.rawValue)
+        persistPlaceNames()
+        placeNames.schedule(items.compactMap { $0.placeQuery(language: language.rawValue) },
+                            enabled: onlinePlaceNames, foreground: NSApp?.isActive == true)
+    }
+    func saveLanguage(_ language: AppLanguage) async throws {
+        struct Response: Decodable { var ok: Bool }
+        let _: Response = try await service.post("/api/desktop/settings", ["key":"language", "value":language.rawValue], native: true)
+        UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
+        self.language = language
+        updatePlaceNames()
+    }
+    @Published var page: WorkspacePage? = .media { didSet { if page != .media && page != .mediaMap { detail = nil; mediaReturnProjectID = nil }; expandCompletedEditor() } }
     @Published private(set) var mediaReturnProjectID: String?
-    var mediaBackTitle: String { mediaReturnProjectID == nil ? "Media" : "Conversation" }
+    var mediaBackTitle: String { page == .mediaMap ? "Media map" : (mediaReturnProjectID == nil ? "Library" : "Conversation") }
     @Published var ready = false
     @Published var startupError: String?
     @Published var error: String?
     @Published var items: [MediaItem] = [] { didSet {
         searchDocuments = Dictionary(uniqueKeysWithValues: items.map { ($0.id, MediaSearchDocument($0)) })
+        mediaTagFrequencies = MediaTagPresentation.frequencies(libraryItems)
         refreshMediaSearch()
+        if page == .mediaMap && !hasMediaMap { navigate(.media) }
     } }
     @Published var projects: [Project] = []
     @Published var skills: [CreatorSkill] = []
@@ -21,19 +96,135 @@ final class WorkspaceStore: ObservableObject {
     @Published var projectDrafts: [String: Draft] = [:] { didSet { if restoredDraft { persistProjectDrafts() } } }
     @Published var selectedProjectID: String? { didSet { expandCompletedEditor() } }
     private var selectionProjectID: String?
-    @Published var query = "" { didSet { visualMatches = nil; visualSearchGeneration += 1; refreshMediaSearch() } }
     @Published var visionFlowStatus: VisionFlowStatus?
     @Published var visualSearching = false
     @Published var catalogRefreshing = false
     @Published var visualMatches: [VisionFlowMatch]?
     @Published var visualSearchLabel = ""
     private var visualSearchGeneration = 0
+    private var selectionReturnPage: WorkspacePage = .media
+    @Published var mediaAddedRange = MediaAddedRange.all { didSet { refreshMediaSearch() } }
+    @Published var mediaWorkFilter = MediaWorkFilter.all { didSet { refreshMediaSearch() } }
+    @Published var syncSnapshot: MediaSyncSnapshot?
+    @Published var syncStatusUnavailable = false
+    @Published var query = "" { didSet { visualMatches = nil; visualSearchGeneration += 1; if query != oldValue { visualHits = []; visualQuery = "" }; refreshMediaSearch() } }
+    @Published var catalogStatus: CatalogStatus?
+    @Published var catalogBusy = false
+    @Published var catalogError: String?
+    private var visualHits: [CatalogHit] = []
+    private var visualQuery = ""
+    var catalogMessage: String {
+        if let error = catalogError { return error }
+        if catalogBusy { return catalogStatus?.job?.message ?? "Queued for local processing…" }
+        let count = catalogStatus?.indexed ?? 0
+        let total = catalogStatus?.total ?? libraryItems.filter { $0.kind == "video" }.count
+        if let stale = catalogStatus?.stale, stale > 0 { return "\(count)/\(total) videos indexed · \(stale) need rebuilding after source or shot changes." }
+        if count == 0 { return "No videos indexed. Build an index to search what appears on screen." }
+        return "\(count)/\(total) videos indexed · Type a scene and press Return. Matches are suggestions."
+    }
+    func refreshCatalogStatus() async {
+        guard ready else { return }
+        do { catalogStatus = try await service.get("/api/desktop/agent/catalog", native: true) }
+        catch { if let message = CatalogFailure.message(error) { catalogError = message } }
+    }
+    func startCatalogIndex() {
+        let ids = libraryItems.filter { $0.kind == "video" && $0.missing != true && $0.vfCatalog == nil }.map(\.id)
+        guard !ids.isEmpty else { catalogError = "No online videos to index."; return }
+        performCatalog(["action":"index", "ids":ids])
+    }
+    func searchVisualMedia() {
+        if visionFlowStatus?.connected == true { searchVisionFlow(); return }
+        guard (catalogStatus?.indexed ?? 0) > 0, [.all, .content].contains(searchScope),
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        performCatalog(["action":"search", "query":query], querySnapshot: query)
+    }
+    func stopCatalog() {
+        Task {
+            struct Result: Decodable { var ok: Bool }
+            do { let _: Result = try await service.post("/api/desktop/agent/catalog", ["action":"stop"], native: true) }
+            catch { if let message = CatalogFailure.message(error) { catalogError = message } }
+        }
+    }
+    private func performCatalog(_ payload: [String: Any], querySnapshot: String? = nil) {
+        guard !catalogBusy else { return }
+        catalogBusy = true; catalogError = nil
+        if querySnapshot != nil { visualHits = []; visualQuery = ""; refreshMediaSearch() }
+        Task {
+            defer { catalogBusy = false }
+            struct Response: Decodable { var job: CatalogJob }
+            do {
+                let response: Response = try await service.post("/api/desktop/agent/catalog", payload, native: true)
+                var job = response.job
+                while job.status == "running" {
+                    try await Task.sleep(nanoseconds: 700_000_000)
+                    let status: CatalogStatus = try await service.get("/api/desktop/agent/catalog", native: true)
+                    catalogStatus = status
+                    guard let current = status.job, current.id == job.id else { throw ServiceError(message: "The local task changed. Refresh and retry.") }
+                    job = current
+                }
+                if job.status == "failed" { throw ServiceError(message: job.message) }
+                if job.status == "completed", let searched = querySnapshot, query == searched {
+                    visualHits = job.hits; visualQuery = searched; refreshMediaSearch()
+                }
+                if !job.failures.isEmpty { catalogError = "\(job.failures.count) videos unavailable for visual search. HDR / rotation, missing files or model errors may need attention. Existing results were kept." }
+                await refreshCatalogStatus()
+            } catch { if let message = CatalogFailure.message(error) { catalogError = message } }
+        }
+    }
+    func visualMatchTime(_ id: String) -> Double? {
+        if let match = visualMatches?.first(where: { $0.mediaId == id }) { return match.start }
+        guard [.all, .content].contains(searchScope), visualQuery == query else { return nil }
+        return visualHits.first { $0.mediaId == id }?.start
+    }
+    func visualMatch(_ id: String) -> CatalogHit? {
+        guard [.all, .content].contains(searchScope), visualQuery == query else { return nil }
+        return visualHits.first { $0.mediaId == id }
+    }
+    func saveMediaTags(_ item: MediaItem, hidden: Set<String>, added: [EvidenceTag]) async throws {
+        struct Response: Decodable { var ok: Bool }
+        let _: Response = try await service.post("/api/desktop/agent/media-tags", ["id":item.id,
+            "hidden":Array(hidden), "added":added.map { ["category":$0.category, "label":$0.label] }], native: true)
+        try await refresh()
+    }
     @Published var category = MediaCategory.all { didSet { refreshMediaSearch() } }
     @Published var folder = "" { didSet { refreshMediaSearch() } }
+    @Published var syncSourceID: String? { didSet { refreshMediaSearch() } }
+    @Published var syncSourceName: String?
     @Published var searchScope = MediaSearchScope.all { didSet { refreshMediaSearch() } }
     @Published var sort = MediaSort.original { didSet { refreshMediaSearch() } }
+    @Published private(set) var comparingBeauty = false
+    private var beautyScores: [String: Double] = [:]
+    var canCompareBeauty: Bool { agentCapabilities?.tools?.contains { $0.id == "beauty" && $0.installed && $0.lastExecution == "verified" } == true }
+    func compareBeauty() {
+        guard canCompareBeauty, !comparingBeauty else { return }
+        let selected = visibleItems.filter { $0.status == "ready" && $0.missing != true }
+        guard !selected.isEmpty, selected.count <= 100 else { error = "Filter to 1–100 ready materials before comparing."; return }
+        let previousSort = sort
+        comparingBeauty = true
+        struct Job: Decodable { var id: String; var status: String; var scores: [String: Double]?; var message: String? }
+        struct Response: Decodable { var job: Job }
+        Task {
+            defer { comparingBeauty = false }
+            do {
+                var result: Response = try await service.post("/api/desktop/agent/beauty-sort", ["mediaIds":selected.map(\.id)], native: true)
+                for _ in 0..<360 where result.job.status == "running" {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    result = try await service.post("/api/desktop/agent/beauty-sort", ["jobId":result.job.id], native: true)
+                }
+                guard result.job.status == "completed", let scores = result.job.scores else {
+                    throw ServiceError(message: result.job.message ?? "Comparison is taking longer than expected. Your order is unchanged.")
+                }
+                beautyScores = scores
+                // Do not override a different order chosen while inference ran.
+                if sort == previousSort { sort = .beauty } else { refreshMediaSearch() }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    @Published var mediaFacets = MediaFacetSelection() { didSet { refreshMediaSearch() } }
+    @Published private(set) var mediaFacetOptions: [MediaFacet: [MediaFacetOption]] = [:]
     @Published var locations: [String: MediaLocation] = [:] { didSet { refreshMediaSearch() } }
     private var searchDocuments: [String: MediaSearchDocument] = [:]
+    private var mediaTagFrequencies: [String: Int] = [:]
     @Published private(set) var mediaSearchResults: [MediaSearchResult] = []
     var lastOpenedMediaID: String?
     var mediaSeekTime: Double = 0
@@ -42,10 +233,80 @@ final class WorkspaceStore: ObservableObject {
     @Published var detail: MediaItem?
     @Published var importing = false
     @Published var saving = false
-    @Published var agentRuns: [AgentRun] = [] { didSet { expandCompletedEditor() } }
+    @Published var agentRuns: [AgentRun] = [] { didSet {
+        openCompletedMapCreation(previousRuns: oldValue)
+        expandCompletedEditor()
+    } }
     @Published var agentCapabilities: AgentCapabilities?
     @Published var agentMode = "local"
     @Published var agentActionPending = false
+    @Published var mapCreationRunID: String?
+    @Published var mapCreationHidden = false
+    @Published var mapCreationError: String?
+    var mapCreationRun: AgentRun? {
+        guard !mapCreationHidden else { return nil }
+        if let id = mapCreationRunID { return agentRuns.first { $0.id == id } }
+        return agentRuns.filter { $0.creationSurface == "map" }.max { $0.updatedAt < $1.updatedAt }
+    }
+    private func openCompletedMapCreation(previousRuns: [AgentRun]) {
+        // React only to a fresh completion of the visible map task. Loading
+        // history or returning to the map must never steal navigation.
+        guard page == .mediaMap, detail == nil, !settingsPresented,
+              let run = mapCreationRun, run.creationSurface == "map",
+              run.status == "completed", !run.timeline.isEmpty,
+              let preview = run.preview, preview.timelineVersion == nil || preview.timelineVersion == run.version,
+              let previous = previousRuns.first(where: { $0.id == run.id }),
+              previous.busy || previous.awaitingScriptConfirmation,
+              editorDrafts[run.id]?.dirty != true else { return }
+        openEditor(run.projectId)
+    }
+    func startMapCreation(_ ids: [String]) {
+        guard !saving, !agentActionPending, !agentRuns.contains(where: \.busy), !ids.isEmpty else { return }
+        let chosen = items.filter { ids.contains($0.id) }
+        guard chosen.count == Set(ids).count, chosen.allSatisfy(MediaMapCreation.eligible) else {
+            mapCreationError = "部分素材不可用，请重新选择。"; return
+        }
+        saving = true; mapCreationError = nil
+        Task {
+            defer { saving = false }
+            do {
+                struct Response: Decodable { var run: AgentRun }
+                let response: Response = try await service.post("/api/desktop/agent/start", [
+                    "prompt": MediaMapCreation.prompt(chinese: language == .chinese),
+                    "mediaIds": ids, "mode": "local", "creationSurface": "map",
+                    "requestId": UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+                ], native: true)
+                agentRuns.removeAll { $0.id == response.run.id }; agentRuns.insert(response.run, at: 0)
+                mapCreationRunID = response.run.id; mapCreationHidden = false
+                try await refresh()
+            } catch { mapCreationError = error.localizedDescription }
+        }
+    }
+    func moveMapTripPoint(_ run: AgentRun, mediaID: String, latitude: Double = 0, longitude: Double = 0, reset: Bool = false) {
+        guard !saving, !agentActionPending, run.status == "clarify",
+              run.clarificationKind == "trip_confirmation", let stamp = run.tripConfirmation?.updatedAt else { return }
+        agentActionPending = true; mapCreationError = nil
+        Task {
+            defer { agentActionPending = false }
+            do {
+                struct Response: Decodable { var run: AgentRun }
+                let response: Response = try await service.post("/api/desktop/agent/action", [
+                    "id": run.id, "action": "trip_coordinates", "mediaId": mediaID,
+                    "latitude": latitude, "longitude": longitude, "reset": reset, "tripUpdatedAt": stamp
+                ], native: true)
+                agentRuns.removeAll { $0.id == response.run.id }; agentRuns.insert(response.run, at: 0)
+            } catch {
+                mapCreationError = error.localizedDescription
+                try? await refresh()
+            }
+        }
+    }
+    @Published var videoExport: VideoExportJob?
+    @Published var exportedVideoURL: URL?
+    @Published var videoExportSaving = false
+    private var videoExportTask: Task<Void, Never>?
+    private var cancelledVideoExportIDs = Set<String>()
+    var videoExportBusy: Bool { videoExport?.busy == true || videoExportSaving }
     @Published var editorProjectID: String?
     private var presentedPreviews: [String: String] = [:]
     func expandCompletedEditor() {
@@ -86,6 +347,11 @@ final class WorkspaceStore: ObservableObject {
     // Presentation state belongs to the conversation, not its wide/compact view.
     @Published var expandedConversationSections = Set<String>()
     var conversationBookmarks: [String: (following: Bool, messageID: String?)] = [:]
+    @Published var materialSectionOverrides: [String: Bool] = [:]
+    func materialSection(_ run: AgentRun) -> Binding<Bool> {
+        Binding(get: { self.materialSectionOverrides[run.id] ?? (run.analyzingMaterials || ["failed", "interrupted", "cancelled"].contains(run.status) || run.intent == "analyze") },
+                set: { self.materialSectionOverrides[run.id] = $0 })
+    }
     func conversationSection(_ key: String) -> Binding<Bool> {
         Binding(get: { self.expandedConversationSections.contains(key) }, set: { expanded in
             if expanded { self.expandedConversationSections.insert(key) }
@@ -107,12 +373,12 @@ final class WorkspaceStore: ObservableObject {
         openEditor(projectID); editorRequestedShotID = shotID
     }
     var editorSelectionLabel: String {
-        guard let scope = composerEditTarget, let run = composerTimelineRun, !scope.shotIds.isEmpty else { return "Whole film" }
+        guard let scope = composerEditTarget, let run = composerTimelineRun, !scope.shotIds.isEmpty else { return language.text("Whole film") }
         let shots = editorDrafts[run.id]?.shots ?? run.timeline
         if scope.shotIds.count == 1, let index = shots.firstIndex(where: { scope.shotIds.contains($0.id) }) {
-            return "Clip \(index + 1) · \(shots[index].label)"
+            return String(format: language.text("Clip %lld · %@"), index + 1, shots[index].label)
         }
-        return "\(scope.shotIds.count) clips selected"
+        return String(format: language.text("%lld clips selected"), scope.shotIds.count)
     }
     @Published var editorDrafts: [String: EditorDraft] = [:] { didSet {
         guard restoredDraft else { return }
@@ -133,6 +399,9 @@ final class WorkspaceStore: ObservableObject {
         return agentRuns.filter { $0.projectId == id }.max { $0.updatedAt < $1.updatedAt }
     }
     @Published var removed: MediaItem?
+    @Published var mediaRemovalRequest: [MediaItem] = []
+    @Published private(set) var removingMedia = false
+    @Published private(set) var removedItems: [MediaItem] = []
     private var restoredDraft = false
     private var poller: Task<Void, Never>?
     private var draftURL: URL { service.dataDirectory.appendingPathComponent("native-draft.json") }
@@ -196,7 +465,7 @@ final class WorkspaceStore: ObservableObject {
         guard let id else { return draft }
         if let saved = projectDrafts[id] { return saved }
         let project = projects.first { $0.id == id }
-        return Draft(attachments: project?.attachments ?? [], projectId: id, skill: project?.skill)
+        return Draft(attachments: project?.attachments ?? [], projectId: id)
     }
     func setDraft(_ value: Draft, for id: String?) {
         if let id { var value = value; value.projectId = id; projectDrafts[id] = value }
@@ -209,6 +478,8 @@ final class WorkspaceStore: ObservableObject {
         }
     }
     func navigate(_ destination: WorkspacePage) {
+        guard destination != .mediaMap || hasMediaMap else { return }
+        detail = nil
         mediaReturnProjectID = nil
         closeEditor()
         if destination == .project { selectedProjectID = nil }
@@ -226,21 +497,67 @@ final class WorkspaceStore: ObservableObject {
     var visibleItems: [MediaItem] {
         mediaSearchResults.map(\.item)
     }
+    var libraryItems: [MediaItem] { items.filter { $0.kind != "audio" && $0.isExample != true } }
+    // Independent map scope: never inherit hidden Library search/facet constraints.
+    var mediaMapItems: [MediaItem] { items.filter { $0.isExample != true && ["video", "image"].contains($0.kind) } }
+    var hasMediaMap: Bool { !mediaMapItems.isEmpty }
+    var sidebarMediaPages: [WorkspacePage] { WorkspacePage.mediaPages.filter { $0 != .mediaMap || hasMediaMap } }
+    func mediaSource(_ item: MediaItem) -> MediaSourceIdentity {
+        let device = syncSnapshot?.devices.first { $0.id == item.syncSourceId }
+        return MediaSourceIdentity(item: item, sourceName: device?.name, sourceKind: device?.kind)
+    }
     private func refreshMediaSearch() {
+        let eligible = libraryItems.filter { mediaAddedRange.includes($0) && mediaWorkFilter.includes($0) }
+        var candidates = MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort, syncSourceID: syncSourceID)
+            .results(eligible, locations: locations, documents: searchDocuments)
+        if [.all, .content].contains(searchScope) && isSearchingMedia && visualQuery == query {
+            let allowed = MediaFilter(category: category, query: "", scope: searchScope, folder: folder, sort: sort, syncSourceID: syncSourceID)
+                .results(eligible, locations: locations, documents: searchDocuments)
+            candidates = MediaSearchMerge.combine(text: candidates, visual: visualHits, allowed: allowed)
+        }
         if let matches = visualMatches {
-            let eligible = MediaFilter(category: category, query: "", scope: .all, folder: folder, sort: sort).apply(items, locations: locations)
-            let lookup = Dictionary(uniqueKeysWithValues: eligible.map { ($0.id, $0) })
+            let allowed = MediaFilter(category: category, query: "", scope: .all, folder: folder, sort: sort, syncSourceID: syncSourceID).apply(eligible, locations: locations)
+            let lookup = Dictionary(uniqueKeysWithValues: allowed.map { ($0.id, $0) })
             var seen = Set<String>()
-            mediaSearchResults = matches.compactMap { match in
-                // Search changes ranking and seek time, never the saved cover.
-                // Match frames may still come from an older HDR analysis cache.
+            candidates = matches.compactMap { match in
+                // A matching time never replaces the saved, HDR-corrected cover.
                 guard let item = lookup[match.mediaId], seen.insert(item.id).inserted else { return nil }
                 return MediaSearchResult(item: item, hits: [.init(id:0,label:"Visual match",text:match.label,start:match.start,segmentID:match.shotId,priority:100)])
             }
-            return
         }
-        mediaSearchResults = MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort)
-            .results(items, locations: locations, documents: searchDocuments)
+        let documents = candidates.compactMap { searchDocuments[$0.id] }
+        mediaFacetOptions = Dictionary(uniqueKeysWithValues: MediaFacet.allCases.map {
+            ($0, mediaFacets.options(for: $0, documents: documents))
+        })
+        mediaSearchResults = candidates.filter { mediaFacets.matches(searchDocuments[$0.id]?.quickTags ?? []) }
+        if sort == .beauty {
+            mediaSearchResults = mediaSearchResults.enumerated().sorted { a,b in
+                let left = beautyScores[a.element.id] ?? -.infinity, right = beautyScores[b.element.id] ?? -.infinity
+                return left == right ? a.offset < b.offset : left > right
+            }.map(\.element)
+        }
+    }
+    func mediaTags(for item: MediaItem) -> [MediaFacetTag] {
+        searchDocuments[item.id]?.quickTags ?? MediaQuickTags.tags(item)
+    }
+    func coreMediaTags(for item: MediaItem) -> [MediaFacetTag] {
+        MediaTagPresentation.core(item, frequencies: mediaTagFrequencies)
+    }
+    func filterMediaTag(_ tag: MediaFacetTag) {
+        navigate(.media)
+        detail = nil
+        resetMediaFilters()
+        mediaFacets.values[tag.facet] = tag
+    }
+    func searchMediaTag(_ tag: MediaSearchTag) {
+        navigate(.media)
+        detail = nil
+        resetMediaFilters()
+        searchScope = tag.scope
+        query = tag.text
+    }
+    func toggleMediaTag(_ tag: MediaFacetTag) {
+        mediaFacets.values[tag.facet] = mediaFacets.values[tag.facet]?.id == tag.id ? nil : tag
     }
     func searchVisionFlow(similar: String? = nil, collection: String? = nil) {
         guard !visualSearching else { return }
@@ -279,30 +596,47 @@ final class WorkspaceStore: ObservableObject {
     var isSearchingMedia: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var mediaResultSummary: String {
         let count = visibleItems.count
-        return isSearchingMedia || visualMatches != nil ? "\(count) \(count == 1 ? "result" : "results") · \(items.filter { $0.kind != "audio" }.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
+        if language == .chinese {
+            if syncSourceID != nil { return "\(count) 个素材 · \(syncSourceName ?? "导入设备")" }
+            return hasMediaFilters ? "找到 \(count) 个素材 · 共 \(libraryItems.count) 个" : "\(count) 个本地素材"
+        }
+        if syncSourceID != nil { return "\(count) \(count == 1 ? "file" : "files") · \(syncSourceName ?? "Imported device")" }
+        return hasMediaFilters ? "\(count) \(count == 1 ? "result" : "results") · \(libraryItems.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
     }
     var folders: [MediaFolder] {
-        let paths = items.filter { $0.kind != "audio" }.compactMap { locations[$0.id]?.folder }
+        let paths = libraryItems.filter { $0.syncSourceId == nil }.compactMap { locations[$0.id]?.folder }
         return Dictionary(grouping: paths, by: { $0 }).map { MediaFolder(path: $0.key, count: $0.value.count) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
-    var hasMediaFilters: Bool { isSearchingMedia || !folder.isEmpty || category != .all || searchScope != .all }
-    func resetMediaFilters() { query = ""; folder = ""; category = .all; searchScope = .all }
+    var importedSources: [(id: String, name: String, symbol: String)] {
+        let grouped = Dictionary(grouping: libraryItems.filter { $0.syncSourceId != nil }, by: { $0.syncSourceId! })
+        return grouped.map { let source = mediaSource($0.value[0]); return (id: $0.key, name: source.name, symbol: source.symbol) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    var hasMediaFilters: Bool { visualMatches != nil || mediaAddedRange != .all || mediaWorkFilter != .all || syncSourceID != nil || isSearchingMedia || !folder.isEmpty || category != .all || searchScope != .all || !mediaFacets.isEmpty }
+    func resetMediaFilters() { query = ""; folder = ""; category = .all; searchScope = .all; mediaFacets = .init(); syncSourceID = nil; syncSourceName = nil; mediaAddedRange = .all; mediaWorkFilter = .all }
+    func openSyncedMedia(_ id: String, name: String) {
+        navigate(.media); detail = nil; resetMediaFilters(); sort = .original
+        syncSourceName = name; syncSourceID = id
+        perform { try await self.refresh() }
+    }
     func openMedia(_ item: MediaItem, at seconds: Double = 0) {
         mediaReturnProjectID = page == .project ? selectedProjectID : nil
-        mediaSeekTime = max(0, seconds); lastOpenedMediaID = item.id; detail = item; page = .media
+        mediaSeekTime = max(0, seconds); lastOpenedMediaID = item.id; detail = item
+        if page != .mediaMap { page = .media }
     }
     func backToMedia() {
         let project = mediaReturnProjectID
         detail = nil; mediaReturnProjectID = nil
         if let project { selectedProjectID = project; page = .project }
-        else { page = .media }
+        else if page != .mediaMap { page = .media }
     }
     func start() async {
         guard !ready else { return }
         startupError = nil
         do {
             try await service.start()
+            try await saveLanguage(language)
             if let config = CloudSettings.read(), !config.model.isEmpty {
                 struct Configured: Decodable { var ok: Bool }
                 let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as! [String: Any]
@@ -344,7 +678,7 @@ final class WorkspaceStore: ObservableObject {
             }
         } catch { service.stop(); startupError = error.localizedDescription }
     }
-    func stop() { poller?.cancel(); service.stop() }
+    func stop() { poller?.cancel(); placeNames.cancel(); placeWriteTask?.cancel(); service.stop() }
     func refresh() async throws {
         struct Library: Decodable { var items: [MediaItem] }
         struct Projects: Decodable { var projects: [Project] }
@@ -353,7 +687,13 @@ final class WorkspaceStore: ObservableObject {
         let history: Projects = try await service.get("/api/desktop/projects")
         let paths: Locations = try await service.get("/api/desktop/locations", native: true)
         locations = Dictionary(uniqueKeysWithValues: paths.items.map { ($0.id, $0) })
-        items = library.items; projects = history.projects
+        savedPlaces = Dictionary(uniqueKeysWithValues: library.items.compactMap { item in item.validResolvedPlace.map { (item.id, $0) } })
+        items = placeNames.applyingCache(to: library.items, language: language.rawValue); projects = history.projects
+        persistPlaceNames()
+        placeNames.schedule(items.compactMap { $0.placeQuery(language: language.rawValue) },
+                            enabled: onlinePlaceNames, foreground: NSApp?.isActive == true)
+        do { syncSnapshot = try await service.get("/api/desktop/sync", native: true); syncStatusUnavailable = false }
+        catch { syncSnapshot = nil; syncStatusUnavailable = true }
         struct Runs: Decodable { var runs: [AgentRun] }
         let runs: Runs = try await service.get("/api/desktop/agent/runs", native: true)
         agentRuns = runs.runs
@@ -373,16 +713,39 @@ final class WorkspaceStore: ObservableObject {
         catch { self.error = "Could not save project drafts: \(error.localizedDescription)"; return false }
     }
     func attach(_ ids: Set<String>) { draft.attach(items.filter { ids.contains($0.id) }); page = .home }
-    func beginSelection() { selectionProjectID = composerProjectID; detail = nil; selection = Set(composerDraft.attachments.map(\.id)); selecting = true; page = .media }
+    /// Map handoff is draft preparation only. Reuse the normal Agent submission and editor.
+    @discardableResult func prepareMapCreation(_ ids: [String], replaceDraft: Bool = false) -> Bool {
+        guard !saving, !importing, !ids.isEmpty else { return false }
+        let records = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var seen = Set<String>()
+        let chosen = ids.filter { seen.insert($0).inserted }.compactMap { records[$0] }
+        guard chosen.count == seen.count, chosen.allSatisfy(MediaMapCreation.eligible) else { return false }
+        var value = replaceDraft ? Draft() : draft
+        value.attach(chosen)
+        if value.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            value.prompt = MediaMapCreation.prompt(chinese: language == .chinese)
+        }
+        setDraft(value, for: nil)
+        detail = nil; selecting = false; selection = []; selectionProjectID = nil
+        navigate(.home)
+        return true
+    }
+    func beginSelection() {
+        selectionReturnPage = page ?? .media; selectionProjectID = composerProjectID; detail = nil
+        selection = selectionReturnPage == .media ? [] : Set(composerDraft.attachments.map(\.id))
+        selecting = true; page = .media
+    }
     func finishSelection() {
+        let destination = selectionProjectID
         var value = draft(for: selectionProjectID); value.attach(items.filter { selection.contains($0.id) })
         setDraft(value, for: selectionProjectID)
         cancelSelection()
+        if let destination { selectedProjectID = destination; page = .project } else { page = .home }
     }
     func cancelSelection() {
         let destination = selectionProjectID
         selecting = false; selection.removeAll(); selectionProjectID = nil
-        if let destination { selectedProjectID = destination; page = .project } else { page = .home }
+        if let destination { selectedProjectID = destination; page = .project } else { page = selectionReturnPage }
     }
     func toggleSelection(_ id: String) { if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } }
     func use(_ skill: CreatorSkill) { draft.skill = skill.chosen; page = .home }
@@ -398,6 +761,10 @@ final class WorkspaceStore: ObservableObject {
     func open(_ project: Project) {
         selectedProjectID = project.id
         agentMode = activeAgentRun?.mode ?? "local"
+        if let run = activeAgentRun, run.creationSurface == "map" {
+            mapCreationRunID = run.id; mapCreationHidden = false; page = .mediaMap
+            return
+        }
         page = .project
     }
     var canApplyAgentOption: Bool {
@@ -471,6 +838,7 @@ final class WorkspaceStore: ObservableObject {
         if unchanged {
             if let sourceID { composerEditTargets[sourceID] = nil }
             var next = submitted; next.prompt = preservePrompt ? submitted.prompt : ""; next.projectId = projectID
+            next.skill = nil
             projectDrafts[projectID] = next
             if sourceID == nil { draft = Draft() }
         }
@@ -480,12 +848,26 @@ final class WorkspaceStore: ObservableObject {
         }
     }
     func agentAction(_ action: String, run: AgentRun) {
-        guard !agentActionPending else { return }
-        agentActionPending = true
+        guard !agentActionPending, !saving else { return }
+        saving = true
+        let pendingEdit = editorDrafts[run.id]
         perform {
-            defer { self.agentActionPending = false }
+            defer { self.agentActionPending = false; self.saving = false }
             struct Response: Decodable { var run: AgentRun }
-            let response: Response = try await self.service.post("/api/desktop/agent/action", ["id": run.id, "action": action], native: true)
+            var accepted = run
+            if action == "approve", let edit = pendingEdit, edit.dirty {
+                guard edit.version == run.version else { throw ServiceError(message: "Reload the updated timeline before generating. Your draft is kept.") }
+                accepted = try await self.saveAgentTimeline(run, shots: edit.shots, version: edit.version, finishing: edit.finishing)
+                guard self.editorDrafts[run.id]?.dirty != true else {
+                    throw ServiceError(message: "The draft changed while saving. Your latest edits are kept; try again.")
+                }
+            }
+            self.agentActionPending = true
+            var payload: [String: Any] = ["id": accepted.id, "action": action]
+            if ["confirm_trip", "ignore_trip"].contains(action), let stamp = accepted.tripConfirmation?.updatedAt {
+                payload["tripUpdatedAt"] = stamp
+            }
+            let response: Response = try await self.service.post("/api/desktop/agent/action", payload, native: true)
             if ["use_videos", "use_visuals"].contains(action), let ids = response.run.mediaIds {
                 var next = self.draft(for: run.projectId)
                 // Keep attachments added while the action was in flight; only remove excluded sources.
@@ -493,7 +875,22 @@ final class WorkspaceStore: ObservableObject {
                 next.attachments.removeAll { original.contains($0.id) && !ids.contains($0.id) }
                 self.setDraft(next, for: run.projectId)
             }
-            self.agentRuns.removeAll { $0.id == response.run.id }; self.agentRuns.insert(response.run, at: 0)
+            self.agentRuns = [response.run] + self.agentRuns.filter { $0.id != response.run.id }
+            try await self.refresh()
+        }
+    }
+    func agentTripCorrection(_ run: AgentRun, numbers: [Int], anchorNumber: Int, onSuccess: @escaping () -> Void = {}) {
+        guard !agentActionPending, !saving else { return }
+        agentActionPending = true
+        perform {
+            defer { self.agentActionPending = false }
+            struct Response: Decodable { var run: AgentRun }
+            let payload: [String: Any] = ["id": run.id, "action": "trip_correction",
+                                          "numbers": numbers, "anchorNumber": anchorNumber]
+            let response: Response = try await self.service.post("/api/desktop/agent/action", payload, native: true)
+            self.agentRuns.removeAll { $0.id == response.run.id }
+            self.agentRuns.insert(response.run, at: 0)
+            onSuccess()
             try await self.refresh()
         }
     }
@@ -563,7 +960,16 @@ final class WorkspaceStore: ObservableObject {
             self.agentCapabilities = try await self.service.get("/api/desktop/agent/capabilities", native: true)
             agentMode = mode
     }
-    func exportArtifact(_ artifact: AgentArtifact) {
+    func exportArtifact(_ artifact: AgentArtifact, resolution: String = "1080p") {
+        if ["preview", "previous_preview"].contains(artifact.type) {
+            guard let run = agentRuns.first(where: { $0.artifacts.contains(where: { $0.id == artifact.id }) }),
+                  artifact.type == "preview", artifact.timelineVersion == nil || artifact.timelineVersion == run.version else {
+                error = language == .chinese ? "请打开当前时间线导出，旧预览不会被放大成高清文件。" : "Open the current timeline to export. Historical previews are not upscaled."
+                return
+            }
+            exportVideo(run, resolution: resolution)
+            return
+        }
         guard let path = artifact.path, FileManager.default.fileExists(atPath: path) else { error = "Artifact is missing. Rebuild the preview."; return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = URL(fileURLWithPath: path).lastPathComponent
         guard panel.runModal() == .OK, let destination = panel.url else { return }
@@ -578,6 +984,64 @@ final class WorkspaceStore: ObservableObject {
                 try data.write(to: destination, options: .atomic)
             } else { try FileManager.default.copyItem(atPath: path, toPath: destination.path) }
         } catch { self.error = error.localizedDescription }
+    }
+    func exportVideo(_ run: AgentRun, resolution: String = "1080p") {
+        guard ["1080p", "4k"].contains(resolution) else { return }
+        guard !videoExportBusy, !run.busy, !run.timeline.isEmpty else { return }
+        guard editorDrafts[run.id]?.dirty != true else {
+            error = language == .chinese ? "请先保存时间线修改，再导出。" : "Save timeline changes before exporting."
+            return
+        }
+        let chinese = language == .chinese
+        let panel = NSSavePanel()
+        panel.title = chinese ? "导出视频" : "Export video"
+        panel.nameFieldStringValue = "Pixfun-v\(run.version).mp4"
+        panel.allowedContentTypes = [.mpeg4Movie]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        let expected: VideoExportFiles.Identity?
+        let protectedOriginals = locations.values.map { URL(fileURLWithPath: $0.path) }
+        do {
+            try VideoExportFiles.protect(destination, originals: protectedOriginals)
+            expected = try VideoExportFiles.identity(destination)
+        } catch { self.error = error.localizedDescription; return }
+        videoExportSaving = true; exportedVideoURL = nil
+        videoExportTask = Task {
+            defer { videoExportSaving = false; videoExportTask = nil }
+            do {
+                struct Response: Decodable { var export: VideoExportJob }
+                let started: Response = try await service.post("/api/desktop/agent/export",
+                    ["id":run.id, "version":run.version, "resolution":resolution], native:true)
+                videoExport = started.export
+                while videoExport?.busy == true {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    let update: Response = try await service.post("/api/desktop/agent/export",
+                        ["action":"status", "exportId":started.export.id], native:true)
+                    videoExport = update.export
+                }
+                guard let job = videoExport else { return }
+                if job.status == "cancelled" || cancelledVideoExportIDs.contains(job.id) { return }
+                guard job.status == "completed", let path = job.path else { throw ServiceError(message:job.message) }
+                let originals = protectedOriginals + locations.values.map { URL(fileURLWithPath: $0.path) }
+                try await Task.detached(priority: .utility) {
+                    try VideoExportFiles.install(source:URL(fileURLWithPath:path), destination:destination, expected:expected, originals:originals)
+                }.value
+                exportedVideoURL = destination
+            } catch {
+                videoExport?.status = "failed"
+                self.error = error.localizedDescription
+            }
+        }
+    }
+    func cancelVideoExport() {
+        guard let job = videoExport, job.busy else { return }
+        cancelledVideoExportIDs.insert(job.id)
+        perform {
+            struct Response: Decodable { var export: VideoExportJob }
+            let response: Response = try await self.service.post("/api/desktop/agent/export",
+                ["action":"cancel", "exportId":job.id], native:true)
+            self.videoExport = response.export
+        }
     }
     func saveProject() {
         guard !saving, !composerDraft.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -605,7 +1069,7 @@ final class WorkspaceStore: ObservableObject {
         panel.canChooseDirectories = folder; panel.canChooseFiles = !folder
         panel.allowsMultipleSelection = locate == nil
         panel.prompt = locate == nil ? "Add files" : "Reconnect"
-        if !folder { panel.allowedContentTypes = [.movie, .image, .audio] }
+        if !folder { panel.allowedContentTypes = [.movie, .image, .audio] + [UTType(filenameExtension: "lrf")].compactMap { $0 } }
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
         importing = true
@@ -626,7 +1090,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
     nonisolated static func collect(_ urls: [URL]) throws -> [String] {
-        let extensions = Set("mp4 mov m4v mkv webm avi mts m2ts ogv jpg jpeg png webp gif avif heic heif bmp tif tiff mp3 wav m4a aac flac ogg aiff aif opus".split(separator: " ").map(String.init))
+        let extensions = Set("mp4 mov m4v mkv webm avi mts m2ts ogv lrf jpg jpeg png webp gif avif heic heif bmp tif tiff mp3 wav m4a aac flac ogg aiff aif opus".split(separator: " ").map(String.init))
         var files: [String] = [], seen: Set<String> = []
         func add(_ url: URL) throws {
             let resource = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
@@ -649,19 +1113,76 @@ final class WorkspaceStore: ObservableObject {
         perform { try await self.service.update("/api/desktop/update", ["id": item.id, "favorite": item.favorite != true]); try await self.refresh() }
     }
     func remove(_ item: MediaItem) {
-        perform {
-            try await self.service.update("/api/desktop/remove", ["id": item.id])
-            self.removed = item; self.detail = nil
-            self.draft.attachments.removeAll { $0.id == item.id }
-            try await self.refresh()
+        requestMediaRemoval([item])
+    }
+    func requestMediaRemoval(_ candidates: [MediaItem]) {
+        guard !removingMedia else { return }
+        let ids = Set(candidates.map(\.id))
+        let targets = libraryItems.filter { ids.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        guard targets.allSatisfy({ ["ready", "error", "cancelled"].contains($0.status) }) else {
+            error = language == .chinese ? "部分素材仍在导入，请等待导入完成后再删除。" : "Some files are still being imported. Wait for import to finish before removing them."
+            return
+        }
+        // Freeze the targets before confirmation; polling/filter changes cannot expand them.
+        mediaRemovalRequest = targets
+    }
+    func removeConfirmedMedia(_ targets: [MediaItem]) {
+        guard !removingMedia, !targets.isEmpty else { return }
+        mediaRemovalRequest = []
+        removingMedia = true
+        Task {
+            defer { removingMedia = false }
+            var completed: [MediaItem] = []
+            do {
+                for item in targets {
+                    try await service.update("/api/desktop/remove", ["id": item.id])
+                    completed.append(item)
+                }
+            } catch { self.error = error.localizedDescription }
+            if !completed.isEmpty {
+                removedItems = completed
+                let ids = Set(completed.map(\.id))
+                if let detail, ids.contains(detail.id) { self.detail = nil }
+                draft.attachments.removeAll { ids.contains($0.id) }
+                selection.subtract(ids)
+                if selecting && selection.isEmpty { cancelSelection() }
+            }
+            // Refresh even after a partial failure; only successful removals are undoable.
+            do { try await refresh() } catch { self.error = error.localizedDescription }
         }
     }
     func undoRemove() {
-        guard let item = removed else { return }
-        perform { try await self.service.update("/api/desktop/restore", ["id": item.id]); self.removed = nil; try await self.refresh() }
+        guard !removingMedia, !removedItems.isEmpty else { return }
+        let targets = removedItems
+        removingMedia = true
+        Task {
+            defer { removingMedia = false }
+            do {
+                for item in targets {
+                    try await service.update("/api/desktop/restore", ["id": item.id])
+                    removedItems.removeAll { $0.id == item.id }
+                }
+            } catch { self.error = error.localizedDescription }
+            do { try await refresh() } catch { self.error = error.localizedDescription }
+        }
     }
     func retry(_ item: MediaItem) {
         perform { try await self.service.update("/api/desktop/retry", ["id": item.id]); try await self.refresh() }
+    }
+    func retryFailedAnalysis() {
+        perform {
+            struct Response: Decodable { var ok: Bool; var queued: Int }
+            let _: Response = try await self.service.post("/api/desktop/analysis/retry-failed", [:], native: true)
+            try await self.refresh()
+        }
+    }
+    func reanalyzeMedia() {
+        perform {
+            struct Response: Decodable { var ok: Bool; var queued: Int }
+            let _: Response = try await self.service.post("/api/desktop/analysis/reanalyze", [:], native: true)
+            try await self.refresh()
+        }
     }
     func describeVideo(_ item: MediaItem, force: Bool = false) {
         guard item.kind == "video" else { return }

@@ -65,14 +65,17 @@ final class LocalService {
         env["HF_HUB_OFFLINE"] = "1"; env["TRANSFORMERS_OFFLINE"] = "1"
         env["PATH"] = resources.appendingPathComponent("bin").path + ":/usr/bin:/bin:/usr/sbin:/sbin"
         env["PIXFUN_DATA_DIR"] = dataDirectory.path
+        env["PIXFUN_LANGUAGE"] = AppLanguage.saved.rawValue
         env["PIXFUN_PUBLIC_DIR"] = resources.appendingPathComponent("public").path
-        env["PIXFUN_EXAMPLE_DIR"] = resources.appendingPathComponent("public/examples/wild-alaska").path
+        // A new library starts empty. Bundled examples are never auto-imported.
+        env.removeValue(forKey: "PIXFUN_EXAMPLE_DIR")
         env["PIXFUN_MUSIC_DIR"] = resources.appendingPathComponent("Music").path
         env["PIXFUN_AGENT_WORKER"] = resources.appendingPathComponent("agent-model-worker.py").path
         env["PIXFUN_SERVICE_TOKEN"] = token
         env["PIXFUN_NATIVE_TOKEN"] = nativeToken
         env["PIXFUN_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         child.environment = env
         child.standardOutput = pipe
         child.standardError = log

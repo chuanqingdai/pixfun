@@ -14,6 +14,7 @@ import time
 from urllib.parse import quote
 
 from vf_bridge import Catalog, BridgeError
+from media_metadata import location_from_tags, device_id_from_tags
 
 
 def media_id(asset):
@@ -71,6 +72,17 @@ def project_asset(shots):
     fp = meta.get('observation', {}).get('fingerprint')
     metadata = dict(width=width, height=height, duration=duration,
                     hasAudio=any(s.get('codec_type')=='audio' for s in streams))
+    capture_tags = {}
+    for stream in streams:
+        capture_tags.update(stream.get('tags', {}))
+    capture_tags.update(meta.get('media', {}).get('data', {}).get('format', {}).get('tags', {}))
+    capture_tags = {str(k).lower(): v for k, v in capture_tags.items()}
+    metadata.update(location=location_from_tags(capture_tags), camera=capture_tags.get('com.apple.quicktime.model') or capture_tags.get('model'),
+                    capturedAt=capture_tags.get('com.apple.quicktime.creationdate'), mediaCreatedAt=capture_tags.get('creation_time'),
+                    dateSource='QuickTime creationdate' if capture_tags.get('com.apple.quicktime.creationdate') else None,
+                    captureDeviceID=device_id_from_tags(capture_tags), captureMetadataVersion=2,
+                    videoCodec=video.get('codec_name'),
+                    audioCodec=next((a.get('codec_name') for a in streams if a.get('codec_type') == 'audio'), None))
     try:
         num, den = video.get('avg_frame_rate','0/1').split('/')
         metadata['fps'] = float(num)/float(den) if float(den) else None
@@ -132,7 +144,10 @@ class NativeCatalog:
                         # Existing imports retain their identity, annotations and analysis.
                         incoming['id'] = row[0]
                         incoming['url'] = f'/api/desktop/media/{row[0]}'
-                        for key in ('favorite','description','title','videoDescription','shotAnalysis'):
+                        for key in ('favorite','description','title','videoDescription','shotAnalysis',
+                                    'tagCorrections','resolvedPlace','locationReview','analysisEvidence',
+                                    'mediaAnalysis','analysisRevision','vectorIndex','syncSourceId','syncSourceName',
+                                    'syncSourceKind','importBatchId','importedAt'):
                             if key in previous: incoming[key] = previous[key]
                         old_projection = previous.get('vfCatalog', {}).get('projectedContext', {})
                         for key, value in previous.get('context', {}).items():

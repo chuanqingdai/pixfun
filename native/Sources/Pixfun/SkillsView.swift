@@ -28,7 +28,7 @@ struct SkillsView: View {
                             .background(Color.pixfunGold.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                     }
                     Divider()
-                    Text("Story framework").font(.pixfun(18, semibold: true))
+                    Text(LocalizedStringKey(skill.category == "motion" ? "Graphic workflow" : "Story framework")).font(.pixfun(18, semibold: true))
                     ForEach(Array(skill.structure.enumerated()), id: \.offset) { index, title in
                         HStack(alignment: .top, spacing: 18) {
                             Text(String(format: "%02d", index + 1)).font(.title3.monospacedDigit()).foregroundStyle(Color.pixfunGold)
@@ -98,8 +98,8 @@ struct SkillsView: View {
                                 VStack(alignment: .leading, spacing: 0) {
                                     skillImage(skill).aspectRatio(16.0 / 9.0, contentMode: .fit).clipped()
                                     VStack(alignment: .leading, spacing: 10) {
-                                        Text(skill.title).font(.pixfun(18, semibold: true))
-                                        Text(skill.copy).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
+                                        Text(LocalizedStringKey(skill.title)).font(.pixfun(18, semibold: true))
+                                        Text(LocalizedStringKey(skill.copy)).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
                                             .fixedSize(horizontal: false, vertical: true).frame(minHeight: 50, alignment: .topLeading)
                                     }.padding(18)
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())

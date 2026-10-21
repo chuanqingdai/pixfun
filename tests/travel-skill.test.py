@@ -4,9 +4,20 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from travel_skill import resolve_skill, coverage_report, normalize_short_sequence, validate_story_structure
+from travel_skill import requested_skill, resolve_skill, coverage_report, normalize_short_sequence, repair_story_structure, validate_story_structure
 
 class TravelSkillTests(unittest.TestCase):
+    def test_skill_requires_explicit_current_message_invocation(self):
+        for prompt in ['Make a travel vlog', '做一个旅行视频', 'Travel Vlog 有什么功能？',
+                       '如何使用 Travel Vlog？', "Do not use Travel Vlog", '不要使用Travel Vlog']:
+            self.assertIsNone(requested_skill(prompt), prompt)
+        for prompt in ['使用 Travel Vlog 制作视频', '请用Travel Vlog编排', 'Use Travel Vlog for this edit']:
+            self.assertEqual(requested_skill(prompt)['id'], 'visionflow-travel-director')
+        self.assertEqual(requested_skill('Apply Motion Titles with title Hello')['id'], 'motion-titles')
+        selected={'id':'visionflow-travel-director','title':'Travel Vlog','strategy':'Selected'}
+        self.assertEqual(requested_skill('Create a video',selected),selected)
+        self.assertIsNone(requested_skill('忽略 Travel Vlog，直接使用引擎',selected))
+
     def test_short_film_opening_is_not_a_repeat_montage(self):
         shots=[{'mediaId':'p','start':0,'end':3,'section':'intro'}, {'mediaId':'v','start':0,'end':9,'section':'body'}]
         normalized=normalize_short_sequence(shots,'Create a travel video using every photo and video')
@@ -80,6 +91,17 @@ class TravelSkillTests(unittest.TestCase):
         validate_story_structure(body[:2],{k:records[k] for k in ['0','1']})
         intro[0]['end']=4
         with self.assertRaisesRegex(ValueError,'5–8 shots'): validate_story_structure(intro+body,records)
+
+    def test_invalid_model_intro_is_rebuilt_from_verified_body_ranges(self):
+        records,body,_=self.fixture()
+        invalid=[{**body[0], 'section':'intro', 'end':6}]+body[1:]
+        repaired=repair_story_structure(invalid,records)
+        intro=[shot for shot in repaired if shot.get('section')=='intro']
+        repaired_body=[shot for shot in repaired if shot.get('section')!='intro']
+        self.assertEqual(len(intro),8)
+        self.assertAlmostEqual(sum(s['end']-s['start'] for s in intro),3,delta=.04)
+        self.assertEqual({s['mediaId'] for s in repaired_body},set(records))
+        validate_story_structure(repaired,records)
 
     def test_cached_transcripts_cannot_exceed_source_or_contain_corruption(self):
         from transcript_quality import checked_cues

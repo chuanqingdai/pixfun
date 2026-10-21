@@ -32,7 +32,7 @@ python = str(Path(args.python).resolve())
 launcher.write_text('\n'.join([
     '#!/bin/bash', 'set -euo pipefail',
     'export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 VECLIB_MAXIMUM_THREADS=2',
-    'export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1',
+    'export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PIXFUN_SERIAL_ANALYSIS=1 PIXFUN_AUTO_ANALYZE_EXISTING=0',
     'exec ' + shlex.quote(python) + ' -u ' + shlex.quote(str(root / 'desktop_service.py')),
     '',
 ]))
@@ -40,7 +40,7 @@ launcher.chmod(0o755)
 for relative, source in {
     'bin/ffmpeg': Path('/opt/homebrew/bin/ffmpeg'),
     'bin/ffprobe': Path('/opt/homebrew/bin/ffprobe'),
-    'agent-model-worker.py': root / 'scripts/agent-model-worker.py',
+    **{name: root / 'scripts' / name for name in ('agent-model-worker.py', 'vf_story.py', 'vf_media_catalog.py', 'vf_beauty.py', 'vf_hyperframes.py', 'vf_travel_graphics.py', 'agent_process_security.py', 'hyperframes-templates')},
     'public': root / 'public',
     'Fonts': root / 'public/fonts',
     'Brand/pixfun-lockup-v2.png': root / 'public/images/pixfun-lockup-v2.png',
@@ -52,6 +52,9 @@ for relative, source in {
         if relative=='public': dest.mkdir(exist_ok=True)
         else: shutil.copytree(source,dest)
     else: shutil.copy2(source,dest)
+for locale in (root/'native/Localization').glob('*.lproj'):
+    shutil.copytree(locale, resources/locale.name)
+
 config = {'VF_LIBRARY_STATE':str(Path(args.catalog_state).resolve()),
           'PIXFUN_MODEL_PYTHON':str(Path(args.model_python).resolve()),
           'PIXFUN_VF_ROOT':str(Path(args.vf_root).resolve()),
@@ -71,8 +74,8 @@ with (contents / 'Info.plist').open('wb') as f:
     plistlib.dump({
         'CFBundleExecutable': 'Pixfun', 'CFBundleIdentifier': 'com.pixfun.native',
         'CFBundleName': 'Pixfun', 'CFBundleDisplayName': 'Pixfun',
-        'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.2.0',
-        'CFBundleVersion': '200', 'LSMinimumSystemVersion': '13.0',
+        'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '0.3.0',
+        'CFBundleVersion': '300', 'LSMinimumSystemVersion': '13.0',
         'NSHighResolutionCapable': True, 'NSPrincipalClass': 'NSApplication',
         'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True},
     }, f)

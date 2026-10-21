@@ -6,6 +6,567 @@ import Foundation
         func check(_ value: @autoclosure () -> Bool, _ label: String) {
             guard value() else { fatalError("FAIL: \(label)") }; checks += 1
         }
+        let exportFolder = FileManager.default.temporaryDirectory.appendingPathComponent("pixfun-export-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at:exportFolder, withIntermediateDirectories:true)
+        defer { try? FileManager.default.removeItem(at:exportFolder) }
+        let exported = exportFolder.appendingPathComponent("render.mp4")
+        let destination = exportFolder.appendingPathComponent("saved.mp4")
+        try Data("new video".utf8).write(to:exported)
+        try VideoExportFiles.install(source:exported, destination:destination, expected:nil, originals:[])
+        let initialExport = try Data(contentsOf:destination)
+        check(initialExport == Data("new video".utf8), "Export installs a new destination")
+        let oldIdentity = try VideoExportFiles.identity(destination)
+        try Data("second version".utf8).write(to:exported)
+        try VideoExportFiles.install(source:exported, destination:destination, expected:oldIdentity, originals:[])
+        let replacement = try Data(contentsOf:destination)
+        check(replacement == Data("second version".utf8), "Export atomically replaces approved destination")
+        do { try VideoExportFiles.install(source:exported, destination:destination, expected:oldIdentity, originals:[]); check(false,"Changed destination rejected") }
+        catch { check(true,"Changed destination retained") }
+        do { try VideoExportFiles.install(source:exported, destination:destination, expected:nil, originals:[destination]); check(false,"Original protected") }
+        catch { check(true,"Original protected") }
+        let link = exportFolder.appendingPathComponent("link.mp4")
+        try FileManager.default.createSymbolicLink(at:link, withDestinationURL:destination)
+        do { _ = try VideoExportFiles.identity(link); check(false,"Symbolic link rejected") }
+        catch { check(true,"Symbolic link rejected") }
+        let hardlink = exportFolder.appendingPathComponent("hardlink.mp4")
+        try FileManager.default.linkItem(at:destination, to:hardlink)
+        do { try VideoExportFiles.protect(hardlink, originals:[destination]); check(false,"Hardlinked original protected") }
+        catch { check(true,"Hardlinked original protected") }
+        let missing = exportFolder.appendingPathComponent("missing.mp4")
+        let protectedIdentity = try VideoExportFiles.identity(destination)
+        do { try VideoExportFiles.install(source:missing, destination:destination, expected:protectedIdentity, originals:[]); check(false,"Missing export rejected") }
+        catch { check(true,"Missing export rejected") }
+        let unchanged = try Data(contentsOf:destination)
+        check(unchanged == replacement, "Failed save preserves existing destination")
+        if CommandLine.arguments.count == 6, CommandLine.arguments[1] == "--cache-public-place",
+           let lat = Double(CommandLine.arguments[4]), let lon = Double(CommandLine.arguments[5]),
+           let query = PlaceQuery(CaptureLocation(latitude:lat,longitude:lon),language:"zh-Hans"),
+           let defaults = UserDefaults(suiteName:CommandLine.arguments[3]) {
+            let data = try Data(contentsOf:URL(fileURLWithPath:CommandLine.arguments[2]))
+            let cache = PlaceFallbackLookup(defaults:defaults,interval:0,fetch:{ _ in data })
+            guard let match = try await cache.lookup(query) else { throw ServiceError(message:"No verified polygon at this coordinate") }
+            print("Cached verified public boundary: \(match.id) · \(match.name)")
+            return
+        }
+        if CommandLine.arguments.count >= 5, CommandLine.arguments[1] == "--check-place-geometry" {
+            let args = CommandLine.arguments
+            let fixture = try JSONDecoder().decode(PlaceFallbackLookup.Result.self, from: Data(contentsOf: URL(fileURLWithPath: args[2])))
+            for index in stride(from: 3, to: args.count - 1, by: 2) {
+                guard let lat = Double(args[index]), let lon = Double(args[index+1]),
+                      let query = PlaceQuery(CaptureLocation(latitude:lat, longitude:lon), language:"zh-Hans") else { continue }
+                print("\(lat),\(lon): \(fixture.geojson?.contains(query) == true ? "inside" : "outside") \(fixture.name ?? "")")
+            }
+            return
+        }
+        // Explicit, opt-in integration probe. Normal tests never call Apple services.
+        if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--live-boundary",
+           let lat = Double(CommandLine.arguments[2]), let lon = Double(CommandLine.arguments[3]),
+           let query = PlaceQuery(CaptureLocation(latitude: lat, longitude: lon), language: "zh-Hans") {
+            do {
+                let match = try await PlaceBoundaryLookup().lookup(query)
+                print("OSM boundary: \(String(describing: match))")
+            } catch { print("OSM boundary unavailable: \(error)") }
+            return
+        }
+        if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--live-place",
+           let lat = Double(CommandLine.arguments[2]), let lon = Double(CommandLine.arguments[3]),
+           let query = PlaceQuery(CaptureLocation(latitude: lat, longitude: lon), language: "zh-Hans") {
+            if let address = try await PlaceNameResolver.appleLookup(query) { print("Apple Maps result: \(address.label ?? "") | area: \(address.area ?? "")") }
+            else { print("Apple Maps returned no address; coordinate fallback remains available.") }
+            return
+        }
+        // Map evidence and conservative capture-order policy: no network or production data.
+        func mapItem(_ id: String, _ time: String = "2026-10-11T14:00:00+0800", _ lat: Double = 39.99, _ lon: Double = 116.32) throws -> MediaItem {
+            var item = try JSONDecoder().decode(MediaItem.self, from: Data(#"{"id":"fixture","file":{"name":"fixture.mov"},"kind":"video","status":"ready"}"#.utf8))
+            item.id = id
+            item.metadata = .init(capturedAt: time, camera: "Camera", captureDeviceID: "camera-sha256:fixture-device", location: .init(latitude: lat, longitude: lon, source: "file-metadata", datum: "WGS84", horizontalAccuracy: 5))
+            return item
+        }
+        let mapA = try mapItem("a"), mapB = try mapItem("b", "2026-10-11T14:05:00+0800", 39.991)
+        let mapPoints = [mapB, mapA].compactMap(MediaMapPoint.init)
+        check(mapPoints.count == 2, "map reads original GPS independent of description readiness")
+        check(MediaMapData.ordered(mapPoints).map(\.id) == ["a", "b"], "map orders by capture timestamp, not file or import order")
+        check(MediaMapData.routes(mapPoints, day: "2026-10-11").count == 1, "nearby timed points produce capture-order sketch")
+        check(MediaMapData.routes(mapPoints, day: "").isEmpty, "map does not connect mixed dates in all-dates view")
+        var correctedMap = mapB
+        correctedMap.locationReview = LocationReview(version: 1, source: "user-confirmed", place: "北京 清华大学",
+            latitude: 40.0031, longitude: 116.3176, originalLatitude: 39.991, originalLongitude: 116.32,
+            anchorMediaId: "a", confirmedAt: 1)
+        check(MediaMapPoint(correctedMap)?.corrected == true && MediaMapPoint(correctedMap)?.latitude == 40.0031,
+              "map uses a user-confirmed app overlay without replacing original metadata")
+        check(correctedMap.metadata?.location?.latitude == 39.991 && correctedMap.locationAttribution.contains("User-confirmed"),
+              "location correction retains and labels the source-file coordinate")
+        var mapChanged = mapB
+        mapChanged.metadata?.location = .init(name: "Human supplied place")
+        check(MediaMapPoint(mapChanged) == nil, "place text cannot manufacture coordinates")
+        mapChanged = mapB; mapChanged.metadata?.location?.source = "inferred"
+        check(MediaMapPoint(mapChanged) == nil, "inferred group coordinates never become map pins")
+        mapChanged = mapB; mapChanged.metadata?.location?.latitude = 0; mapChanged.metadata?.location?.longitude = 0
+        check(MediaMapPoint(mapChanged) == nil, "zero coordinates withheld for review")
+        mapChanged = mapB; mapChanged.metadata?.location?.latitude = .nan
+        check(MediaMapPoint(mapChanged) == nil, "nonfinite coordinates rejected")
+        mapChanged = mapB; mapChanged.metadata?.location?.latitude = 91
+        check(MediaMapPoint(mapChanged) == nil, "out of range coordinates rejected")
+        mapChanged = mapB; mapChanged.metadata?.location?.datum = "GCJ-02"
+        check(MediaMapPoint(mapChanged) == nil, "known non-WGS84 coordinates not silently plotted")
+        mapChanged = mapB; mapChanged.isExample = true
+        check(MediaMapPoint(mapChanged) == nil, "demo media does not pollute real map")
+        mapChanged = mapB; mapChanged.metadata?.capturedAt = nil
+        check(MediaMapPoint(mapChanged) != nil && MediaMapPoint(mapChanged)?.day == nil, "GPS without time remains visible without a fabricated date")
+        check(MediaMapData.routes([mapA, mapChanged].compactMap(MediaMapPoint.init), day: "2026-10-11").isEmpty, "missing capture time excluded from routes")
+        mapChanged = mapB; mapChanged.metadata?.camera = nil
+        check(MediaMapData.routes([mapA, mapChanged].compactMap(MediaMapPoint.init), day: "2026-10-11").isEmpty, "unknown capture device not connected")
+        mapChanged = mapB; mapChanged.syncSourceId = "different-device"
+        check(MediaMapData.routes([mapA, mapChanged].compactMap(MediaMapPoint.init), day: "2026-10-11").isEmpty, "different imported sources not connected")
+        for (label, point) in [
+            ("next day", try mapItem("b", "2026-10-12T14:05:00+0800", 39.991)),
+            ("long time gap", try mapItem("b", "2026-10-11T17:05:00+0800", 39.991)),
+            ("distant point", try mapItem("b", "2026-10-11T14:05:00+0800", 40.1)),
+            ("same timestamp", try mapItem("b", "2026-10-11T14:00:00+0800", 39.991)),
+            ("implausible jump", try mapItem("b", "2026-10-11T14:00:01+0800", 39.999)),
+            ("different clock zone", try mapItem("b", "2026-10-11T06:05:00Z", 39.991))
+        ] {
+            check(MediaMapData.routes([mapA, point].compactMap(MediaMapPoint.init), day: "2026-10-11").isEmpty, "map breaks at \(label)")
+        }
+        let midnight = try mapItem("midnight", "2026-10-11T00:01:00+0800", -33.8, -70.6)
+        check(MediaMapPoint(midnight)?.day == "2026-10-11", "map retains source calendar day and southern/western coordinates")
+        check(mapA.metadata?.location?.name == nil && mapA.context == nil, "map leaves metadata and labels untouched")
+        for condition in ["accuracy missing", "accuracy low", "accuracy invalid", "datum missing", "device missing", "different device", "coincident"] {
+            var point = mapB
+            switch condition {
+            case "accuracy missing": point.metadata?.location?.horizontalAccuracy = nil
+            case "accuracy low": point.metadata?.location?.horizontalAccuracy = 1200
+            case "accuracy invalid": point.metadata?.location?.horizontalAccuracy = -1
+            case "datum missing": point.metadata?.location?.datum = nil
+            case "device missing": point.metadata?.captureDeviceID = nil
+            case "different device": point.metadata?.captureDeviceID = "camera-sha256:second-device"
+            default: point.metadata?.location?.latitude = mapA.metadata?.location?.latitude
+            }
+            check(MediaMapPoint(point) != nil, "uncertain point remains browsable: \(condition)")
+            check(MediaMapData.routes([mapA, point].compactMap(MediaMapPoint.init), day: "2026-10-11").isEmpty, "no invented movement: \(condition)")
+        }
+        var middle = try mapItem("middle", "2026-10-11T14:02:00+0800", 39.9905)
+        middle.metadata?.location?.horizontalAccuracy = 500
+        check(MediaMapData.routes([mapA, middle, mapB].compactMap(MediaMapPoint.init), day: "2026-10-11").isEmpty, "uncertain intermediate sample breaks continuity")
+        let east = try mapItem("east", "2026-10-11T14:00:00Z", 0, 179.999)
+        let west = try mapItem("west", "2026-10-11T14:05:00Z", 0, -179.999)
+        check(MediaMapPoint(east)!.distance(to: MediaMapPoint(west)!) < 300, "distance wraps across antimeridian")
+        let wallClock = try mapItem("wall-clock", "2026-10-11T14:05:00")
+        check(MediaMapPoint(wallClock)?.day == "2026-10-11" && MediaMapPoint(wallClock)?.timeBasis == nil, "camera date without timezone can be browsed but never invents an absolute timestamp")
+        let invalidMapDay = try mapItem("invalid-day", "2026-02-30T14:05:00")
+        check(MediaMapPoint(invalidMapDay)?.day == nil, "invalid calendar dates are not silently normalized")
+        var uncertainGPS = mapB
+        uncertainGPS.metadata?.location?.datum = nil
+        uncertainGPS.metadata?.location?.horizontalAccuracy = nil
+        uncertainGPS.metadata?.captureDeviceID = nil
+        check(MediaMapData.sequenceNumbers([mapA, uncertainGPS].compactMap(MediaMapPoint.init)) == ["a":1, "b":2], "capture numbering is independent of route eligibility")
+        let sameInstant = try mapItem("tie", "2026-10-11T06:00:00Z")
+        check(MediaMapData.sequenceNumbers([mapA, sameInstant, mapB, wallClock].compactMap(MediaMapPoint.init)) == ["a":1, "tie":1, "b":3], "same absolute instant shares rank; unknown timezone never gets an invented rank")
+        let mapComposer = WorkspaceStore()
+        check(!mapComposer.hasMediaMap && mapComposer.sidebarMediaPages == [.media, .mediaSync], "map entry is hidden before importing real visual media")
+        mapComposer.navigate(.mediaMap)
+        check(mapComposer.page == .media, "map cannot be opened through hidden navigation before import")
+        var demoMapItem = mapA; demoMapItem.isExample = true
+        var audioMapItem = mapB; audioMapItem.kind = "audio"
+        mapComposer.items = [demoMapItem, audioMapItem]
+        check(!mapComposer.hasMediaMap, "examples and audio do not unlock the media map")
+        var unlocatedMapItem = mapA; unlocatedMapItem.metadata = nil; unlocatedMapItem.status = "queued"
+        let draftCoordinate = AgentTripLocation(latitude: 40.003, longitude: 116.318)
+        let draftPoint = MediaMapPoint(unlocatedMapItem, pendingLocation: draftCoordinate)
+        check(draftPoint?.latitude == 40.003 && draftPoint?.corrected == true, "explicit map placement supports sources without GPS")
+        check(unlocatedMapItem.metadata == nil && MediaMapPoint(unlocatedMapItem) == nil, "pending placement does not mutate original metadata")
+        check(MediaMapPoint(mapA, pendingLocation: .init(latitude: .nan, longitude: 116)) == nil, "invalid draft coordinates never reach MapKit")
+        check(MediaMapPoint(mapA, pendingLocation: draftCoordinate)?.accuracy == nil, "moving a pin never reuses original GPS accuracy")
+        mapComposer.items = [unlocatedMapItem]
+        check(mapComposer.hasMediaMap && mapComposer.sidebarMediaPages == [.media, .mediaMap, .mediaSync], "first registered visual import shows map immediately, without waiting for GPS or analysis")
+        mapComposer.items = [mapA, mapB]
+        mapComposer.query = "not-a-matching-filename"
+        mapComposer.navigate(.mediaMap)
+        check(mapComposer.mediaMapItems.count == 2 && mapComposer.query == "not-a-matching-filename", "map uses all library media without changing or inheriting Library search")
+        mapComposer.openMedia(mapA)
+        check(mapComposer.page == .mediaMap && mapComposer.mediaBackTitle == "Media map", "map details retain map navigation and back label")
+        mapComposer.backToMedia()
+        check(mapComposer.page == .mediaMap && mapComposer.detail == nil, "detail back stays in the map workspace")
+        mapComposer.openMedia(mapB); mapComposer.navigate(.media)
+        check(mapComposer.detail == nil && mapComposer.page == .media, "explicit Library navigation exits map details")
+        mapComposer.navigate(.mediaMap); mapComposer.items = []
+        check(!mapComposer.hasMediaMap && mapComposer.page == .media, "removing the last import hides map and returns safely to Library")
+        mapComposer.items = [mapA, mapB]
+        check(mapComposer.prepareMapCreation(["b", "a", "b"]), "map transfers selected registered media")
+        check(mapComposer.draft.attachments.map(\.id) == ["b", "a"], "map preserves requested media order and deduplicates")
+        check(mapComposer.page == .home && mapComposer.draft.projectId == nil && mapComposer.agentRuns.isEmpty && !mapComposer.saving, "map opens existing composer without submitting or creating a run")
+        check(mapComposer.draft.prompt == MediaMapCreation.prompt(chinese: mapComposer.language == .chinese), "map inserts editable default request")
+        mapComposer.draft.prompt = "Keep my existing words"
+        check(mapComposer.prepareMapCreation(["a"]) && mapComposer.draft.prompt == "Keep my existing words", "map merge never overwrites existing draft text")
+        check(!MediaMapCreation.prompt(chinese: true).contains("\n") && !MediaMapCreation.prompt(chinese: true).contains("1."), "map default request is one concise sentence without workflow internals")
+        check(mapComposer.prepareMapCreation(["a"], replaceDraft: true) && mapComposer.draft.attachments.map(\.id) == ["a"], "explicit replacement uses exactly the selected media")
+        let beforeInvalid = mapComposer.draft
+        check(!mapComposer.prepareMapCreation(["not-registered"]) && mapComposer.draft == beforeInvalid, "stale selection does not mutate the draft")
+        mapComposer.items[0].missing = true
+        check(!mapComposer.prepareMapCreation(["a"]) && mapComposer.draft == beforeInvalid, "missing originals cannot enter creation")
+        if CommandLine.arguments.contains("--map-only") {
+            let start = Date()
+            let large = (0..<10_000).map { index -> MediaItem in var value = mapA; value.id = "bulk-\(index)"; return value }
+            let projected = large.compactMap(MediaMapPoint.init)
+            check(projected.count == 10_000 && MediaMapData.routes(projected, day: "2026-10-11").isEmpty, "large coincident collection does not invent movement")
+            print("Passed all media map policy checks; 10,000-point projection and sequence check: \(Date().timeIntervalSince(start)) seconds.")
+            return
+        }
+        let savedSettings = AppSettingsDraft()
+        check(CatalogFailure.message(CancellationError()) == nil, "cancelled catalog task never becomes a persistent error")
+        check(CatalogFailure.message(URLError(.cancelled)) == nil, "cancelled catalog request never becomes an error notice")
+        check(CatalogFailure.message(URLError(.notConnectedToInternet)) != nil, "real catalog failures remain available in search information")
+        check(CameraMotionLabel.display("Pushing in + Horizontal pan right", chinese: true) == "向前推进 · 向右摇镜", "compound movement is readable Chinese")
+        check(CameraMotionLabel.display("PUSHING IN+Horizontal Pan Right", chinese: true) == "向前推进 · 向右摇镜", "motion aliases ignore case and separator spacing")
+        check(CameraMotionLabel.display("Push in then pan right", chinese: true) == "向前推进 → 向右摇镜", "explicit sequence is preserved")
+        check(CameraMotionLabel.display("Zoom in", chinese: true) == "变焦放大", "zoom is not physical camera movement")
+        check(CameraMotionLabel.display("Following", chinese: true) == "跟随拍摄", "existing simple motion still localizes")
+        check(CameraMotionLabel.display("向右摇镜", chinese: true) == "向右摇镜", "Chinese evidence stays unchanged")
+        check(CameraMotionLabel.display("Unknown movement", chinese: true) == "Unknown movement", "unknown motion is never guessed")
+        check(CameraMotionLabel.display("Pushing in + Horizontal pan right", chinese: false) == "Pushing in + Horizontal pan right", "English mode preserves original evidence")
+        check(!savedSettings.onlinePlaceNames, "online place lookup defaults off")
+        var privacyDraft = savedSettings
+        privacyDraft.onlinePlaceNames = true
+        check(privacyDraft != savedSettings && !savedSettings.onlinePlaceNames, "place consent remains a draft until confirmation")
+        let suite = "com.pixfun.place-tests.\(UUID().uuidString)"
+        let placeDefaults = UserDefaults(suiteName: suite)!
+        defer { placeDefaults.removePersistentDomain(forName: suite) }
+        let coordinate = CaptureLocation(latitude: 40.0248, longitude: 116.2882, source: "file-metadata")
+        let placeQuery = PlaceQuery(coordinate, language: "zh-Hans")!
+        check(PlaceQuery(CaptureLocation(latitude: 91, longitude: 0), language: "en") == nil, "invalid coordinates never reach a service")
+        check(PlaceQuery(CaptureLocation(latitude: .nan, longitude: 0), language: "en") == nil, "non-finite coordinates never reach a service")
+        check(placeQuery.key != PlaceQuery(coordinate, language: "en")!.key, "cached places are language-specific")
+        check(placeQuery.key != PlaceQuery(CaptureLocation(latitude: 40.02481, longitude: 116.2882), language: "zh-Hans")!.key, "nearby coordinates are not merged into one guessed address")
+        check(PlaceAddress(region: "北京市", city: "北京市", district: "海淀区", street: "颐和园路").label == "北京市 · 海淀区 · 颐和园路", "address components are deduplicated")
+        check(PlaceAddress().label == nil, "missing placemark does not invent a place")
+        let campus = PlaceAddress(city: "北京市", district: "海淀区", street: "至善路", area: "清华大学", nearbyName: "清华大学药学院")
+        check(campus.label == "北京市 · 海淀区 · 清华大学 · 至善路", "coordinate area and internal road form a hierarchy")
+        check(campus.label?.contains("药学院") == false, "nearby reference is not a verified photographed building")
+        typealias Boundary = PlaceBoundaryPolicy
+        func boundary(_ type: String = "area", _ id: Int64 = 1234, _ name: String = "测试大学", _ tags: [String: String] = ["amenity": "university"]) -> Boundary.Element {
+            .init(type: type == "area" ? "contained" : type, id: id, tags: tags.merging(["name": name, "_osm_type": type]) { _, new in new })
+        }
+        func match(_ elements: [Boundary.Element], language: String = "zh-Hans", remark: String? = nil) -> Boundary.Match? {
+            Boundary.match(.init(elements: elements, remark: remark), language: language)
+        }
+        let campusBoundary = match([boundary()])!
+        check(campusBoundary.name == "测试大学" && campusBoundary.relation == "inside", "arbitrary mapped campus is selected by containment, not a hardcoded name")
+        check(match([boundary("node")]) == nil, "a nearby campus POI is not a campus boundary")
+        check(match([boundary("way")]) == nil, "nearby campus perimeter does not prove containment")
+        check(match([.init(type: "contained", id: 2345, tags: ["_osm_type": "way", "name": "闭合校园", "amenity": "university"])])?.relation == "inside", "is_in closed ways support campuses without relation areas")
+        check(match([boundary(), boundary("area", 2222, "另一大学")]) == nil, "conflicting same-rank boundaries abstain")
+        check(match([boundary(), boundary()], remark: "runtime error: timeout") == nil, "partial Overpass output never produces a place")
+        check(match([]) == nil, "missing coverage does not invent a place")
+        check(match([boundary("area", 1234, "", ["amenity": "university"])]) == nil, "unnamed boundaries stay unnamed")
+        check(match([boundary("area", 1234, "测试省", ["boundary": "administrative"])]) == nil, "province containment never invents a scenic destination")
+        check(match([boundary("area", 1234, "湖景酒店", ["tourism": "hotel"])]) == nil, "hotel names do not establish a lake")
+        let waterTags = ["natural": "water", "water": "lake"]
+        let lake = match([boundary("relation", 4321, "测试湖", waterTags)])!
+        check(lake.relation == "nearby" && lake.kind == "lake", "100m lake perimeter query is explicitly proximity")
+        check(match([boundary("area", 4321, "测试湖", waterTags)])?.relation == "inside", "only is_in water area proves containment")
+        check(match([boundary("relation", 4321, "测试湖", waterTags), boundary("relation", 4322, "另一湖", waterTags)]) == nil, "ambiguous neighboring lakes abstain")
+        check(match([boundary(), boundary("relation", 4321, "测试湖", waterTags)])?.kind == "campus", "contained campus wins over a nearby lake")
+        check(match([boundary("area", 4321, "小公园", ["leisure": "park"]), boundary()])?.kind == "campus", "campus groups its smaller parks")
+        check(match([boundary("area", 1234, "大学", ["amenity": "university", "name:en": "Example University"])], language: "en")?.name == "Example University", "boundary names follow requested language")
+        let corrected = Boundary.applying(campusBoundary, to: PlaceAddress(city: "北京市", street: "至善路", area: "错误的公园"), language: "zh-Hans")
+        check(corrected.displayName == "北京 测试大学", "city and campus form a concise tag")
+        check(corrected.area == "测试大学" && corrected.label?.contains("错误的公园") == false, "boundary evidence can correct an unrelated reverse-geocoder area")
+        check(corrected.street == "至善路", "street detail remains available")
+        let lakeside = Boundary.applying(lake, to: PlaceAddress(region: "青海省", city: "海南藏族自治州"), language: "zh-Hans")
+        check(lakeside.displayName == "青海 测试湖附近", "lake context uses province and preserves proximity")
+        check(lakeside.label?.contains("附近") == true, "full address also preserves proximity")
+        check(Boundary.applying(lake, to: nil, language: "en").displayName == "测试湖 vicinity", "boundary result survives Apple outage without inventing a city")
+        check(Boundary.query(placeQuery).contains("is_in(40.0248,116.2882)") && !Boundary.query(placeQuery).contains("清华"), "request uses coordinates and generic categories only")
+        check(!savedSettings.onlinePlaceBoundaries, "new provider never inherits Apple consent automatically")
+        check(!savedSettings.onlinePlaceFallback, "backup geocoder requires separate consent")
+        let square = PlacePolygon.Geometry(polygons: [[[[0,0],[4,0],[4,4],[0,4],[0,0]],
+                                                       [[1,1],[2,1],[2,2],[1,2],[1,1]]]])
+        func point(_ lat: Double, _ lon: Double) -> PlaceQuery {
+            PlaceQuery(CaptureLocation(latitude:lat, longitude:lon), language:"zh-Hans")!
+        }
+        check(square.contains(point(3,3)), "polygon containment accepts actual interior")
+        check(!square.contains(point(1.5,1.5)), "polygon holes exclude nearby but unrelated properties")
+        check(!square.contains(point(0,2)) && !square.contains(point(1,1.5)), "uncertain polygon edges and hole edges abstain")
+        check(!square.contains(point(5,3)), "bounding rectangle cannot replace real polygon evidence")
+        let disjoint = PlacePolygon.Geometry(polygons: [[[[0,0],[1,0],[1,1],[0,1],[0,0]]],
+                                                         [[[2,2],[3,2],[3,3],[2,3],[2,2]]]])
+        check(disjoint.contains(point(2.5,2.5)) && !disjoint.contains(point(1.5,1.5)), "multipolygon islands do not fill intervening space")
+        let fallbackSuite = suite + ".fallback"
+        let fallbackDefaults = UserDefaults(suiteName:fallbackSuite)!
+        defer { fallbackDefaults.removePersistentDomain(forName:fallbackSuite) }
+        var fallbackCalls = 0
+        let campusJSON = try Data(contentsOf: URL(fileURLWithPath:"tests/fixtures/place-campus.json"))
+        let fallback = PlaceFallbackLookup(defaults:fallbackDefaults, interval:0, fetch:{ request in
+            fallbackCalls += 1
+            if request.url?.path == "/search" { return Data("[]".utf8) }
+            return campusJSON
+        })
+        let publicCampusCentre = point(40.006,116.32)
+        let disabledMatch = try await fallback.lookup(publicCampusCentre)
+        check(disabledMatch == nil && fallbackCalls == 0, "backup opt-out sends no request")
+        fallbackDefaults.set(true,forKey:PlaceFallbackLookup.consentKey)
+        let fallbackMatch = try await fallback.lookup(publicCampusCentre)
+        check(fallbackMatch?.name == "清华大学" && fallbackMatch?.city == "北京市", "district-valued city field does not discard the actual municipality")
+        check(fallbackMatch?.id == "area/3607469216", "verified relation geometry keeps stable OSM identity")
+        let nearbyCampusPoint = try await fallback.lookup(point(40.007,116.321))
+        check(nearbyCampusPoint == fallbackMatch && fallbackCalls == 1, "same mapped campus reuses geometry instead of repeating coordinate requests")
+        let reopenedFallback = PlaceFallbackLookup(defaults:fallbackDefaults, fetch:{ _ in fatalError("polygon cache must not use network") })
+        check(reopenedFallback.cachedMatch(point(40.007,116.321)) == fallbackMatch, "geometry cache survives a restart")
+        check(reopenedFallback.cachedMatch(point(39.99,116.30)) == nil, "neighboring university cannot inherit this campus")
+        fallbackDefaults.set(false,forKey:PlaceFallbackLookup.consentKey)
+        check(reopenedFallback.cachedMatch(publicCampusCentre) == nil, "disabling the backup stops new geometry matches")
+        check(PlaceCaption.make(city:"北京市",region:nil,area:"测试校园",chinese:true) == "北京 测试校园", "city plus area is independent of any specific campus")
+        let searchSuite = suite + ".fallback-search"
+        let searchDefaults = UserDefaults(suiteName:searchSuite)!
+        defer { searchDefaults.removePersistentDomain(forName:searchSuite) }
+        searchDefaults.set(true,forKey:PlaceFallbackLookup.consentKey)
+        var discoveryCalls = 0
+        var publicObject = try JSONSerialization.jsonObject(with:campusJSON) as! [String:Any]
+        publicObject.removeValue(forKey:"geojson")
+        let discovery = PlaceFallbackLookup(defaults:searchDefaults, interval:0, fetch:{ request in
+            discoveryCalls += 1
+            switch request.url?.path {
+            case "/reverse": return Data(#"{"osm_type":"node","osm_id":1,"category":"tourism","type":"artwork","name":"A sculpture","address":{"city":"Some district"}}"#.utf8)
+            case "/search":
+                check(URLComponents(url:request.url!,resolvingAgainstBaseURL:false)?.queryItems?.first(where:{$0.name == "q"})?.value == "[university]", "candidate discovery is generic, not a campus-name whitelist")
+                return try JSONSerialization.data(withJSONObject:[publicObject])
+            default: return Data("[".utf8) + campusJSON + Data("]".utf8)
+            }
+        })
+        let discoveredCampus = try await discovery.lookup(publicCampusCentre)
+        check(discoveredCampus?.id == "area/3607469216" && discoveryCalls == 3, "nearby sculpture is rejected, bounded candidates are hydrated and real polygon is checked")
+        fallbackDefaults.set(true,forKey:PlaceFallbackLookup.consentKey)
+        let outside = try await fallback.lookup(point(40.02,116.34))
+        check(outside == nil, "nearest campus returned by reverse geocoding is not adopted outside its boundary")
+        var placeCalls = 0
+        let resolver = PlaceNameResolver(defaults: placeDefaults, interval: 0.001, lookup: { query in
+            placeCalls += 1
+            try await Task.sleep(nanoseconds: 10_000_000)
+            return PlaceAddress(street: "北京市 · 海淀区 · 颐和园路")
+        })
+        resolver.schedule([placeQuery], enabled: false, foreground: true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        check(placeCalls == 0, "no consent means no network call")
+        resolver.schedule([placeQuery], enabled: true, foreground: false)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        check(placeCalls == 0, "background app does not initiate lookups")
+        resolver.schedule([placeQuery, placeQuery], enabled: true, foreground: true)
+        try await Task.sleep(nanoseconds: 2_000_000)
+        resolver.schedule([placeQuery], enabled: true, foreground: true)
+        for _ in 0..<100 where resolver.cached(placeQuery) == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        check(resolver.cached(placeQuery) == "北京市 · 海淀区 · 颐和园路" && placeCalls == 1, "duplicate and in-flight queries are coalesced")
+        let reopened = PlaceNameResolver(defaults: placeDefaults, lookup: { _ in fatalError("cache hit must not use network") })
+        check(reopened.cached(placeQuery) == resolver.cached(placeQuery), "names survive client restarts in a local cache")
+        var boundaryCalls = 0
+        let enrichedResolver = PlaceNameResolver(defaults: placeDefaults, interval: 0.001,
+            useBoundaries: { true }, lookup: { _ in PlaceAddress(city: "北京市", street: "至善路") },
+            boundaryLookup: { _ in boundaryCalls += 1; return campusBoundary })
+        check(enrichedResolver.cached(placeQuery) == nil, "Apple-only cache does not prevent new boundary enrichment")
+        enrichedResolver.schedule([placeQuery], enabled: true, foreground: true)
+        for _ in 0..<100 where enrichedResolver.cached(placeQuery) == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        check(boundaryCalls == 1 && enrichedResolver.resolved(placeQuery)?.displayName == "北京 测试大学", "boundary enrichment flows through scheduled cache and result contract")
+        let boundaryCache = PlaceNameResolver(defaults: placeDefaults, useBoundaries: { true },
+            lookup: { _ in fatalError("cache must not query") }, boundaryLookup: { _ in fatalError("cache must not query boundaries") })
+        check(boundaryCache.resolved(placeQuery)?.boundaryID == "area/1234", "boundary identity survives client restarts")
+        placeDefaults.set(true,forKey:PlaceFallbackLookup.consentKey)
+        check(boundaryCache.cached(placeQuery) == nil, "enabling fallback invalidates the previous provider cache key")
+        placeDefaults.set(false,forKey:PlaceFallbackLookup.consentKey)
+        var strongPlaceItem = try JSONDecoder().decode(MediaItem.self,from:Data(#"{"id":"strong","file":{"name":"Unrelated.mov"},"kind":"video","status":"ready"}"#.utf8))
+        strongPlaceItem.metadata = Metadata(location:coordinate)
+        strongPlaceItem.resolvedPlace = enrichedResolver.resolved(placeQuery)
+        check(resolver.applyingCache(to:[strongPlaceItem],language:"zh-Hans")[0].resolvedPlace?.version == 3, "old street cache never downgrades a verified campus")
+        var scenicItem = strongPlaceItem
+        scenicItem.resolvedPlace = .init(version:2,label:"中国 · 北京市 · 延庆区 · 测试完整景区 · 千小路",area:"测试完整景区",
+                                         latitude:coordinate.latitude!,longitude:coordinate.longitude!,language:"zh-Hans",
+                                         provider:"apple-geocoder",resolvedAt:Date().timeIntervalSince1970)
+        let aliasDefaults = UserDefaults(suiteName:suite + ".aliases")!
+        defer { aliasDefaults.removePersistentDomain(forName:suite + ".aliases") }
+        aliasDefaults.set(["北京|测试完整景区":"测试景区"],forKey:PlaceNameResolver.aliasesKey)
+        let aliasResolver = PlaceNameResolver(defaults:aliasDefaults)
+        let preferredScenic = aliasResolver.applyingCache(to:[scenicItem],language:"zh-Hans")[0]
+        check(preferredScenic.locationGroup == "北京 测试景区" && preferredScenic.recordedLocation?.contains("测试完整景区") == true, "city-scoped alias preserves canonical location and full address")
+        check(MediaSearchDocument(preferredScenic).match(MediaSearchQuery("测试景区"),scope:.all,location:nil) != nil, "preferred concise place remains searchable")
+        let localGeometry = PlaceNameResolver(defaults:aliasDefaults,useBoundaries:{ true },
+            lookup:{ _ in fatalError("cached geometry does not wait for online queue") },
+            boundaryLookup:{ _ in fatalError("cached geometry does not use network") },
+            cachedBoundary:{ _ in campusBoundary })
+        let replacedWrongArea = localGeometry.applyingCache(to:[scenicItem],language:"zh-Hans")[0]
+        check(replacedWrongArea.resolvedPlace?.version == 3 && replacedWrongArea.locationGroup == "北京 测试大学", "cached verified area replaces weak named-area result synchronously without a queue or filename rule")
+        let offlineSuite = suite + ".boundary-offline"
+        let offlineDefaults = UserDefaults(suiteName: offlineSuite)!
+        defer { offlineDefaults.removePersistentDomain(forName: offlineSuite) }
+        let boundaryOffline = PlaceNameResolver(defaults: offlineDefaults, interval: 0.001, useBoundaries: { true },
+            lookup: { _ in PlaceAddress(city: "北京市", street: "原街道") },
+            boundaryLookup: { _ in throw URLError(.notConnectedToInternet) })
+        boundaryOffline.schedule([placeQuery], enabled: true, foreground: true)
+        for _ in 0..<100 where boundaryOffline.cached(placeQuery) == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        check(boundaryOffline.resolved(placeQuery)?.version == 2 && boundaryOffline.cached(placeQuery)?.contains("原街道") == true, "boundary outage preserves Apple's address without claiming containment")
+        let retryBoundary = PlaceNameResolver(defaults: offlineDefaults, now: { Date().addingTimeInterval(901) }, useBoundaries: { true })
+        check(retryBoundary.cached(placeQuery) == nil, "failed enrichment retries after cooldown, not after 30 days")
+        let noBoundarySuite = suite + ".boundary-disabled"
+        let noBoundaryDefaults = UserDefaults(suiteName: noBoundarySuite)!
+        defer { noBoundaryDefaults.removePersistentDomain(forName: noBoundarySuite) }
+        let boundaryDisabled = PlaceNameResolver(defaults: noBoundaryDefaults, useBoundaries: { false },
+            lookup: { _ in PlaceAddress(city: "北京") }, boundaryLookup: { _ in fatalError("new provider needs separate consent") })
+        boundaryDisabled.schedule([placeQuery], enabled: true, foreground: true)
+        for _ in 0..<100 where boundaryDisabled.cached(placeQuery) == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        check(boundaryDisabled.resolved(placeQuery)?.version == 2, "Apple consent alone never queries the new provider")
+        let expired = PlaceNameResolver(defaults: placeDefaults, now: { Date().addingTimeInterval(31 * 86400) }, lookup: { _ in nil })
+        check(expired.cached(placeQuery) == nil, "expired cache entries can be refreshed")
+        var noResultCalls = 0
+        let noResult = PlaceNameResolver(defaults: UserDefaults(suiteName: suite + ".empty")!, lookup: { _ in noResultCalls += 1; return nil })
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite + ".empty") }
+        noResult.schedule([placeQuery], enabled: true, foreground: true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        noResult.schedule([placeQuery], enabled: true, foreground: true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        check(noResultCalls == 1 && noResult.cached(placeQuery) == nil, "no-result responses fall back and do not retry on each refresh")
+        var failedCalls = 0
+        let failedResolver = PlaceNameResolver(defaults: UserDefaults(suiteName: suite + ".failed")!, lookup: { _ in
+            failedCalls += 1; throw NSError(domain: "offline-fixture", code: 1)
+        })
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite + ".failed") }
+        failedResolver.schedule([placeQuery], enabled: true, foreground: true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        failedResolver.schedule([placeQuery], enabled: true, foreground: true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        check(failedCalls == 1 && failedResolver.cached(placeQuery) == nil, "network failures keep coordinates and back off without a request loop")
+        failedResolver.cancel()
+        let cancelled = PlaceNameResolver(defaults: UserDefaults(suiteName: suite + ".cancel")!, lookup: { _ in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            return PlaceAddress(street: "must not publish after consent withdrawal")
+        })
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite + ".cancel") }
+        cancelled.schedule([placeQuery], enabled: true, foreground: true)
+        try await Task.sleep(nanoseconds: 5_000_000)
+        cancelled.schedule([], enabled: false, foreground: true)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        check(cancelled.cached(placeQuery) == nil, "revoking consent discards in-flight responses")
+        var pendingSettings = savedSettings
+        pendingSettings.language = .english
+        check(savedSettings.language == .chinese, "language selection edits an isolated draft")
+        check(!pendingSettings.requiresCloudSave(comparedTo: savedSettings), "language-only confirmation never touches provider or Keychain")
+        check(pendingSettings.validationIssue == nil, "local mode does not require cloud credentials")
+        pendingSettings = savedSettings
+        check(pendingSettings == savedSettings, "cancel discards pending settings")
+        pendingSettings.mode = "cloud"
+        check(pendingSettings.requiresCloudSave(comparedTo: savedSettings), "processing mode change requires explicit save")
+        check(pendingSettings.validationIssue == "Enter a text model ID.", "validate cloud model before committing anything")
+        pendingSettings.cloud.model = "test-model"
+        check(pendingSettings.validationIssue == "Enter an API key.", "validate credentials before committing anything")
+        pendingSettings.cloud.apiKey = "test-only"
+        check(pendingSettings.validationIssue == "Enter a vision model ID.", "cloud analysis requires a vision model")
+        pendingSettings.mode = "hybrid"
+        check(pendingSettings.validationIssue == nil, "hybrid processing does not require cloud vision")
+        let captureMetadata = try JSONDecoder().decode(Metadata.self, from: Data(#"{"capturedAt":"2026-10-05T13:30:45+0800","camera":"iPhone 14 Pro Max","mediaCreatedAt":"2026-10-07T13:40:14Z"}"#.utf8))
+        check(captureMetadata.captureDate == ISO8601DateFormatter().date(from: "2026-10-05T05:30:45Z"), "card capture time uses actual recording metadata and honors timezone")
+        check(captureMetadata.camera == "iPhone 14 Pro Max", "card device label decodes recorded camera model")
+        let originalMetadata = try JSONDecoder().decode(Metadata.self, from: Data(#"{"fps":59.94,"videoCodec":"hevc","audioCodec":"aac","mediaCreatedAt":"2026-10-11T06:23:20Z","dateSource":"QuickTime creationdate"}"#.utf8))
+        check(originalMetadata.frameRateLabel == "59.94 fps", "original frame rate retains fractional precision")
+        check(Metadata(fps: 60).frameRateLabel == "60 fps", "integer frame rates have no redundant decimals")
+        check(Metadata(fps: 0).frameRateLabel == nil && Metadata(fps: .infinity).frameRateLabel == nil, "unread or invalid frame rates are not fabricated")
+        check(Metadata.codecLabel(originalMetadata.videoCodec) == "HEVC (H.265)", "video codec is decoded from file metadata")
+        check(Metadata.codecLabel(originalMetadata.audioCodec) == "AAC", "audio codec is decoded separately")
+        check(Metadata.codecLabel("unknown") == nil && Metadata.codecLabel(nil) == nil, "unknown codecs stay absent")
+        check(originalMetadata.mediaCreatedAt == "2026-10-11T06:23:20Z" && originalMetadata.dateSource == "QuickTime creationdate", "container date and capture-date provenance remain separate")
+        check(originalMetadata.captureDate == nil, "container creation date must not become a capture date")
+        let exportOnly = try JSONDecoder().decode(Metadata.self, from: Data(#"{"mediaCreatedAt":"2026-10-07T13:40:14Z"}"#.utf8))
+        let locationFixture = #"{"id":"capture","file":{"name":"Original.MOV"},"kind":"video","status":"ready","metadata":{"duration":10,"location":{"latitude":39.9,"longitude":116.4,"source":"file-metadata"}},"result":{"analysis":{"subtitleState":"transcribed","subtitleSource":"local-asr","subtitleCues":[{"start":1,"end":3,"text":"前面就是入口"}]}},"analysisEvidence":{"version":1,"tags":[],"onScreenText":[{"text":"游客中心","start":2,"end":8,"confidence":0.95}]}}"#
+        var capturedItem = try JSONDecoder().decode(MediaItem.self, from: Data(locationFixture.utf8))
+        let localCaptureSource = MediaSourceIdentity(item: capturedItem)
+        let phoneBadge = MediaCaptureIdentity(camera: "iPhone 14 Pro Max", source: localCaptureSource)
+        check(phoneBadge.name == "iPhone 14 Pro Max" && phoneBadge.symbol == "iphone", "iPhone imported locally uses phone badge, not computer")
+        check(localCaptureSource.symbol == "desktopcomputer", "camera badge never changes import source semantics")
+        check(MediaCaptureIdentity(camera: " IPHONE 15 PRO ", source: localCaptureSource).symbol == "iphone", "camera icon handles case and whitespace")
+        check(MediaCaptureIdentity(camera: "iPad Pro", source: localCaptureSource).symbol == "ipad", "tablet does not use a phone or computer icon")
+        check(MediaCaptureIdentity(camera: "Google Pixel 9", source: localCaptureSource).symbol == "smartphone", "known Android phone uses smartphone icon")
+        check(MediaCaptureIdentity(camera: "Sony ILCE-7M4", source: localCaptureSource).symbol == "camera", "named cameras use camera icon")
+        check(MediaCaptureIdentity(camera: "DJI Osmo Pocket 3", source: localCaptureSource).symbol == "camera", "manufacturer alone does not imply a drone")
+        check(MediaCaptureIdentity(camera: nil, source: localCaptureSource).symbol == localCaptureSource.symbol, "missing capture device uses actual import source")
+        check(MediaCaptureIdentity(camera: "  ", source: localCaptureSource).name == localCaptureSource.name, "blank camera uses matching source label and icon")
+        var mappedItem = capturedItem
+        mappedItem.metadata?.location = coordinate
+        let originalCoordinate = mappedItem.metadata?.location?.coordinates
+        mappedItem = resolver.applyingCache(to: [mappedItem], language: "zh-Hans")[0]
+        check(mappedItem.recordedLocation == "北京市 · 海淀区 · 颐和园路", "cached names replace coordinate-only labels")
+        check(mappedItem.metadata?.location?.coordinates == originalCoordinate, "name lookup never changes source coordinates")
+        check(mappedItem.matches("海淀区") && mappedItem.matches("40.02480"), "both resolved names and original coordinates remain searchable")
+        check(MediaQuickTags.tags(mappedItem).first?.text == mappedItem.recordedLocation, "location tags share the resolved name")
+        check(mappedItem.locationAttribution.contains("Approximate area"), "geocoded areas are never claimed as verified visits")
+        check(resolver.applyingCache(to: [mappedItem], language: "en")[0].recordedLocation == originalCoordinate, "language change does not reuse stale-language labels")
+        mappedItem.context = ["location":"用户指定地点"]
+        check(resolver.applyingCache(to: [mappedItem], language: "zh-Hans")[0].recordedLocation == "用户指定地点", "user place names are never overwritten")
+        mappedItem.context = nil; mappedItem.metadata?.location?.name = "文件内地点"
+        check(resolver.applyingCache(to: [mappedItem], language: "zh-Hans")[0].recordedLocation == "文件内地点", "source place names take priority without a network request")
+        check(capturedItem.recordedLocation == "39.90000, 116.40000", "GPS-only capture stays coordinates; no guessed city")
+        check(MediaQuickTags.tags(capturedItem).first?.facet == .location, "metadata locations appear in the location filter")
+        check(capturedItem.subtitleSourceLabel == "Speech transcription", "speech and authored captions have distinct provenance")
+        check(capturedItem.transcriptCues.first?.text == "前面就是入口", "saved ASR is available to the detail page")
+        let capturedSearch = MediaSearchDocument(capturedItem)
+        check(capturedSearch.fields.contains { $0.text == "游客中心" && $0.start == 2 }, "OCR text is searchable at its observation window")
+        capturedItem.context = ["location":"用户确认地点"]
+        check(capturedItem.recordedLocation == "用户确认地点", "confirmed location wins without overwriting source GPS")
+        check(capturedItem.name == "Original.MOV", "capture extraction preserves the original filename")
+        capturedItem.result?.analysis?.subtitleMessage = "No embedded subtitles. Speech recognition is not bundled in this build."
+        check(capturedItem.subtitleDisplayMessage == "No saved transcript yet. Analyze this file to extract subtitles and speech.", "legacy cache does not claim current build lacks speech recognition")
+        capturedItem.result?.analysis?.subtitleMessage = "Speech recognition failed."
+        check(capturedItem.subtitleDisplayMessage == "Speech recognition failed.", "actual speech failures remain visible")
+        check(exportOnly.captureDate == nil, "container/export date is never mislabeled as capture date")
+        check(Metadata(capturedAt: "invalid").captureDate == nil, "malformed capture dates remain unknown")
+        check(Metadata(capturedAt: "2026-10-05T05:30:45.123Z").captureDate != nil, "fractional-second capture timestamps are supported")
+        check(WorkspacePage.mediaPages == [.media, .mediaMap, .mediaSync], "Media groups the library, map and sync")
+        check(WorkspacePage.creationPages == [.home, .project, .skills] && WorkspacePage.project.isCreation, "Create groups new video, projects and skills")
+        check(WorkspacePage.primaryPages == [.media, .mediaSync, .home, .project, .skills, .mediaMap], "all destinations have one sidebar entry and keyboard shortcut")
+        check(Set(WorkspacePage.primaryPages) == Set(WorkspacePage.allCases), "sidebar covers every destination exactly once")
+        check(WorkspacePage.home.navigationTitle == "New video" && WorkspacePage.skills.navigationTitle == "Skills", "child labels remain distinct from the Create group")
+        let syncJSON = #"{"devices":[{"id":"card","name":"Card","kind":"camera","status":"Paused","message":"Completed files are kept.","automatic":true,"photos":true,"videos":true,"connected":true,"busy":false,"lastSync":null,"completed":2,"total":10,"failed":1,"skipped":3,"bytes":500,"totalBytes":1000}],"storage":[{"id":"working","name":"Not configured","path":null,"availableBytes":null,"connected":false,"enabled":false}],"available":[],"archivePending":0,"archiving":false,"phoneAvailable":false}"#
+        let sync = try JSONDecoder().decode(MediaSyncSnapshot.self, from: Data(syncJSON.utf8))
+        check(sync.devices[0].processed == 5 && sync.devices[0].pending == 4, "sync counts separate ready, pending and failed files")
+        check(sync.devices[0].fraction == 0.5, "sync progress uses real transferred bytes")
+        check(sync.devices[0].action == "Resume", "paused imports have a direct resume action")
+        check(!sync.storageBusy && sync.working?.path == nil, "empty storage remains unconfigured without fabricated capacity")
+        check(!sync.phoneAvailable, "unconnected phone capability stays unavailable")
+        check(sync.wifi == nil, "older service snapshots do not fabricate Wi-Fi readiness")
+        let wifi = try JSONDecoder().decode(SyncWiFi.self, from: Data(#"{"enabled":true,"error":null,"pairing":{"payload":"test-code","expiresAt":2000000000}}"#.utf8))
+        check(wifi.enabled && wifi.pairing?.payload == "test-code", "Wi-Fi pairing preserves the QR payload and expiry")
+        var phoneDevice = sync.devices[0]; phoneDevice.kind = "phone"; phoneDevice.status = "Offline"
+        check(phoneDevice.method == "Wi-Fi sync" && phoneDevice.phaseTitle == "Waiting for phone", "phone sources use their existing card with correct connection state")
+        check(phoneDevice.phaseMessage.contains("same Wi-Fi") && phoneDevice.phaseMessage.contains("Background"), "offline phone instructions explain connection and background limitations")
+        let detectedCard = try JSONDecoder().decode(SyncDiscoveredSource.self, from: Data(#"{"id":"volume-id","name":"EOS_CARD","path":"/Volumes/EOS_CARD","kind":"camera"}"#.utf8))
+        check(detectedCard.name == "EOS_CARD" && detectedCard.kind == "camera", "discovery preserves system volume name and supported source kind")
+        let legacySource = try JSONDecoder().decode(SyncDiscoveredSource.self, from: Data(#"{"id":"volume-id","name":"Travel SSD","path":"/Volumes/Travel SSD"}"#.utf8))
+        check(legacySource.kind == nil, "existing discovery snapshots remain compatible")
+        var syncDevice = sync.devices[0]
+        syncDevice.status = "Waiting for storage"
+        check(!syncDevice.checking && !syncDevice.showsProgress, "waiting for a drive is not active transfer progress")
+        check(syncDevice.phaseMessage.contains("automatically"), "storage reconnection explains automatic recovery")
+        syncDevice.status = "Offline"
+        check(syncDevice.phaseTitle == "Waiting for your device" && !syncDevice.needsAttention, "automatic offline source is a normal waiting state")
+        syncDevice.automatic = false
+        check(syncDevice.phaseTitle == "Disconnected" && syncDevice.needsAttention, "manual offline source retains explicit recovery")
+        syncDevice.automatic = true
+        syncDevice.bytes = 2000
+        check(syncDevice.fraction == 1, "sync progress is clamped")
+        syncDevice.totalBytes = 0
+        check(syncDevice.fraction == 0, "scan without known total does not fabricate a percentage")
+        syncDevice.status = "Needs Attention"
+        check(syncDevice.action == "Retry", "failed imports have a direct retry action")
+        syncDevice.status = "Scanning"
+        check(syncDevice.checking, "resume checking does not present a reset determinate progress bar")
+        syncDevice.status = "Waiting"
+        check(syncDevice.checking, "queued work is distinguished from copying")
+        syncDevice.completed = 0; syncDevice.failed = 0; syncDevice.skipped = 10
+        check(syncDevice.summary == "10 already imported", "completed duplicate-only runs do not add redundant zero counts")
+        syncDevice.status = "Completed"
+        check(syncDevice.phaseTitle == "Up to date" && syncDevice.actionLabel == "Check for new", "duplicate-only imports offer a simple recheck")
+        syncDevice.status = "Verifying"; syncDevice.bytes = 1000; syncDevice.totalBytes = 1000
+        check(!syncDevice.showsProgress && syncDevice.phaseTitle == "Verifying copies", "100 percent copied is not import completion")
+        syncDevice.status = "Paused"; syncDevice.busy = true
+        check(syncDevice.phaseTitle == "Pausing…" && !syncDevice.showsProgress, "pause waits for the current safe step")
+        syncDevice.busy = false
+        check(syncDevice.showsProgress && syncDevice.actionLabel == "Continue import", "paused job keeps progress and one recovery action")
+        syncDevice.status = "Offline"
+        check(!syncDevice.needsAttention && syncDevice.phaseMessage.contains("Plug it in"), "completed disconnected source stays quiet but keeps recovery guidance")
         check(AgentExample.starters.count == 3, "three supported starter workflows")
         check(Set(AgentExample.starters.map(\.symbol)).count == 3, "starter actions have distinct icons")
         check(AgentExample.starters.map(\.id) == ["analyze", "create", "highlights"], "starters offer analysis, a travel video, then a short highlight reel")
@@ -24,6 +585,17 @@ import Foundation
         }, "starter copy does not impose source audio, video-only inputs or skill-specific finishing choices")
         let raw = #"{"id":"a","file":{"name":"trip.mov","size":123},"kind":"video","status":"ready","metadata":{"width":1080,"height":1920,"duration":690,"hasAudio":true},"favorite":true,"context":{"location":"Glacier","device":"iPhone"},"description":"A mountain walk","result":{"analysis":{"segments":[{"id":"seg-1","label":"Chapter 1","start":0,"end":86.25,"boundary":{"type":"time_split"}}],"subtitleCues":[{"start":0.2,"end":3,"text":"Complete spoken sentence"}]}}}"#
         let item = try JSONDecoder().decode(MediaItem.self, from: Data(raw.utf8))
+        var syncedItem = item; syncedItem.id = "synced"; syncedItem.syncSourceId = "camera"; syncedItem.syncSourceName = "My camera"
+        check(MediaFilter(syncSourceID: "camera").apply([item, syncedItem], locations: [:]).map(\.id) == ["synced"], "View Media locates imported assets independent of Working Storage paths")
+        let restoredSync = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(syncedItem))
+        check(restoredSync.syncSourceId == "camera", "device identity survives library decoding")
+        let syncStore = WorkspaceStore()
+        syncStore.items = [item, syncedItem]; syncStore.syncSourceName = "My camera"; syncStore.syncSourceID = "camera"
+        check(syncStore.visibleItems.map(\.id) == ["synced"] && syncStore.hasMediaFilters, "device filter uses the existing media browser")
+        check(syncStore.mediaResultSummary.contains("My camera"), "device context stays visible while browsing")
+        check(syncStore.importedSources.count == 1, "many imported assets share one source menu entry")
+        syncStore.resetMediaFilters()
+        check(syncStore.visibleItems.count == 2 && syncStore.syncSourceID == nil, "Clear returns to the full library")
         check(item.aspect == 1080.0 / 1920.0, "portrait aspect retained")
         check(item.matches("GLACIER") && item.matches("iphone"), "search location and device")
         check(item.matches("spoken sentence"), "search subtitles, not substitute for description")
@@ -38,7 +610,19 @@ import Foundation
         check(!item.matches("unrelated"), "search mismatch")
         var described = item
         described.videoDescription = VideoDescription(status: "ready", title: "林间徒步抵达观景点", full_description: "同行者在观景点停留，适合作为故事转折。")
-        check(described.name == "林间徒步抵达观景点" && described.file.name == "trip.mov", "editorial title never renames source")
+        check(described.name == "trip.mov" && described.file.name == "trip.mov", "analysis never replaces the displayed or original filename")
+        check(MediaSearchDocument(described).match(MediaSearchQuery("林间徒步"), scope: .content, location: nil) != nil, "suggested titles remain searchable as content metadata")
+        var evidenced = described
+        let riverTag = EvidenceTag(id:"scene:water", category:"scene", key:"water", label:"Lakes & rivers", aliases:["河流"], source:"visual-observation", evidence:[.init(start:2, end:6, shotIds:["canonical"], text:"river")])
+        evidenced.analysisEvidence = .init(version:1, tags:[riverTag])
+        check(MediaQuickTags.tags(evidenced).contains { $0.key == "water" }, "structured tags use existing filter IDs")
+        check(!MediaQuickTags.tags(evidenced).contains { $0.key == "mountain" }, "structured tags do not leak legacy prose-derived classifications")
+        let evidenceHits = MediaSearchDocument(evidenced).match(MediaSearchQuery("河流"), scope: .content, location: nil)
+        check(evidenceHits?.first?.start == 2 && evidenceHits?.first?.segmentID == "canonical", "tag synonyms retain observed time and shot identity")
+        evidenced.tagCorrections = .init(hidden:["scene:water"], added:[])
+        check(evidenced.evidenceTags.isEmpty && !MediaQuickTags.tags(evidenced).contains { $0.key == "water" }, "correction hides a category without modifying the source evidence")
+        let roundtripEvidence = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(evidenced))
+        check(roundtripEvidence.generatedTags.count == 1 && roundtripEvidence.evidenceTags.isEmpty, "corrections and original evidence survive decoding separately")
         check(described.matches("故事转折") && described.matches("trip.mov"), "search full description and original filename")
         var sample = described
         sample.isExample = true
@@ -52,6 +636,25 @@ import Foundation
         check(sample.displayVideoDescription?.full_description == "An English model description.", "new English analysis remains visible")
         let restoredDescription = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(described))
         check(restoredDescription.videoDescription?.full_description == described.videoDescription?.full_description, "description survives round trip")
+        let numberedDescription = VideoDescription(status: "ready", full_description: "A riverside view reveals a mountain.\n\n1. Opening view: A wide view of the river.\n2. Camera movement: The camera pans at 3.1s.\nThe same continuous take reveals two figures.\n\nEditing note: Use as an establishing moment.\nVerification note: Confirm the transcript before quoting it.")
+        let reading = numberedDescription.readingBlocks
+        check(reading.count == 5 && reading[0].kind == .overview, "overview is separate from numbered moments and notes")
+        check(reading[1].number == "1" && reading[1].label == "Opening view", "numbered detail has a separate label")
+        check(reading[2].text.contains("3.1s.") && reading[2].text.contains("continuous take"), "wrapped detail retains decimal timestamps and shot continuity")
+        check(reading[3].kind == .note && reading[4].label == "Verification note", "editing and verification remain visible distinct notes")
+        check(numberedDescription.contentBlocks.count == 4 && numberedDescription.contentBlocks.last?.label == "Verification note", "factual content keeps uncertainty but separates editing advice")
+        check(numberedDescription.editingNotes.count == 1 && numberedDescription.editingNotes[0].text == "Use as an establishing moment.", "old editing advice is preserved for its own disclosure")
+        check(numberedDescription.full_description?.contains("Editing note:") == true, "presentation never rewrites stored descriptions")
+        let legacyText = "The sequence opens with a wide view of a river bordered by a stone retaining wall and branches in the foreground. The camera stays steady until 3.1s, then pans right to reveal a rocky mountain beneath a blue sky. Two people stand near the bank as the camera tilts slightly upward, retaining the river surface and distant vehicles in view."
+        let legacy = VideoDescriptionBlock.parse(legacyText)
+        check(legacy.count > 1 && legacy.allSatisfy { $0.number == nil }, "legacy paragraphs are not relabeled as detected shots")
+        check(legacy.map(\.text).joined(separator: " ") == legacyText, "legacy layout preserves every word and decimal timestamp")
+        check(VideoDescriptionBlock.parse(" \n ").isEmpty, "blank descriptions create no empty reading blocks")
+        check(ShotReadingText.summary("A river beside a stone wall. Several cars are parked above it.") == "A river beside a stone wall.", "shot summary shows one original sentence")
+        check(ShotReadingText.summary("The camera pans at 3.1s. Two people appear.") == "The camera pans at 3.1s.", "shot summary does not split decimal timestamps")
+        check(ShotReadingText.summary("河流流经石墙。岸边停着几辆汽车。") == "河流流经石墙。", "Chinese shot summaries stop at sentence boundaries")
+        check(ShotReadingText.summary(String(repeating: "riverbank ", count: 40)).count <= 180, "long shot summaries have a bounded reading length")
+        check(ShotReadingText.summary(" \n ") == "No shot description yet.", "missing shot text does not invent a scene")
         check(item.segments[0].splitReason == "Time-based split", "do not invent scene detection")
         var analyzed = item
         analyzed.shotAnalysis = ShotAnalysis(status: "ready", summary: "A continuous walk", segments: [Segment(id: "shot_001", label: "Continuous mountain walk", start: 0, end: 690, boundary: Segment.Boundary(type: "semantic_change"))])
@@ -62,6 +665,30 @@ import Foundation
         check(restoredShots.shotAnalysis?.summary == "A continuous walk", "editorial analysis persists")
         var highlight = EditorialShot(shot_id: "shot_001", start_time: "00:00:00.000", end_time: "00:00:08.000", description: "营地互动", shot_size: "中景", capture_type: "", camera_motion: "", story_role: ["高光"], dialogue: "", reaction: "", audio: [], importance_score: 80, duplicate_candidate: false, unusable_candidate: false, edit_recommendation: .init(level: "推荐", recommended_duration_sec: 3, reason: "保留互动"))
         check(highlight.isHighlight, "highlight includes score 80 with recommended usable shot")
+        var presentation = analyzed
+        presentation.videoDescription = .init(status: "failed", message: "Return only title and full_description.")
+        presentation.shotAnalysis?.segments?[0].editorial = highlight
+        check(presentation.descriptionShots.isEmpty, "single shot has no repeated numbered shot section")
+        check(presentation.descriptionParagraphs == [highlight.description], "failed overview uses full single-shot evidence, not an empty placeholder")
+        presentation.videoDescription = numberedDescription
+        check(presentation.descriptionParagraphs.count == 1 && presentation.descriptionMoments.count == 2, "overview and distinct changes have separate reading levels")
+        check(!presentation.descriptionParagraphs.joined().contains("establishing moment"), "editing advice is not visible factual prose")
+        presentation.shotAnalysis?.segments?.append(.init(id:"later", label:"Later scene", start:700, end:710, editorial:highlight))
+        check(presentation.descriptionShots.isEmpty, "generated changes are never replaced with raw multi-shot prose")
+        check(presentation.descriptionParagraphs == ["A riverside view reveals a mountain."], "multi-shot overview excludes duplicate model-authored numbered moments")
+        var retrieval = presentation
+        retrieval.shotAnalysis?.segments?[0].editorial?.description = "五位身着黑色长袍的人手持金边托盘，背景有石雕与树木。"
+        retrieval.videoDescription = .init(status: "ready", full_description: "五人站在平台上。\n\n1. 人物转身：中间一人转身向前移动。\n2. 镜头推进：木质平台占据更多画面。")
+        check(retrieval.descriptionMoments.first?.label == "人物转身", "Chinese labels are separated from body text")
+        check(retrieval.descriptionMoments.first?.text == "中间一人转身向前移动。", "concise changes are preserved verbatim")
+        check(retrieval.descriptionShots.isEmpty && retrieval.matches("金边托盘"), "hidden raw evidence remains searchable")
+        retrieval.videoDescription?.full_description = "五人站在木质平台上，手持托盘。"
+        check(retrieval.descriptionShots.isEmpty && retrieval.descriptionMoments.isEmpty, "overview-only scenes do not acquire invented changes")
+        retrieval.videoDescription = nil
+        check(retrieval.descriptionShots.map(\.id) == ["shot_001", "later"], "missing synthesis falls back to reviewed evidence in time order")
+        presentation.shotAnalysis = nil
+        check(presentation.descriptionShots.isEmpty, "unreviewed observation windows do not become numbered shots")
+        check(presentation.videoDescription?.full_description == numberedDescription.full_description, "presentation does not rewrite stored description")
         var searchable = item
         searchable.id = "searchable"
         searchable.file.name = "Café ＴＲＩＰ.mov"
@@ -103,6 +730,21 @@ import Foundation
         check(!tagged.searchTags.contains { $0.text == "unknown" || $0.text.count > 48 }, "empty and invalid tags never become chips")
         check(tagged.searchTags.contains { $0.text == "Wide shot" } && tagged.searchTags.contains { $0.text == "Establishing" }, "structured framing and story roles become search tags")
         check(tagged.searchTags.allSatisfy { MediaSearchDocument(tagged).match(MediaSearchQuery($0.text), scope: $0.scope, location: nil) != nil }, "every displayed tag can find its own material in the indicated scope")
+        let detailGroups = MediaTagPresentation.detailGroups(tagged)
+        check(detailGroups.contains { $0.title == "Framing" && $0.tags.contains { $0.text == "Wide shot" } }, "detail tags expose framing as a separate retrieval intent")
+        check(!detailGroups.contains { ["Capture", "Story use"].contains($0.title) }, "redundant capture and editing roles stay out of detail tag groups")
+        check(detailGroups.flatMap(\.tags).allSatisfy { MediaSearchDocument(tagged).match(MediaSearchQuery($0.text), scope: $0.scope, location: nil) != nil }, "every grouped detail tag retrieves its own source")
+        var denseTags = tagged
+        denseTags.videoDescription = nil; denseTags.shotAnalysis = nil; denseTags.description = nil; denseTags.result = nil
+        denseTags.analysisTags = ["river", "stone wall", "cars", "road", "vegetation", "rocky bank", "natural landscape", "two people standing by river", "rocky mountain background", "river flowing", "gravel shoreline", "parked vehicles", "trees along bank", "utility lines", "clear blue sky", "distant utility lines", "gravel shore", "utility lines stretch", "blue sky", "clear sky", "Key change"]
+        let conciseDetails = MediaTagPresentation.visualDetails(denseTags)
+        check(conciseDetails.count <= 6 && conciseDetails.count >= 4, "dense visual details become a small useful set")
+        check(conciseDetails.filter { $0.text.contains("sky") }.count == 1, "sky synonyms collapse to one original label")
+        check(conciseDetails.filter { $0.text.contains("shore") || $0.text.contains("bank") }.count == 1, "shore and bank descriptions do not flood the detail row")
+        check(conciseDetails.filter { $0.text.contains("utility") }.map(\.text) == ["utility lines"], "utility line variants collapse to a concise original phrase")
+        check(!conciseDetails.contains { ["Key change", "river", "cars", "vegetation", "natural landscape"].contains($0.text) || $0.text.split(separator: " ").count > 4 }, "structure labels, broad categories and sentences are not visual chips")
+        check(conciseDetails.allSatisfy { denseTags.analysisTags!.contains($0.text) }, "display cleanup never invents observations")
+        check(MediaSearchDocument(denseTags).match(MediaSearchQuery("two people standing by river"), scope: .content, location: nil) != nil, "hidden visual details remain fully searchable")
         let restoredTags = try JSONDecoder().decode(MediaItem.self, from: JSONEncoder().encode(tagged))
         check(restoredTags.analysisTags == tagged.analysisTags, "saved observation tags survive native decoding")
         check(Array(tagged.contentTags.prefix(2)).map(\.text) == ["Lakeside", "Walking"], "saved content tags take precedence over derived phrases")
@@ -173,9 +815,168 @@ import Foundation
         searchStore.items = [repairedCover]
         check(searchStore.visibleItems.first?.cover == repairedCover.cover, "visual results retain the saved repaired cover")
         check(searchStore.mediaSearchResults.first?.hits.first?.start == 7.25, "saved cover does not replace matching seek time")
-        check(searchStore.mediaResultSummary.contains("result"), "similar results are distinct from the ordinary library")
+        check(searchStore.hasMediaFilters && (searchStore.mediaResultSummary.contains("result") || searchStore.mediaResultSummary.contains("找到")), "similar results are distinct from the ordinary library")
         searchStore.clearVisualSearch()
         check(searchStore.visualMatches == nil && searchStore.query.isEmpty && searchStore.visibleItems.first?.cover == repairedCover.cover, "show all restores normal media without changing the cover")
+        searchStore.items = [noAnalysis]
+        searchStore.query = "river"
+        check(searchStore.visibleItems.isEmpty, "typing an unmatched query never silently scans media")
+        check(searchStore.visualMatchTime(noAnalysis.id) == nil, "unsearched media never has a fabricated visual match time")
+        searchStore.query = ""
+        check(searchStore.visibleItems.count == 1, "empty query retains normal browsing")
+        searchStore.query = noAnalysis.file.name
+        check(searchStore.visibleItems.count == 1, "filename matches are available without a search mode or index")
+        searchStore.searchVisualMedia()
+        check(!searchStore.catalogBusy && searchStore.visibleItems.count == 1, "Return without an index preserves text matches and does not start work")
+        searchStore.query = ""
+        var visualOnlyItem = noAnalysis; visualOnlyItem.id = "visual-only"
+        let textResult = MediaSearchResult(item:noAnalysis, hits:[])
+        let visualResult = MediaSearchResult(item:visualOnlyItem, hits:[])
+        let visualHit = CatalogHit(mediaId:visualOnlyItem.id, shotId:"shot", start:2, end:4, similarity:0.6, label:"Visual match")
+        let sameFileHit = CatalogHit(mediaId:noAnalysis.id, shotId:"shot", start:1, end:3, similarity:0.8, label:"Visual match")
+        let merged = MediaSearchMerge.combine(text:[textResult], visual:[sameFileHit,visualHit,visualHit], allowed:[textResult,visualResult])
+        check(merged.map(\.id) == [noAnalysis.id,visualOnlyItem.id], "unified search preserves text matches, appends visual matches and deduplicates files")
+        check(merged.last?.hits.first?.start == 2, "visual-only results keep their matched time")
+        check(MediaSearchMerge.combine(text:[textResult], visual:[visualHit], allowed:[textResult]).count == 1, "visual matches cannot bypass folder or device filters")
+        let catalog = try JSONDecoder().decode(CatalogStatus.self, from: Data(#"{"indexed":2,"total":5,"stale":1,"job":null}"#.utf8))
+        check(catalog.indexed == 2 && catalog.stale == 1, "visual index coverage is independent of total media count")
+        var lakeClip = noAnalysis
+        lakeClip.id = "facet-lake"; lakeClip.context = ["location": "Hangzhou"]; lakeClip.kind = "video"
+        lakeClip.analysisTags = ["Lakeside", "Walking", "walking", "boy"]
+        lakeClip.description = "A boy walks, with a lake in the background."
+        let lakeTags = MediaQuickTags.tags(lakeClip)
+        let displayedTags = MediaTagPresentation.core(lakeClip, frequencies: [:])
+        check(displayedTags.map(\.facet) == [.location, .subject, .activity], "card reads location, subject, activity without changing tag evidence")
+        check(displayedTags.allSatisfy { tag in lakeTags.contains { $0.id == tag.id && $0.text == tag.text } }, "card labels and IDs exactly match category filters")
+        var untaggedClip = noAnalysis
+        untaggedClip.context = nil; untaggedClip.analysisTags = nil
+        check(MediaTagPresentation.core(untaggedClip, frequencies: [:]).isEmpty, "no fabricated tags on unanalysed cards")
+        var diverseClip = lakeClip
+        diverseClip.id = "facet-diverse"
+        diverseClip.context = nil
+        diverseClip.analysisTags = ["mountains", "river", "walking", "boy", "no visible boats"]
+        let diverseTags = MediaTagPresentation.core(diverseClip, frequencies: ["Scene:mountain": 20, "Scene:water": 2])
+        check(diverseTags.first { $0.facet == .scene }?.key == "water", "supplementary scene uses the more distinctive recognized tag")
+        check(Set(diverseTags.map(\.facet)).count == diverseTags.count, "core tags do not repeat a category")
+        check(!MediaTagPresentation.content(diverseClip).contains { $0.text == "no visible boats" }, "negative observations are not positive keyword chips")
+        var multiSubject = diverseClip
+        multiSubject.analysisTags = ["boy", "dog", "car", "mountains"]
+        multiSubject.description = "A boy walks with a dog; cars are in the background."
+        let subjects = MediaQuickTags.tags(multiSubject).filter { $0.facet == .subject }
+        check(subjects.isEmpty, "ambiguous legacy main clause abstains rather than choosing the first keyword")
+        var explicitSubjects = multiSubject
+        explicitSubjects.analysisEvidence = MediaEvidence(version: 2, tags: ["people", "animals", "vehicles"].map { key in
+            EvidenceTag(id: "subject:"+key, category: "subject", key: key, label: key, aliases: [], source: "visual-primary-subject", evidence: [])
+        })
+        check(MediaQuickTags.tags(explicitSubjects).filter { $0.facet == .subject }.map(\.key) == ["people", "animals"], "at most two explicitly supported primary subjects")
+        var followedPerson = noAnalysis
+        followedPerson.description = "镜头跟随穿格子衬衫的人行走，左侧自行车道有骑车人和汽车。"
+        followedPerson.analysisTags = ["骑车人", "汽车", "树木", "穿格子衬衫的人"]
+        check(MediaQuickTags.tags(followedPerson).filter { $0.facet == .subject }.map(\.key) == ["people"], "legacy clothing-based person phrase is recognized without promoting vehicles")
+        check(MediaQuickTags.tags(followedPerson).filter { $0.facet == .activity }.map(\.key) == ["walking"], "background cycling is not the followed person's activity")
+        followedPerson.analysisEvidence = MediaEvidence(version: 1, tags: [], focusVersion: 2)
+        check(MediaQuickTags.tags(followedPerson).filter { [.subject, .activity].contains($0.facet) }.isEmpty, "modern abstention never falls back to summary keywords")
+        let focusTagsJSON = #"{"version":1,"focusVersion":2,"tags":[{"id":"subject:people","category":"subject","key":"people","label":"People","aliases":[],"source":"visual-primary-subject","evidence":[]},{"id":"activity:walking","category":"activity","key":"walking","label":"Walking & hiking","aliases":[],"source":"visual-primary-activity","evidence":[{"start":0,"end":6,"shotIds":[],"text":"The followed person walks","subject":"people","subjectDescription":"person in checkered clothing"}]},{"id":"activity:cycling","category":"activity","key":"cycling","label":"Cycling","aliases":[],"source":"visual-observation","evidence":[]}]}"#
+        followedPerson.analysisEvidence = try JSONDecoder().decode(MediaEvidence.self, from: Data(focusTagsJSON.utf8))
+        check(MediaQuickTags.tags(followedPerson).filter { $0.facet == .activity }.map(\.key) == ["walking"], "only subject-bound activity is shown for modern focus")
+        followedPerson.tagCorrections = TagCorrections(hidden: [], added: [EvidenceTag(id: "subject:buildings", category: "subject", key: "buildings", label: "Buildings", aliases: [], source: "user", evidence: [])])
+        check(MediaQuickTags.tags(followedPerson).filter { $0.facet == .subject }.map(\.key) == ["buildings"], "user subject correction replaces generated focus rather than adding a co-star")
+        check(MediaQuickTags.tags(followedPerson).filter { $0.facet == .activity }.isEmpty, "changing subject does not inherit the previous subject action")
+        followedPerson.tagCorrections = TagCorrections(hidden: ["activity:walking"], added: [])
+        check(MediaQuickTags.tags(followedPerson).filter { $0.facet == .activity }.isEmpty, "hidden action is never recreated by legacy inference")
+        followedPerson.tagCorrections = nil
+        followedPerson.shotAnalysis = ShotAnalysis(status: "ready", message: nil, summary: "A person walks", segments: nil, limitations: nil, tags: [], focusVersion: 2)
+        check(MediaQuickTags.tags(followedPerson).filter { [.subject,.activity].contains($0.facet) }.isEmpty, "empty newer shot focus supersedes older observation tags")
+        var campusClip = lakeClip
+        campusClip.context = nil
+        campusClip.metadata?.location = coordinate
+        campusClip.resolvedPlace = ResolvedPlace(version: 2, label: campus.label!, area: campus.area, nearbyName: campus.nearbyName,
+            latitude: coordinate.latitude!, longitude: coordinate.longitude!, language: "zh-Hans", provider: "apple-geocoder", resolvedAt: Date().timeIntervalSince1970)
+        check(campusClip.recordedLocation == campus.label && campusClip.locationGroup == "北京 清华大学", "precise address is preserved while campus is grouped with its city")
+        check(MediaQuickTags.tags(campusClip).first?.text == "北京 清华大学", "place filter groups different roads in the same campus with city context")
+        campusClip.resolvedPlace = ResolvedPlace(version: 3, label: corrected.label!, area: corrected.area, nearbyName: nil,
+            latitude: coordinate.latitude!, longitude: coordinate.longitude!, language: "zh-Hans", provider: "apple-osm", resolvedAt: Date().timeIntervalSince1970,
+            displayName: corrected.displayName, boundaryID: corrected.boundaryID, areaRelation: corrected.areaRelation, placeKind: corrected.placeKind)
+        check(campusClip.locationGroup == "北京 测试大学", "boundary display reaches media tags")
+        check(campusClip.locationGroupKey == "osm:area/1234:inside", "different campus roads share stable boundary identity")
+        check(campusClip.locationAttribution.contains("OpenStreetMap"), "OSM attribution follows boundary results")
+        campusClip.metadata?.location?.latitude = 20
+        check(campusClip.validResolvedPlace == nil, "changed GPS invalidates a saved place")
+        check(MediaQuickTags.tags(explicitSubjects).filter { $0.facet == .subject }.allSatisfy { tag in
+            var selection = MediaFacetSelection(); selection.values[.subject] = tag
+            return selection.matches(MediaQuickTags.tags(explicitSubjects))
+        }, "a multi-subject clip is retrievable under each of its subject filters")
+        searchStore.items = [lakeClip, diverseClip]
+        searchStore.query = "unrelated query"
+        searchStore.filterMediaTag(displayedTags[0])
+        check(searchStore.query.isEmpty && searchStore.mediaFacets.values[.location]?.id == displayedTags[0].id, "detail tag navigates into the shared category filter")
+        check(searchStore.visibleItems.map(\.id) == [lakeClip.id], "detail tag filter finds the matching media")
+        searchStore.resetMediaFilters()
+        check(MediaQuickTags.cardTags(lakeTags).map(\.facet) == [.location, .activity], "card prioritizes the concrete location without a separate scene row")
+        check(lakeTags.contains { $0.facet == .scene && $0.key == "water" }, "compact cards retain scene data for dropdown filtering")
+        check(MediaQuickTags.cardTags(lakeTags.filter { $0.facet != .location }).map(\.facet) == [.scene, .activity], "cards without a location retain the recognized scene")
+        check(MediaQuickTags.cardTags([]).isEmpty, "cards do not fabricate labels when analysis is absent")
+        let repeatedPlace = MediaFacetTag(facet: .location, key: "people", text: "People")
+        check(MediaQuickTags.cardTags([repeatedPlace, .init(facet: .subject, key: "people", text: "People")]).count == 1, "visible tags never repeat identical text across facets")
+        var mountainPhoto = noAnalysis
+        mountainPhoto.id = "facet-mountain"; mountainPhoto.kind = "image"; mountainPhoto.context = ["location": " hangzhou "]
+        mountainPhoto.analysisTags = ["山景", "骑行", "人物"]
+        var diningClip = noAnalysis
+        diningClip.id = "facet-dining"; diningClip.context = ["location": "Shanghai"]
+        diningClip.analysisTags = ["café", "coffee", "drinking", "woman"]
+        var unknownClip = noAnalysis
+        unknownClip.id = "facet-unknown"; unknownClip.context = nil; unknownClip.analysisTags = nil
+        unknownClip.file.name = "Beijing-mountain-hiking.mov"
+        check(MediaQuickTags.tags(unknownClip).isEmpty, "filenames never invent place, scene or activity tags")
+        unknownClip.description = "No people or boats. Possibly a temple. A sign reading 'Mountain Park'. Voiceover says beach."
+        check(MediaQuickTags.tags(unknownClip).isEmpty, "negative, uncertain, quoted and spoken content does not create facet tags")
+        unknownClip.description = "A boy walking beside a lake."
+        check(Set(MediaQuickTags.tags(unknownClip).map(\.key)) == ["water"], "legacy mixed-object clause retains scene, but abstains on focus and its action")
+        unknownClip.description = "A boy walking, with a lake in the background."
+        check(Set(MediaQuickTags.tags(unknownClip).map(\.key)) == ["people", "walking", "water"], "legacy visual descriptions produce common grounded tags, not guessed locations")
+        unknownClip.description = "湖边的男孩正在骑行。"
+        check(Set(MediaQuickTags.tags(unknownClip).map(\.key)) == ["people", "cycling", "water"], "Chinese visual observations share common filter keys")
+        unknownClip.description = nil
+        let facetStore = WorkspaceStore()
+        facetStore.items = [lakeClip, mountainPhoto, diningClip, unknownClip]
+        facetStore.locations = [lakeClip.id: .init(id: lakeClip.id, path: "/Clips/Trip/lake.mov"), mountainPhoto.id: .init(id: mountainPhoto.id, path: "/Clips/Trip/Day2/mountain.jpg")]
+        let place = facetStore.mediaFacetOptions[.location]!.first { $0.tag.key == "hangzhou" }!
+        check(place.count == 2, "location dropdown normalizes whitespace and case and counts unique files")
+        check(facetStore.mediaFacetOptions[.activity]!.first { $0.tag.key == "walking" }?.count == 1, "repeated observation tags do not inflate file counts")
+        check(facetStore.mediaFacetOptions[.scene]!.count == 3, "only available recognized scene categories appear")
+        facetStore.toggleMediaTag(place.tag)
+        check(facetStore.visibleItems.count == 2 && facetStore.hasMediaFilters, "clicking a location filters files and enables clear")
+        check(facetStore.query.isEmpty && facetStore.searchScope == .all, "tag selection never overwrites search text or scope")
+        let water = facetStore.mediaFacetOptions[.scene]!.first { $0.tag.key == "water" }!.tag
+        let mountain = facetStore.mediaFacetOptions[.scene]!.first { $0.tag.key == "mountain" }!.tag
+        facetStore.toggleMediaTag(water)
+        check(facetStore.visibleItems.map(\.id) == [lakeClip.id], "different dropdowns combine with AND")
+        check(facetStore.mediaFacetOptions[.scene]!.contains { $0.tag.id == mountain.id && $0.count == 1 }, "own dropdown retains alternatives when selected")
+        check(!facetStore.mediaFacetOptions[.activity]!.contains { $0.tag.key == "cycling" }, "other dropdowns only offer tags with matching files")
+        facetStore.toggleMediaTag(mountain)
+        check(facetStore.visibleItems.map(\.id) == [mountainPhoto.id], "choosing another same-facet tag replaces rather than stacks")
+        facetStore.category = .video
+        check(facetStore.visibleItems.isEmpty, "category and tag selections intersect")
+        check(facetStore.mediaFacetOptions[.scene]!.contains { $0.id == mountain.id && $0.count == 0 }, "zero-result selection remains visible and clearable")
+        facetStore.toggleMediaTag(mountain)
+        check(facetStore.visibleItems.map(\.id) == [lakeClip.id], "clicking selected card tag clears its filter")
+        facetStore.resetMediaFilters(); facetStore.folder = "/Clips/Trip"
+        check(facetStore.mediaFacetOptions[.location]!.count == 1 && facetStore.mediaFacetOptions[.location]![0].count == 2, "folder filter includes descendants in tag counts")
+        facetStore.query = "Lakeside"
+        check(facetStore.mediaFacetOptions[.location]![0].count == 1, "search and dropdown counts use the same file set")
+        facetStore.resetMediaFilters()
+        facetStore.toggleMediaTag(water)
+        lakeClip.analysisTags = ["Forest", "walking"]
+        lakeClip.description = "A boy walks in the forest."
+        facetStore.items = [lakeClip, mountainPhoto, diningClip, unknownClip]
+        check(facetStore.visibleItems.isEmpty && facetStore.mediaFacetOptions[.scene]!.contains { $0.tag.key == "forest" }, "analysis changes refresh tags and preserve the selected filter")
+        facetStore.resetMediaFilters()
+        check(facetStore.mediaFacets.isEmpty && !facetStore.hasMediaFilters && facetStore.visibleItems.count == 4, "clear restores all files without affecting media selection")
+        var facetFilter = MediaFilter()
+        facetFilter.facets.values[.scene] = mountain
+        check(facetFilter.apply(facetStore.items, locations: [:]).map(\.id) == [mountainPhoto.id], "standalone MediaFilter uses the same exact tag semantics")
+        facetStore.items = []
+        check(facetStore.mediaFacetOptions.values.allSatisfy(\.isEmpty), "empty libraries do not show fabricated tag options")
         var hoverShot = Segment(id: "hover", label: "Shot 1", start: 0, end: 8, note: "Detected visual cut", editorial: highlight)
         check(hoverShot.hoverHelp(analysisStatus: "ready") == "Shot 1 · 0:00–0:08\n\n营地互动", "hover shows timing and the actual shot description")
         check(hoverShot.hoverDescription(analysisStatus: "running") == "营地互动", "existing description remains readable during reanalysis")
@@ -206,6 +1007,52 @@ import Foundation
         check(item.segments[0].editorial?.isHighlight != true, "legacy unanalysed segments have no badge")
         check(!item.processing && item.favorite == true, "legacy favorite and status")
         check(item.processingLabel == nil, "ready media has no loading badge")
+        var contentItem = item
+        contentItem.mediaAnalysis = MediaAnalysisState(status: "queued", message: "Waiting")
+        check(contentItem.processingLabel == "Queued…" && contentItem.processing, "content queue remains visible after basic import")
+        contentItem.mediaAnalysis = MediaAnalysisState(status: "running", message: "Reading frames")
+        check(contentItem.processingLabel == "Analyzing…", "automatic understanding shows progress")
+        contentItem.mediaAnalysis = MediaAnalysisState(status: "failed", message: "Model unavailable")
+        check(contentItem.analysisNeedsAttention && MediaWorkFilter.attention.includes(contentItem), "content failure is actionable")
+        check(contentItem.processingLabel == nil, "failed content analysis never spins indefinitely")
+        contentItem.mediaAnalysis = MediaAnalysisState(status: "retrying", message: "temporary timeout", attempt: 1, maxAttempts: 3)
+        contentItem.shotAnalysis = ShotAnalysis(status: "failed")
+        check(contentItem.processingLabel == "Waiting to retry…", "backoff is distinguished from active inference")
+        check(!contentItem.analysisNeedsAttention && MediaWorkFilter.analyzing.includes(contentItem), "pending retry is not presented as a terminal failure")
+        let retryDecoded = try JSONDecoder().decode(MediaAnalysisState.self, from: JSONEncoder().encode(contentItem.mediaAnalysis!))
+        check(retryDecoded.attempt == 1 && retryDecoded.maxAttempts == 3, "retry budget survives decoding")
+        var partialAnalysis = item
+        partialAnalysis.mediaAnalysis = MediaAnalysisState(status: "failed", message: "Shot output failed validation")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "failed")
+        partialAnalysis.videoDescription = VideoDescription(status: "ready", title: "Saved description", full_description: "A saved view.")
+        check(partialAnalysis.attentionReason == .shotsIncomplete, "saved description does not disguise failed shot analysis as pending work")
+        check(partialAnalysis.processingLabel == nil, "terminal shot failure is not a waiting or running task")
+        check(MediaAttentionReason.shotsIncomplete.summary(count: 1, chinese: true) == "1 个素材分镜分析未完成", "summary identifies the unfinished stage in Chinese")
+        check(MediaAttentionReason.shotsIncomplete.summary(count: 2, chinese: false) == "2 files: shot analysis incomplete", "English summary identifies the same stage")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "running")
+        check(partialAnalysis.attentionReason == nil && partialAnalysis.processing, "manual stage retry suppresses the previous terminal issue")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "ready")
+        partialAnalysis.videoDescription = VideoDescription(status: "failed")
+        check(partialAnalysis.attentionReason == .descriptionIncomplete, "description failure has its own explanation")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "failed")
+        check(partialAnalysis.attentionReason == .videoAnalysisIncomplete, "both unfinished video stages are reported together")
+        partialAnalysis.missing = true
+        check(partialAnalysis.attentionReason == .originalMissing, "missing original takes priority over analysis recovery")
+        partialAnalysis.missing = false
+        partialAnalysis.status = "error"
+        check(partialAnalysis.attentionReason == .importIncomplete, "failed import is not confused with a failed model stage")
+        partialAnalysis.status = "ready"
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "ready")
+        partialAnalysis.videoDescription = VideoDescription(status: "ready")
+        check(partialAnalysis.attentionReason == .analysisIncomplete, "coordinator failure such as speech still remains actionable")
+        partialAnalysis.mediaAnalysis = MediaAnalysisState(status: "ready")
+        check(partialAnalysis.attentionReason == nil && !MediaWorkFilter.attention.includes(partialAnalysis), "complete results remove the warning instead of leaving pending work")
+        let completedBatch = Array(repeating: partialAnalysis, count: 14)
+        check(completedBatch.allSatisfy { $0.attentionReason == nil && !$0.processing }, "fully completed batch has no activity banner")
+        partialAnalysis.mediaAnalysis = MediaAnalysisState(status: "failed")
+        partialAnalysis.shotAnalysis = ShotAnalysis(status: "failed")
+        let mixedBatch = Array(completedBatch.prefix(13)) + [partialAnalysis]
+        check(mixedBatch.filter { $0.attentionReason == .shotsIncomplete }.count == 1 && mixedBatch.allSatisfy { !$0.processing }, "13 complete and one partial failure show exactly one specific issue, not one queued item")
         var loadingItem = item
         loadingItem.status = "queued"
         check(loadingItem.processingLabel == "Queued…", "queued import shows on its cover")
@@ -276,7 +1123,26 @@ import Foundation
         check(filter.apply(fixtures, locations: locations).map(\.id) == ["photo"], "Unicode filename search")
         check(MediaFilter().apply(fixtures, locations: locations).count == 3, "audio remains outside Media")
         let workspace = WorkspaceStore()
+        check(workspace.page == .media, "the app opens in Library without a creation prompt")
         workspace.items = fixtures; workspace.locations = locations
+        workspace.beginSelection(); workspace.cancelSelection()
+        check(workspace.page == .media && !workspace.selecting, "canceling a Library selection does not navigate into creation")
+        workspace.beginSelection(); workspace.selection = [clip2.id]; workspace.finishSelection()
+        check(workspace.page == .home && workspace.draft.attachments.contains { $0.id == clip2.id }, "explicit rough-cut action carries selected Library media into Create")
+        workspace.draft = Draft(); workspace.navigate(.media)
+        let importFilterNow = Date(timeIntervalSince1970: 1792468800)
+        var newlyImported = clip2; newlyImported.importedAt = importFilterNow.timeIntervalSince1970 * 1000
+        check(MediaAddedRange.today.includes(newlyImported, now: importFilterNow), "today filter uses recorded import date")
+        check(!MediaAddedRange.today.includes(clip10) && MediaAddedRange.all.includes(clip10), "legacy files with unknown import dates remain accessible without invented dates")
+        newlyImported.importedAt = importFilterNow.addingTimeInterval(-86400 * 40).timeIntervalSince1970 * 1000
+        check(!MediaAddedRange.month.includes(newlyImported, now: importFilterNow), "date filter excludes genuinely older imports")
+        newlyImported.status = "analyzing"
+        check(MediaWorkFilter.analyzing.includes(newlyImported), "live analysis status can be opened as a Library filter")
+        newlyImported.status = "error"
+        check(MediaWorkFilter.attention.includes(newlyImported), "failed media has an actionable attention filter")
+        workspace.mediaAddedRange = .today; workspace.mediaWorkFilter = .attention
+        workspace.resetMediaFilters()
+        check(workspace.mediaAddedRange == .all && workspace.mediaWorkFilter == .all, "reset clears date and work filters too")
         workspace.folder = "/Volumes/Travel/Day 1"; workspace.query = "Trip"; workspace.sort = .nameAscending
         workspace.openMedia(clip2)
         check(workspace.page == .media && workspace.detail?.id == "clip2", "detail is a Media child route")
@@ -287,8 +1153,9 @@ import Foundation
         workspace.resetMediaFilters()
         check(!workspace.hasMediaFilters && workspace.visibleItems.count == 3, "reset restores all local visual references")
         let projectA = Project(id: "project-a", title: "Mountain story", updatedAt: 1000, attachments: [Attachment(id: clip2.id, name: clip2.name, kind: "video")], messages: [])
-        let projectB = Project(id: "project-b", title: "City story", updatedAt: 2000, attachments: [], messages: [])
+        let projectB = Project(id: "project-b", title: "City story", updatedAt: 2000, attachments: [], skill: ChosenSkill(id: "visionflow-travel-director", title: "Travel Vlog", strategy: "Old selection"), messages: [])
         workspace.projects = [projectA, projectB]
+        check(workspace.draft(for: projectB.id).skill == nil, "opening a project does not implicitly load its prior skill")
         workspace.open(projectA); workspace.composerDraft.prompt = "Keep my draft"
         workspace.openMedia(clip2)
         check(workspace.detail?.id == clip2.id && workspace.mediaBackTitle == "Conversation", "analysis card opens the correct material with a conversation return path")
@@ -313,8 +1180,10 @@ import Foundation
         check(workspace.selectedProjectID == nil && workspace.page == .project, "back and sidebar Project show list")
         workspace.navigate(.home)
         check(workspace.composerDraft.prompt == "Unsent Home idea" && workspace.composerDraft.projectId == nil, "Home always composes a new project")
+        workspace.draft.skill = projectB.skill
         let submittedHome = workspace.draft
         workspace.completeSubmission(submittedHome, sourceID: nil, sourcePage: .home, projectID: projectA.id)
+        check(workspace.projectDrafts[projectA.id]?.skill == nil, "submitted skill applies to one message and is cleared for the follow-up")
         check(workspace.page == .project && workspace.selectedProjectID == projectA.id && !workspace.draft.hasContent, "submitted Home brief transitions to project and clears only submitted draft")
         workspace.navigate(.home); workspace.draft.prompt = "New input while request finishes"
         workspace.completeSubmission(submittedHome, sourceID: nil, sourcePage: .home, projectID: projectB.id)
@@ -480,6 +1349,62 @@ import Foundation
         check(activityRun.stageLabel == "Reviewing your clips" && activityRun.activityNotice == nil, "running UI has only one plain-language step")
         activityRun.total = 3; activityRun.completed = 1
         check(activityRun.stageLabel == "Reviewing your clips · 2/3", "multi-file progress is understandable without technical logs")
+        var progressRun = activityRun
+        progressRun.mediaIds = ["one", "two", "three"]
+        progressRun.attachments = [Attachment(id: "one", name: "one.mov", kind: "video"), Attachment(id: "two", name: "two.mov", kind: "video"), Attachment(id: "three", name: "three.mov", kind: "video")]
+        check(progressRun.analysisMaterials(in: []).map(\.status) == ["completed", "running", "pending"], "legacy counters identify each material, without treating partial findings as complete")
+        progressRun.status = "failed"
+        check(progressRun.analysisMaterials(in: []).map(\.status) == ["completed", "failed", "pending"], "legacy failure names the failed file and preserves completed files")
+        progressRun.materialProgress = [AgentMaterialProgress(mediaId: "one", name: "one.mov", status: "completed"), AgentMaterialProgress(mediaId: "two", name: "two.mov", status: "running"), AgentMaterialProgress(mediaId: "three", name: "three.mov", status: "pending")]
+        progressRun.status = "interrupted"
+        check(progressRun.analysisMaterials(in: []).map(\.status) == ["completed", "paused", "pending"], "restart cannot leave a running material spinner")
+        progressRun.status = "running"; progressRun.stage = "render"; progressRun.completed = 0; progressRun.total = 8
+        check(progressRun.analysisMaterials(in: []).map(\.status) == ["completed", "running", "pending"], "explicit material states are independent of render counters")
+        let decodedMaterials = try JSONDecoder().decode(AgentRun.self, from: JSONEncoder().encode(progressRun))
+        check(decodedMaterials.materialProgress?.map(\.name) == ["one.mov", "two.mov", "three.mov"], "per-material status survives serialization")
+        do {
+            var unified = progressRun
+            unified.stage = "highlights"
+            unified.artifacts = [
+                AgentArtifact(id: "visual", type: "observation", title: "one.mov", text: "A lakeside walk\nExtra details", mediaId: "one"),
+                AgentArtifact(id: "dialogue", type: "subtitle", title: "one.mov", text: "Unrelated dialogue", mediaId: "one"),
+                AgentArtifact(id: "partial", type: "analysis", title: "two.mov", text: "A mountain", mediaId: "two")]
+            unified.timeline = [AgentShot(id: "last-first", mediaId: "three", start: 0, end: 2, label: "Closing", reason: "Suggested closing", locked: false)]
+            let cards = unified.materialCards(in: [])
+            check(cards.map(\.id) == ["one", "two", "three"], "unified cards keep attachment order across editorial changes")
+            check(cards[0].summary == "A lakeside walk", "visual summary excludes transcript and extra lines")
+            check(cards[1].progress?.status == "running", "partial description never completes analysis")
+            check(cards[2].summary.isEmpty, "editorial reason is not a visual description")
+            check(cards.map(\.title) == ["one.mov", "two.mov", "three.mov"], "saved filenames survive unavailable library sources")
+            check(unified.analyzingMaterials && unified.showsUnifiedMaterials, "analysis has a single unified progress surface")
+            check(workspace.materialSection(unified).wrappedValue, "materials open during analysis")
+            unified.stage = "plan"
+            check(!workspace.materialSection(unified).wrappedValue, "materials fold when planning begins")
+            workspace.materialSection(unified).wrappedValue = true
+            check(workspace.materialSection(unified).wrappedValue, "explicit expansion survives a view rebuild")
+            workspace.materialSectionOverrides.removeValue(forKey: unified.id)
+            unified.status = "failed"; unified.stage = "highlights"
+            check(workspace.materialSection(unified).wrappedValue, "failure exposes affected materials")
+            check(unified.materialCards(in: [clip2]).map(\.progress?.status) == ["completed", "failed", "pending"], "failure retains completed cards and identifies interrupted analysis")
+            check(unified.materialCards(in: [clip2])[0].summary == cards[0].summary, "history uses task evidence, not current library descriptions")
+            check(unified.conciseFailure == "Analysis failed. Completed results are kept.", "technical error stays out of the primary failure message")
+            unified.message = "Error -3 while decompressing data: incorrect header check"
+            check(unified.conciseFailure.contains("Restart Pixfun") && unified.failureDetail == nil, "stale archive failure gives a direct recovery action without a raw error")
+            unified.message = "No space left on device"
+            check(unified.conciseFailure.contains("disk space") && unified.failureDetail == nil, "disk exhaustion has a specific explanation")
+            unified.message = "Story chapters must partition all shots, starting at zero"
+            check(unified.conciseFailure.contains("shot sequence") && unified.failureDetail == nil, "chapter mismatch explains the cause without exposing index jargon")
+            unified.message = "Shot 3 exceeds source duration\ninternal traceback"
+            check(unified.failureDetail == "Shot 3 exceeds source duration", "unknown errors retain the actual short cause, not a traceback")
+            unified.materialProgress = nil; unified.total = 0; unified.stage = "done"
+            check(unified.materialCards(in: []).allSatisfy { $0.progress?.status == "unknown" }, "old tasks without status data never invent completion")
+            var reportOnly = legacyRun
+            reportOnly.analysisReport = AgentAnalysisReport(overview: "A journey", materials: [AgentAnalysisMaterial(mediaId: "report-only", title: "Saved.mov", content: "The forest", suggestion: "Keep")])
+            check(reportOnly.materialCards(in: []).first?.summary == "The forest", "report-only legacy results keep their material descriptions")
+            check(reportOnly.materialCards(in: []).first?.title == "Saved.mov", "report-only legacy results retain the saved title")
+            unified.intent = "subtitles"
+            check(!unified.showsUnifiedMaterials, "explicit transcript requests keep their dedicated evidence output")
+        }
         activityRun.completed = 3
         check(activityRun.stageLabel.hasSuffix("3/3"), "progress never exceeds its total")
         activityRun.total = 1; activityRun.completed = 1
@@ -488,7 +1413,7 @@ import Foundation
             check(activityRun.stageLabel == text, "plain language for \(stage)")
         }
         activityRun.status = "queued"
-        check(activityRun.stageLabel == "Getting started", "queued state is not shown as already processing")
+        check(activityRun.stageLabel == "Analyzing clips · 1/1", "queued state shows explicit material progress")
         activityRun.status = "completed"
         check(activityRun.activityNotice == nil, "completed turns show results without stale progress")
         activityRun.status = "failed"; activityRun.message = "The original file is missing."
@@ -590,6 +1515,7 @@ import Foundation
         var finishing = AgentFinishing.empty
         finishing.clipAudio = [.init(shotId: "s1", volume: 0.4, muted: true)]
         finishing.captions = [.init(id: "caption", start: 0.5, end: 1.5, text: "旅行的时光")]
+        finishing.motionTitle = .init(kind: "route", text: "北京 → 上海", origin: "北京", destination: "上海")
         layered.setFinishing(finishing)
         check(layered.dirty && layered.finishing?.gain(for: "s1") == 0, "layer-only edit is dirty and mute retains remembered gain")
         check(layered.validation(durations: ["clip2": 10]) == nil, "valid subtitle range")
@@ -661,6 +1587,30 @@ import Foundation
         ]
         check(StoryTimeline.index(at: 3, in: story) == 1 && StoryTimeline.offset("c", in: story) == 7, "story boundaries use source durations rather than source in points")
         var arrangementRun = legacyRun
+        let oldTrip = AgentTripDisplayRow.legacy("1. IMG_0072.MOV · 2026-10-11 14:11 · 清华大学\n10. clip · extra.MOV · 时间未记录 · 地点待确认 · 已纠偏")
+        check(oldTrip?.count == 2 && oldTrip?.first?.place == "清华大学", "legacy trip history renders structured rows without changing its facts")
+        check(oldTrip?.last?.number == 10 && oldTrip?.last?.name == "clip · extra.MOV" && oldTrip?.last?.corrected == true, "legacy route parser preserves filenames, numbering and corrections")
+        check(oldTrip?.last?.capturedAt == "Time not recorded" && oldTrip?.last?.place == "Location to confirm", "missing trip metadata stays explicit")
+        check(AgentTripDisplayRow.legacy("Unknown historic format") == nil && AgentTripDisplayRow.legacy("1. clip.MOV · 时间未记录 · 地点待确认\nunrecognized line") == nil, "unrecognized history remains verbatim rather than losing lines")
+        let tripEntry = AgentTripEntry(number: 3, mediaId: "trip", name: "Test.MOV", capturedAt: "2026-10-11T14:23:00", place: "Campus")
+        let tripRow = AgentTripDisplayRow(tripEntry)
+        check(tripRow.capturedAt == "2026-10-11 14:23" && tripRow.place == "Campus", "current route uses saved time and place without timezone reinterpretation")
+        check(tripRow.day == "2026-10-11" && tripRow.timeLabel == "14:23", "route dates and times are separated without changing capture order")
+        check(oldTrip?.last?.day == nil && oldTrip?.last?.timeLabel == "Time not recorded", "unknown capture time is not assigned a date")
+        let durationNotice = AgentPlanCopy.durationChange("Duration differs from request: 34.7s proposed vs 30s requested. Review before rendering.")
+        check(durationNotice?.proposed == "34.7" && durationNotice?.requested == "30", "legacy duration notices retain both factual numbers")
+        check(AgentPlanCopy.durationChange("A different planning limitation") == nil, "unrecognized plan notes remain unchanged")
+        let referenceItems = try JSONDecoder().decode([MediaItem].self, from: Data(#"[{"id":"one","file":{"name":"IMG_0072.MOV"},"kind":"video","status":"ready"},{"id":"two","file":{"name":"IMG_0072.MOV"},"kind":"video","status":"ready"}]"#.utf8))
+        check(oldTrip?.first?.referencedMediaID(in: referenceItems, allowedIDs: ["one"]) == "one", "legacy route links only to this run's uniquely named source")
+        check(oldTrip?.first?.referencedMediaID(in: referenceItems, allowedIDs: ["one", "two"]) == nil, "duplicate filenames never open an arbitrary video")
+        check(oldTrip?.first?.referencedMediaID(in: referenceItems, allowedIDs: []) == nil, "legacy route never guesses outside its source list")
+        check(tripRow.referencedMediaID(in: referenceItems, allowedIDs: ["one"]) == "trip", "structured references retain stable IDs even when sources are unavailable")
+        let referenceStore = WorkspaceStore()
+        referenceStore.page = .project; referenceStore.selectedProjectID = "reference-project"
+        referenceStore.openMedia(referenceItems[0])
+        check(referenceStore.detail?.id == "one" && referenceStore.page == .media, "source references open the existing media details")
+        referenceStore.backToMedia()
+        check(referenceStore.page == .project && referenceStore.selectedProjectID == "reference-project", "back returns from media details to the same conversation")
         arrangementRun.timeline = story
         arrangementRun.resultText = "Open on the lake, then follow the walk to the lookout.\nNo recorded speech."
         check(arrangementRun.arrangementSummary == "Open on the lake, then follow the walk to the lookout.", "legacy story introduction excludes limitations")
@@ -668,6 +1618,20 @@ import Foundation
         arrangementRun.storySummary = "Begin with the lookout, then return to the lakeside."
         arrangementRun.status = "running"; arrangementRun.stage = "render"
         check(arrangementRun.arrangementSummary == arrangementRun.storySummary, "validated arrangement is visible before rendering completes")
+        arrangementRun.stage = "plan"
+        check(arrangementRun.arrangementSummary == nil, "replanning never presents the previous story as new output")
+        arrangementRun.status = "failed"
+        check(arrangementRun.arrangementSummary == nil, "failed planning does not present the recovered old summary as a new plan")
+        arrangementRun.status = "review"
+        arrangementRun.storySummary = String(repeating: "Opening and theme. ", count: 15) + "\n\n" + String(repeating: "Pacing and ending. ", count: 15)
+        check(arrangementRun.arrangementSummary == arrangementRun.storySummary?.trimmingCharacters(in: .whitespacesAndNewlines), "multi-paragraph editing proposals are not cut at the old 420-character limit")
+        arrangementRun.storySummary = String(repeating: "Engine-returned proposal. ", count: 100)
+        check(arrangementRun.arrangementSummary?.count == arrangementRun.storySummary!.count - 1, "engine proposal is never silently truncated")
+        var execution = try JSONDecoder().decode(AgentStoryExecution.self, from: Data(#"{"outline":[{"id":"chapter-1","title":"Opening","intent":"Establish place","bridge":"Follow the walk","shotIds":["a","b","c"]}],"timelineVersion":1,"stale":false}"#.utf8))
+        check(execution.matches(version: 1, shots: story), "compiled chapters match the reviewed timeline")
+        check(!execution.matches(version: 2, shots: story) && !execution.matches(version: 1, shots: Array(story.reversed())), "old chapters cannot describe a different edit")
+        execution.stale = true
+        check(!execution.matches(version: 1, shots: story), "manual edits hide stale chapter prose")
         arrangementRun.intent = "analyze"
         check(arrangementRun.arrangementSummary == nil, "analysis does not pretend to have an arrangement")
         arrangementRun.intent = "create"; arrangementRun.timeline = []
@@ -720,6 +1684,52 @@ import Foundation
         check(StoryTimeline.replacing(story[1], with: replacementVideo) == nil, "missing media cannot replace a clip")
         var lockedStory = story[1]; lockedStory.locked = true
         check(StoryTimeline.replacing(lockedStory, with: replacementPhoto) == nil, "locked clip cannot be replaced")
+        var smartVideo = replacementVideo; smartVideo.missing = false; smartVideo.metadata?.duration = 60
+        let smartChoice = StoryReplacement(mediaId: smartVideo.id, start: 12, end: 12 + story[1].end - story[1].start, revision: "source-v1", reason: "shared_role", description: "Saved evidence")
+        let smartShot = StoryTimeline.replacing(story[1], with: smartVideo, recommendation: smartChoice)!
+        check(smartShot.start == 12 && smartShot.id == story[1].id && smartShot.section == story[1].section, "smart replacement uses exact source range and preserves instance and section")
+        check(abs((smartShot.end-smartShot.start)-(story[1].end-story[1].start)) < 0.001, "smart replacement does not retime other clips")
+        var badChoice = smartChoice; badChoice.end += 1
+        check(StoryTimeline.replacing(story[1], with: smartVideo, recommendation: badChoice) == nil, "smart replacement rejects changed duration")
+        badChoice = smartChoice; badChoice.start = .nan
+        check(StoryTimeline.replacing(story[1], with: smartVideo, recommendation: badChoice) == nil, "smart replacement rejects nonfinite time")
+        badChoice = smartChoice; badChoice.mediaId = "another-source"
+        check(StoryTimeline.replacing(story[1], with: smartVideo, recommendation: badChoice) == nil, "smart replacement binds exact source")
+        check(StoryTimeline.replacing(lockedStory, with: smartVideo, recommendation: smartChoice) == nil, "recommendations cannot bypass locked clips")
+        var smartRun = editRun; smartRun.timeline = story
+        var smartDraft = EditorDraft(run: smartRun); var smartTimeline = story; smartTimeline[1] = smartShot
+        smartDraft.replace(smartTimeline)
+        check(smartDraft.shots[0] == story[0] && smartDraft.undoStack.count == 1, "replacement is one undo transaction and preserves neighbors")
+        smartDraft.undo(); check(smartDraft.shots == story, "undo restores the full previous source range")
+        smartDraft.redo(); check(smartDraft.shots == smartTimeline, "redo restores the recommended range")
+        let hints = try JSONDecoder().decode(StoryAssistance.self, from: Data(#"{"recommendations":[],"issues":[{"shot":"one","kind":"long_hold"},{"shot":"two","kind":"repeated_source"},{"shot":"other","kind":"unknown"}]}"#.utf8))
+        check(hints.issues.compactMap(\.message).count == 2, "only supported advisory messages appear")
+        check(StoryAssistance.key(runID: "r", version: 1, shots: story) == StoryAssistance.key(runID: "r", version: 1, shots: story), "review task identity is stable across view redraws")
+        check(StoryAssistance.key(runID: "r", version: 1, shots: story) != StoryAssistance.key(runID: "r", version: 1, shots: smartTimeline), "manual replacement invalidates previous advisory results")
+        let speechPoints = [StorySpeechBoundary(time: 1, edge: "start", text: "A full sentence."), StorySpeechBoundary(time: 4, edge: "end", text: "A full sentence.")]
+        let speechGuide = StorySpeechGuide(mediaId: "speech", revision: "original", evidenceRevision: "transcript", kind: "asr", boundaries: speechPoints)
+        var speechShot = AgentShot(id: "speech-shot", mediaId: "speech", start: 1.4, end: 3.6, label: "Speech", reason: "", locked: false)
+        check(speechGuide.nearby(speechShot, leading: true, sourceDuration: 10)?.time == 1, "nearby sentence start is offered as an explicit option")
+        check(speechGuide.nearby(speechShot, leading: false, sourceDuration: 10)?.time == 4, "nearby sentence end is offered as an explicit option")
+        check(speechShot.start == 1.4 && speechShot.end == 3.6, "reading speech suggestions never snaps or mutates the selected range")
+        speechShot.start = 1
+        check(speechGuide.nearby(speechShot, leading: true, sourceDuration: 10) == nil, "no suggestion at an already aligned boundary")
+        speechShot.start = 2.1
+        check(speechGuide.nearby(speechShot, leading: true, sourceDuration: 10) == nil, "speech suggestions stay within one second")
+        speechShot.start = 3.9
+        check(speechGuide.nearby(speechShot, leading: false, sourceDuration: 10) == nil, "suggestion cannot create a clip shorter than 0.25 seconds")
+        speechShot.start = 1.4; speechShot.locked = true
+        check(speechGuide.nearby(speechShot, leading: true, sourceDuration: 10) == nil, "locked clips do not offer speech edits")
+        speechShot.locked = false; speechShot.mediaId = "different-source"
+        check(speechGuide.nearby(speechShot, leading: true, sourceDuration: 10) == nil, "speech guide cannot cross source identities")
+        speechShot.mediaId = "speech"
+        var speechRun = editRun; speechRun.timeline = [speechShot]
+        var speechDraft = EditorDraft(run: speechRun)
+        let speechTrim = speechDraft.trimming(speechShot.id, leading: true, delta: -0.4, durations: ["speech":10], photoIDs: [])!
+        speechDraft.replace(speechTrim)
+        check(speechDraft.undoStack.count == 1 && abs(speechDraft.shots[0].start-1) < 0.001, "explicit speech trim is one normal undo transaction")
+        speechDraft.undo(); check(speechDraft.shots == [speechShot], "undo restores exact manually chosen cut")
+        speechDraft.redo(); check(speechDraft.shots == speechTrim, "redo restores chosen speech boundary")
         var duplicateRun = editRun; duplicateRun.timeline = [story[0], story[0]]; duplicateRun.timeline[1].id = "other-use"
         editorStore.selectedProjectID = duplicateRun.projectId; editorStore.agentRuns = [duplicateRun]
         check(editorStore.usedShots("p")?.shots.filter { $0.mediaId == "p" }.count == 2, "usage retains multiple ranges of the same source")
@@ -800,6 +1810,44 @@ import Foundation
         editorStore.closeEditor(); editorStore.page = .media
         generated.version += 1; editorStore.agentRuns = [generated]
         check(editorStore.editorProjectID == nil && editorStore.page == .media, "background completion does not interrupt media browsing")
+        let mapCompletion = WorkspaceStore()
+        var mapVideo = generated; mapVideo.creationSurface = "map"
+        mapCompletion.page = .mediaMap; mapCompletion.mapCreationRunID = mapVideo.id
+        mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "loading an already completed map task does not redirect")
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .project && mapCompletion.editorProjectID == mapVideo.projectId,
+              "a visible map render opens its editor on completion")
+        mapCompletion.closeEditor(); mapCompletion.page = .mediaMap; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap && mapCompletion.editorProjectID == nil, "returning to the map is not undone by polling")
+        for status in ["failed", "cancelled", "review", "clarify"] {
+            mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+            mapVideo.status = status; mapCompletion.agentRuns = [mapVideo]
+            check(mapCompletion.page == .mediaMap, "\(status) never bypasses map confirmation or recovery")
+        }
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapCompletion.mapCreationHidden = true
+        mapVideo.status = "completed"; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "hidden map tasks do not force the editor open")
+        mapCompletion.mapCreationHidden = false
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapCompletion.page = .media
+        mapVideo.status = "completed"; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .media, "leaving the map prevents automatic navigation")
+        mapCompletion.page = .mediaMap
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapVideo.artifacts = []; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "a plan without rendered video stays on the map")
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapVideo.artifacts = generated.artifacts
+        mapVideo.artifacts[0].timelineVersion = mapVideo.version - 1
+        mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "an old-version preview cannot trigger editor navigation")
+        mapVideo.status = "review"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapVideo.artifacts[0].timelineVersion = mapVideo.version
+        mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.editorProjectID == mapVideo.projectId, "immediate cached render completion also opens the editor")
         var chapterShots = [AgentShot(id: "chapter-a", mediaId: "p", start: 0, end: 3, label: "A", reason: "", locked: false),
                             AgentShot(id: "chapter-b", mediaId: "p", start: 0, end: 4, label: "B", reason: "", locked: false)]
         check(StoryTimeline.chapters(chapterShots).isEmpty, "unstructured films have no chapter controls")
@@ -828,6 +1876,18 @@ import Foundation
         voiceDraft.undo(); check(voiceDraft.finishing?.narrationMuted != true, "audio mixer uses existing undo stack")
         mixed.narration[0].end = 12; voiceDraft.setFinishing(mixed)
         check(voiceDraft.validation(durations: ["p": 10]) != nil, "narration cannot outlive the edited film")
+        var confirmationRun = historyRun
+        confirmationRun.status = "review"; confirmationRun.tripConfirmation = nil; confirmationRun.previousTimeline = []
+        check(confirmationRun.needsRouteConfirmation, "legacy plans cannot skip route review")
+        confirmationRun.tripConfirmation = AgentTripConfirmation(status: "confirmed", useLocations: false, entries: [])
+        check(confirmationRun.awaitingScriptConfirmation && !confirmationRun.needsRouteConfirmation, "explicitly ignoring location still unlocks script review")
+        let approvedScript = AgentDecision(id: "script", state: "answered", question: "Confirm?", options: [], selected: "approve", response: "Confirm", resultText: "Lake opening", kind: "script", timeline: chapterShots)
+        confirmationRun.conversationHistory = [approvedScript]
+        let confirmationRoundtrip = try JSONDecoder().decode(AgentRun.self, from: JSONEncoder().encode(confirmationRun))
+        check(confirmationRoundtrip.conversationHistory?.first?.timeline == chapterShots, "confirmed script snapshots survive reload")
+        check(approvedScript.isProductionConfirmation, "answered scripts remain in conversation history")
+        let retryDecision = AgentDecision(id: "retry", state: "answered", question: "Failed", options: [], selected: "retry", response: "Retry", resultText: "")
+        check(!retryDecision.isProductionConfirmation, "technical retry logs stay hidden")
         print("Passed \(checks) native model/import checks.")
     }
 }
