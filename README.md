@@ -1,5 +1,12 @@
 # Pixfun — Local video studio
 
+## VisionFlow catalog integration (local pilot)
+
+Browse an existing vf-agent shot catalog at `/library`, search text/visual semantics,
+preview similar shots, and open a selected shot in the existing web studio without
+rescanning or retranscribing it. Run `scripts/start-vf.sh` with `VF_LIBRARY_STATE`
+set to the catalog's `server.json`. See [setup, API contract and verification](VISIONFLOW-INTEGRATION.md).
+
 ## Repository contents and local assets
 
 Website resources, application source, tests and build scripts are versioned here.

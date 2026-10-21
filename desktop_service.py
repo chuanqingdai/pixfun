@@ -20,7 +20,7 @@ import subprocess
 import threading
 import time
 import uuid
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs, quote
 
 import app as engine
 from photo_source import prepare_photo
@@ -29,6 +29,9 @@ from agent_engine import AgentEngine
 from agent_editor import assist as editor_assist
 from video_description import VideoDescriptions
 from shot_analysis import ShotAnalyses
+from vf_native import NativeCatalog, validate_source
+from vf_bridge import BridgeError
+from agent_models import CapabilityMissing
 from media_sync import MediaSync
 from media_analysis import MediaAnalysis
 
@@ -36,6 +39,11 @@ VIDEO = {'.mp4', '.mov', '.m4v', '.mkv', '.webm', '.avi', '.mts', '.m2ts', '.ogv
 PHOTO = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.heic', '.heif', '.bmp', '.tif', '.tiff'}
 AUDIO = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.aiff', '.aif', '.opus'}
 FINAL = {'ready', 'error', 'cancelled'}
+
+# Some bundled SQLite builds can deadlock when opening a connection concurrently
+# with another connection's final close (including WAL teardown). Serialize only
+# lifecycle calls; queries/transactions still use independent WAL connections.
+_sqlite_lifecycle = threading.RLock()
 
 
 class Cancelled(Exception):
@@ -63,12 +71,14 @@ class Library:
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=15)
+        with _sqlite_lifecycle:
+            db = sqlite3.connect(self.path, timeout=15)
         try:
             with db:
                 yield db
         finally:
-            db.close()
+            with _sqlite_lifecycle:
+                db.close()
 
     def list(self):
         with self.connect() as db:
@@ -78,7 +88,7 @@ class Library:
             record = json.loads(raw)
             if not Path(source).is_file():
                 record.update(status='error', missing=True, error='Original file not found. Locate it to reconnect this item.')
-            elif record.get('status') == 'ready' and record.get('kind') == 'video':
+            elif record.get('status') == 'ready' and record.get('kind') == 'video' and not record.get('vfCatalog'):
                 analysis = (record.get('result') or {}).get('analysis') or {}
                 if not analysis.get('subtitleCues') or analysis.get('subtitleState') == 'sidecar':
                     track = engine.local_subtitle_track(Path(source), analysis.get('subtitleSignature'))
@@ -93,13 +103,20 @@ class Library:
             row = db.execute('SELECT record, source FROM media WHERE id=? AND removed=0', (media_id,)).fetchone()
         if not row:
             raise FileNotFoundError('Media not found')
-        return json.loads(row[0]), Path(row[1])
+        record, source = json.loads(row[0]), Path(row[1])
+        validate_source(record, source)
+        return record, source
 
     def map_metadata(self, media_id):
         """Explicit, one-file local read. No analysis, source edits or database mutations."""
         record, source = self.get(media_id)
         if record.get('isExample') or record.get('kind') not in ('image', 'video'):
             raise ValueError('No original capture metadata for this item')
+        playback_source = source
+        # Explicit metadata reads use the catalog-linked camera file, not a
+        # stripped proxy header. This does NOT certify a render-time mapping.
+        original = (record.get('vfCatalog') or {}).get('originalSource')
+        if original: source = Path(original).resolve(strict=True)
         before = source.stat()
         if record['kind'] == 'image':
             metadata = photo_capture_metadata(source)
@@ -109,7 +126,9 @@ class Library:
         after = source.stat()
         if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
             raise ValueError('Source changed during metadata read; try again')
-        return {key: metadata.get(key) for key in ('camera', 'captureDeviceID', 'capturedAt', 'dateSource', 'location')}
+        validate_source(record, playback_source)
+        return {**{key: metadata.get(key) for key in ('camera', 'captureDeviceID', 'capturedAt', 'dateSource', 'location')},
+                'metadataSource': 'catalog-linked-original' if original else 'original-file'}
 
     def install_example(self, directory):
         """Index the bundled example once. Never copy media or resurrect removed entries."""
@@ -345,7 +364,8 @@ def cancellable_command(args, timeout=120):
     if event and event.is_set():
         raise Cancelled()
     try:
-        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        from media_commands import bounded_command
+        process = subprocess.Popen(bounded_command(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     except OSError as exc:
         return 127, '', str(exc)
     deadline = time.monotonic() + timeout
@@ -400,7 +420,28 @@ class Handler(engine.Handler):
         path = unquote(urlparse(self.path).path)
         try:
             if path == '/api/desktop/library':
+                if self.server.vf and not self.authorized(native=True): return
                 self.send_json({'ok': True, 'items': self.server.library.list()})
+            elif path == '/api/desktop/vf/status':
+                self.send_json(self.server.vf.status if self.server.vf else {'connected':False,'message':'VisionFlow is not configured','assets':0,'shots':0})
+            elif path == '/api/desktop/vf/search':
+                if not self.authorized(native=True): return
+                if not self.server.vf: raise ValueError('VisionFlow is not configured')
+                if any(r['status'] in ('queued','running') for r in self.server.agent.list()):
+                    raise ValueError('Wait for the current analysis to finish before visual search.')
+                params = parse_qs(urlparse(self.path).query)
+                with self.server.agent.models.lock, self.server.agent.models.resources.lease('model', threading.Event()):
+                    self.send_json({'matches': self.server.vf.search(params.get('q',[''])[0],params.get('similar',[None])[0],params.get('collection',[None])[0])})
+            elif path.startswith('/api/desktop/vf/frame/'):
+                if not self.server.vf: raise FileNotFoundError()
+                ident = path[len('/api/desktop/vf/frame/'):]
+                if len(ident)>500: raise ValueError('Invalid frame ID')
+                with self.server.vf.catalog.open('frame/'+quote(ident,safe='')) as response:
+                    data=response.read(10*1024*1024+1)
+                    if len(data)>10*1024*1024: raise ValueError('Frame too large')
+                    self.send_response(200); self.send_header('Content-Type','image/jpeg')
+                    self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','no-store')
+                    self.end_headers(); self.wfile.write(data)
             elif path == '/api/desktop/locations':
                 # Absolute paths are native-only; never expose them to the web renderer.
                 # Use the index, not disk enumeration, so missing originals remain locatable.
@@ -436,6 +477,8 @@ class Handler(engine.Handler):
                 self.send_error(404)
         except (FileNotFoundError, OSError):
             self.send_json({'ok': False, 'error': 'File not found. Locate the original file to continue.'},404)
+        except (BridgeError, ValueError) as exc:
+            self.send_json({'ok':False,'error':str(exc)},getattr(exc,'status',400))
 
     def do_POST(self):
         if not self.authorized():
@@ -446,7 +489,7 @@ class Handler(engine.Handler):
             if not 0 <= length <= 128 * 1024:
                 self.send_json({'ok': False, 'error': 'Request too large'},413)
                 return
-            if (path.startswith('/api/desktop/analysis/') or path.startswith('/api/desktop/agent/') or path.startswith('/api/desktop/description/') or path.startswith('/api/desktop/shots/') or path in ('/api/desktop/register', '/api/desktop/locate', '/api/desktop/sync')) and not self.authorized(native=True):
+            if (path.startswith('/api/desktop/vf/') or path.startswith('/api/desktop/analysis/') or path.startswith('/api/desktop/agent/') or path.startswith('/api/desktop/description/') or path.startswith('/api/desktop/shots/') or path in ('/api/desktop/register', '/api/desktop/locate', '/api/desktop/sync')) and not self.authorized(native=True):
                 return
             payload = self.read_json()
             if not isinstance(payload, dict):
@@ -490,6 +533,11 @@ class Handler(engine.Handler):
                 self.send_json({'ok':True, 'queued':count})
             elif path == '/api/desktop/projects':
                 self.send_json({'ok': True, 'project': library.save_project(payload)})
+            elif path == '/api/desktop/vf/sync':
+                if not self.server.vf: raise ValueError('VisionFlow is not configured')
+                if library.cancel or any(r['status'] in ('queued','running') for r in self.server.agent.list()):
+                    raise ValueError('Finish pending tasks before refreshing the catalog.')
+                self.send_json(self.server.vf.sync())
             elif path == '/api/desktop/sync':
                 try: self.send_json(self.server.media_sync.action(payload))
                 except OSError as exc: self.send_json({'ok':False,'error':MediaSync.friendly(exc)},400)
@@ -585,7 +633,9 @@ class Handler(engine.Handler):
                 self.send_error(404)
         except FileNotFoundError as exc:
             self.send_json({'ok':False,'error':str(exc)},404)
-        except (ValueError, KeyError, TypeError, sqlite3.Error) as exc:
+        except (CapabilityMissing, TimeoutError) as exc:
+            self.send_json({'ok':False,'error':str(exc)[:300]},503)
+        except (BridgeError, ValueError, KeyError, TypeError, sqlite3.Error) as exc:
             self.send_json({'ok':False,'error':str(exc)[:300]},400)
 
 
@@ -605,6 +655,11 @@ def main():
     # First use starts with an empty library; samples are not user imports.
     server = engine.ThreadingHTTPServer(('127.0.0.1',0),Handler)
     server.library, server.token, server.native_token = library, token, native
+    state_file = os.environ.get('VF_LIBRARY_STATE')
+    server.vf = NativeCatalog(state_file,library) if state_file else None
+    if server.vf:
+        try: server.vf.sync()
+        except (BridgeError, ValueError, OSError): pass # Saved native projects remain usable offline.
     server.agent = AgentEngine(library)
     from media_catalog import MediaCatalog
     server.catalog = MediaCatalog(library, server.agent)

@@ -52,9 +52,10 @@ def command_exists(name: str) -> bool:
 
 
 def run_command(args: list[str], timeout: int = 120) -> tuple[int, str, str]:
+    from media_commands import bounded_command
     try:
         proc = subprocess.run(
-            args,
+            bounded_command(args),
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -626,10 +627,10 @@ def render_variant(job: dict, hook: str, subject: str, cta: str) -> tuple[bool, 
     )
     code, _, stderr = run_command(
         [
-            "ffmpeg", "-y", "-i", str(source),
+            "ffmpeg", "-y", "-threads", "2", "-filter_complex_threads", "2", "-i", str(source),
             "-i", str(overlay_paths[0]), "-i", str(overlay_paths[1]), "-i", str(overlay_paths[2]),
             "-filter_complex", filter_complex, "-map", "[v]", "-map", "0:a?",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", str(output)
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-threads", "2", "-c:a", "aac", "-movflags", "+faststart", str(output)
         ],
         timeout=180,
     )

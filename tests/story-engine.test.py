@@ -1,5 +1,6 @@
 """Real installed VisionFlow compiler through the production CPU worker; no MLX."""
 import copy
+import os
 import json
 from pathlib import Path
 import sys
@@ -21,10 +22,10 @@ class StoryEngineTests(unittest.TestCase):
         self.gateway = ModelGateway(self.folder)
         if not self.gateway.capabilities().get('localStory'):
             self.temp.cleanup()
-            self.skipTest('Installed VisionFlow 0.9.1 runtime unavailable')
+            self.skipTest('Installed compatible VisionFlow runtime unavailable')
         self.cancel = threading.Event()
         self.photo = ROOT/'public/images/pixfun-lockup-v2.png'
-        self.video = ROOT/'native/Examples/wild-alaska/wild-alaska.mp4'
+        self.video = Path(os.environ.get('PIXFUN_TEST_VIDEO', str(ROOT/'native/Examples/wild-alaska/wild-alaska.mp4')))
         self.context = self.gateway.story(dict(action='context', sources=[
             dict(mediaId='p', path=str(self.photo), kind='image', description='Brand illustration'),
             dict(mediaId='v', path=str(self.video), kind='video', duration=10, description='Wildlife footage')],

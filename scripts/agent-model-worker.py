@@ -15,7 +15,7 @@ os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
-required_version = '0.9.1'
+supported_versions = ('0.9.1', '0.9.2')
 configured_runtime = os.environ.get('PIXFUN_VF_ROOT')
 preferred_runtime = Path.home() / 'work/visionflow/vf-agent-0.9.1'
 runtime = Path(configured_runtime) if configured_runtime else (preferred_runtime if preferred_runtime.is_dir() else Path.home() / 'work/visionflow/vf-agent')
@@ -30,8 +30,8 @@ for line in sys.stdin:
         if preprocess_only and not light:
             raise ValueError('Inference is prohibited in the preprocessing worker')
         declared = re.search(r'^version\s*=\s*"([0-9][^"]*)"', (runtime/'pyproject.toml').read_text(), re.M)
-        if not declared or declared.group(1) != required_version:
-            raise RuntimeError(f'VisionFlow {required_version} is required; incompatible runtime was not loaded.')
+        if not declared or declared.group(1) not in supported_versions:
+            raise RuntimeError('VisionFlow 0.9.1 or 0.9.2 is required; incompatible runtime was not loaded.')
         with contextlib.redirect_stdout(sys.stderr):
             if job['operation'] == 'story':
                 from vf_story import handle
@@ -42,7 +42,7 @@ for line in sys.stdin:
                     import mlx.core as mx
                     mx.clear_cache()
                 from vf_media_catalog import handle
-                value = handle(job)
+                value = {**handle(job), 'engineVersion':declared.group(1)}
                 if job.get('action') != 'sample':
                     import torch
                     if torch.backends.mps.is_available(): torch.mps.empty_cache()
@@ -65,7 +65,7 @@ for line in sys.stdin:
                     import numpy as np
                     probe = json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','json',path]))['streams'][0]
                     width=320; height=round(probe['height']*width/probe['width']/2)*2
-                    decoder=subprocess.Popen(['ffmpeg','-v','error','-threads','1','-filter_threads','1','-i',path,'-vf',f'fps=8,scale={width}:{height},format=gray','-threads','1','-f','rawvideo','-pix_fmt','gray','-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+                    decoder=subprocess.Popen(['ffmpeg','-v','error','-threads','2','-filter_threads','2','-i',path,'-vf',f'fps=8,scale={width}:{height},format=gray','-threads','2','-f','rawvideo','-pix_fmt','gray','-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
                     try:
                         while True:
                             frame=decoder.stdout.read(width*height)
@@ -91,8 +91,13 @@ for line in sys.stdin:
                 photo_metrics._faces = lambda image: []
                 quality = [photo_metrics.metrics(cv2.imread(p)) for p in job['images']]
                 try:
-                    from vf_agent.web_analysis import ocr_images
-                    ocr = ocr_images(job['images'])
+                    # The installed OCR implementation is a CLI script; load only
+                    # its imports/function definitions, never its argument parser.
+                    module = ast.parse((runtime / 'scripts/vf_ocr.py').read_text())
+                    definitions = ast.Module(body=[n for n in module.body if isinstance(n,(ast.Import,ast.ImportFrom,ast.FunctionDef))],type_ignores=[])
+                    scope = {}
+                    exec(compile(definitions,str(runtime/'scripts/vf_ocr.py'),'exec'),scope)
+                    ocr = [{'image':p,'texts':[{'text':text,'confidence':confidence} for text,confidence in scope['ocr'](p)]} for p in job['images']]
                     ocr_status = 'complete'
                 except (ImportError, RuntimeError):
                     ocr = []; ocr_status = 'unavailable'
@@ -120,11 +125,25 @@ for line in sys.stdin:
                 if device == 'mps': torch.mps.empty_cache()
             elif job['operation'] == 'transcribe':
                 engine = None; gc.collect()
-                import mlx_whisper
-                result = mlx_whisper.transcribe(job['source'], path_or_hf_repo=job['model'], verbose=False,
-                    word_timestamps=False, condition_on_previous_text=False)
-                value = {'language': result.get('language'), 'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
-                                  for s in result.get('segments', []) if s.get('text', '').strip()]}
+                if job.get('engine') == 'qwen3asr':
+                    import tempfile
+                    import vf_audio
+                    from qwen3_asr_mlx import Qwen3ASR
+                    with tempfile.TemporaryDirectory(prefix='pixfun-asr-') as tmp:
+                        wav = str(Path(tmp)/'speech.wav')
+                        subprocess.run(['ffmpeg','-v','error','-threads','2','-i',job['source'],
+                            '-vn','-ac','1','-ar','16000','-threads','2',wav],check=True,capture_output=True)
+                        vf_audio.Q = Qwen3ASR.from_pretrained(job['model'])
+                        try: cues = vf_audio.qwen_segments(wav)
+                        finally: vf_audio.Q = None
+                    value = {'cues':cues,'timing':'silence-delimited segments, not word alignment',
+                             'note':'Machine transcript; singing and unclear speech require review.'}
+                else:
+                    import mlx_whisper
+                    result = mlx_whisper.transcribe(job['source'], path_or_hf_repo=job['model'], verbose=False,
+                        word_timestamps=False, condition_on_previous_text=False)
+                    value = {'language': result.get('language'), 'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
+                                      for s in result.get('segments', []) if s.get('text', '').strip()]}
             elif job['operation'] == 'ask':
                 if engine is None:
                     from vf_engine import Engine

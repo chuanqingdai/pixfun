@@ -20,7 +20,8 @@ def worker_environment(source=None):
                'HF_HOME', 'HUGGINGFACE_HUB_CACHE', 'MLX_METAL_PATH')
     env = {key: source[key] for key in allowed if key in source}
     env.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
-               HF_HUB_DISABLE_TELEMETRY='1', PYTHONDONTWRITEBYTECODE='1')
+               HF_HUB_DISABLE_TELEMETRY='1', PYTHONDONTWRITEBYTECODE='1',
+               OMP_NUM_THREADS='2', OPENBLAS_NUM_THREADS='2', MKL_NUM_THREADS='2', VECLIB_MAXIMUM_THREADS='2')
     return env
 
 

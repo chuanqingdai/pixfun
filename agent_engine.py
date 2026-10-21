@@ -16,7 +16,7 @@ import wave
 
 from agent_models import ModelGateway, AgentCancelled, CapabilityMissing
 from analysis_frames import extract_frame
-from agent_tools import TOOL_RULE, tool_plan, ranked_evidence
+from agent_tools import TOOL_RULE, tool_plan, rank_available_evidence
 import agent_finishing as finishing
 import agent_layers
 import agent_packaging as packaging
@@ -674,7 +674,8 @@ class AgentEngine:
             return run
 
     def command(self, args, cancel, timeout=180):
-        p = subprocess.Popen([str(v) for v in args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        from media_commands import bounded_command
+        p = subprocess.Popen(bounded_command(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         start = time.monotonic()
         try:
             while True:
@@ -741,8 +742,15 @@ class AgentEngine:
         return record, source
 
     def understand(self, run, media_id, cancel, progress=None, window_seconds=15):
-        record, _ = self.ready_source(media_id, cancel)
+        record, source = self.ready_source(media_id, cancel)
         if record['kind'] == 'video':
+            if run.get('intent') != 'analyze':
+                from vf_evidence import catalog_evidence
+                cached = catalog_evidence(record, source)
+                if cached:
+                    if cancel.is_set(): raise AgentCancelled()
+                    if progress: progress('Using saved VisionFlow shot evidence')
+                    return record, cached
             from shot_analysis import analyze_shots, analysis_signature
             report = progress or (lambda message: self.progress(run['id'], message, 'understand'))
             record,result = analyze_shots(self, run, media_id, cancel, report)
@@ -1039,6 +1047,8 @@ class AgentEngine:
                 records[media_id] = record
                 run = self.get(key)
                 if understanding:
+                    if understanding.get('evidenceLimits'):
+                        self.artifact(run, 'notice', 'Catalog evidence', understanding['evidenceLimits'])
                     run['artifacts'] = [a for a in run['artifacts'] if not (a['type'] == 'observation' and a.get('mediaId') == media_id)]
                     analysis_summaries[media_id] = (understanding.get('output') or {}).get('video_summary', '')
                     for segment in understanding['segments']:
@@ -1145,8 +1155,10 @@ class AgentEngine:
                     if intent == 'search': raise CapabilityMissing('Local retrieval model unavailable. Open Models to check semantic search.')
                     inputs['evidenceLimits'].append('Semantic ranking unavailable; use reviewed visual descriptions instead.')
                 else:
-                    ranking=self.models.rank([c['framePath'] for c in candidates],plan['query'] or run['prompt'],cancel)
-                    evidence=ranked_evidence(evidence,ranking)
+                    evidence, unranked = rank_available_evidence(candidates, evidence,
+                        lambda paths: self.models.rank(paths, plan['query'] or run['prompt'], cancel))
+                    if unranked:
+                        inputs['evidenceLimits'].append(f'{unranked} catalog candidates retained without new visual ranking; use catalog search for indexed semantic retrieval.')
                     inputs['candidates']=evidence
             if intent == 'search':
                 answer=self.models.ask('Return JSON {"matches":[{"index":0,"reason":"why it matches"}],"summary":"result and limitations"}. Select only relevant candidate indices from the supplied evidence. An empty matches list is correct when nothing matches. Do not invent events. INPUT: '+json.dumps(inputs,ensure_ascii=False),cancel,text_mode, max_tokens=1600)

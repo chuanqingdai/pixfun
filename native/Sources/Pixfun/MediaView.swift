@@ -58,6 +58,18 @@ struct MediaView: View {
             if store.removingMedia {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Updating library…").font(.caption) }
             }
+            if let catalog = store.visionFlowStatus, catalog.assets > 0 || catalog.connected {
+                HStack(spacing: 12) {
+                    Text("VisionFlow · \(catalog.assets) files · \(catalog.shots) shots").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    if !catalog.connected { Text(catalog.message).font(.caption).foregroundStyle(.orange).lineLimit(1) }
+                    Spacer()
+                    if store.visualSearching || store.catalogRefreshing { ProgressView().controlSize(.small) }
+                    if store.visualMatches != nil { Button("Show all media", action: store.clearVisualSearch) }
+                    Button("Visual search") { store.searchVisionFlow() }.disabled(store.query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || store.visualSearching)
+                    Button("Refresh catalog", action: store.refreshVisionFlow).disabled(store.catalogRefreshing)
+                }
+                if store.visualMatches != nil { Text(store.visualSearchLabel).font(.caption).foregroundStyle(Color.pixfunGold) }
+            }
             if hasMedia { MediaBrowserToolbar() }
             if hasMedia { MediaLibraryActivityView() }
             GeometryReader { proxy in
@@ -498,19 +510,19 @@ struct MediaDetailView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Group {
                                 if item.kind == "image", let photo { Image(nsImage: photo).resizable().scaledToFit() }
-                                else if let player = playback.player { NativeVideoPlayer(player: player, poster: playback.showsPoster ? playback.poster ?? videoCover : nil) }
+                                else if let player = playback.player { NativeVideoPlayer(player: player, poster: playback.showsPoster ? (item.vfCatalog != nil ? videoCover ?? playback.poster : playback.poster ?? videoCover) : nil) }
                                 else { ZStack { Color.black; if let playerError { Text(playerError).foregroundStyle(.secondary).padding() } else { ProgressView() } } }
                             }.frame(maxWidth: .infinity).frame(height: 420).background(.black).clipShape(RoundedRectangle(cornerRadius: 10))
                             if let error = playback.error {
                                 HStack { Text(error).font(.caption).foregroundStyle(.orange); Button("Retry playback") { playback.retry() } }
                             }
-                            if item.kind == "video", item.segments.count > 1 {
+                            if item.kind == "video", !item.segments.isEmpty, item.segments.count > 1 || item.vfCatalog != nil {
                                 shotFilmstrip
                             }
                             if item.missing == true { Button("Locate original…") { store.pick(locate: item.id) } }
                         }
                         VStack(alignment: .leading, spacing: 16) {
-                            Text("Original").font(.pixfun(16, semibold: true))
+                            Text(item.vfCatalog != nil ? "目录播放素材" : "Original").font(.pixfun(16, semibold: true))
                             originalMetadata
                             sourceFolderLink
                             if item.isExample == true {
@@ -540,6 +552,19 @@ struct MediaDetailView: View {
                     })
                     editorialDescription
                     analysisDetails
+                    if let reference = item.vfCatalog {
+                        DisclosureGroup("VisionFlow 扫描证据") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if let evidence = reference.shots?.first(where: { $0.id == selectedSegment }) ?? reference.shots?.first {
+                                    if let beauty = evidence.scores?.beauty?.max { Text("Aesthetic \(beauty, specifier: "%.2f")") }
+                                    if let clipping = evidence.scores?.clipped_fraction?.mean { Text("Highlight clipping \(clipping*100, specifier: "%.1f")%") }
+                                    if evidence.cover_choice?.locked == true { Label("Cover locked", systemImage:"lock") }
+                                }
+                                Text("保存的扫描分数；HDR 显示修复不会自动重算分数。")
+                                if let count = reference.excludedTranscripts, count > 0 { Text("\(count) 段疑点转写已隔离，不用于搜索和剪辑。") }
+                            }.font(.caption).foregroundStyle(Color.pixfunMuted)
+                        }
+                    }
                     if let location = item.recordedLocation {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Location").font(.pixfun(16, semibold: true))
@@ -634,7 +659,7 @@ struct MediaDetailView: View {
                         playback.open(url, at: store.mediaSeekTime, withPoster: true)
                         store.mediaSeekTime = 0
                         // Opening a search result is navigation, not permission to start new model work.
-                        if item.kind == "video" && item.mediaAnalysis == nil && !store.isSearchingMedia { store.describeVideo(item); store.analyzeShots(item) }
+                        if item.kind == "video" && item.mediaAnalysis == nil && item.vfCatalog == nil && !store.isSearchingMedia { store.describeVideo(item); store.analyzeShots(item) }
                     }
                 } catch { playerError = error.localizedDescription }
             }.onDisappear { playback.stop() }
@@ -746,6 +771,12 @@ struct MediaDetailView: View {
             .accessibilityLabel("\(highlighted ? "Highlight · " : "")Jump to \(segment.label), \(timestamp(segment.start))")
             .accessibilityHint(segment.hoverDescription(analysisStatus: item.shotAnalysis?.status))
             .help(segment.hoverHelp(analysisStatus: item.shotAnalysis?.status))
+            .contextMenu {
+                if item.vfCatalog != nil {
+                    Button("Find similar shots in this trip") { store.searchVisionFlow(similar:segment.id,collection:item.vfCatalog?.collection) }
+                    Button("Find similar shots in all trips") { store.searchVisionFlow(similar:segment.id) }
+                }
+            }
     }
     var shotAnalysisStatus: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -63,6 +63,19 @@ class EditorAssistTests(unittest.TestCase):
         self.assertTrue(result['recommendations'])
         self.assertEqual({c['mediaId'] for c in result['recommendations']}, {'a'})
 
+    def test_catalog_ranges_supply_replacements_without_inventing_editorial_scores(self):
+        for mid, r in self.records.items():
+            r.pop('shotAnalysis')
+            path = self.paths[mid]; st = path.stat()
+            r['vfCatalog'] = dict(fingerprint=[str(path.resolve()),st.st_size,st.st_mtime_ns,st.st_ino],
+                shots=[dict(id=mid+'-saved', context={'place':'River landscape', 'place_confirmed':True}, scores={})])
+            r['result'] = {'analysis':{'segments':[dict(id=mid+'-saved', start=12, end=22)]}}
+        result = self.call()['recommendations']
+        self.assertEqual({c['mediaId'] for c in result}, {'a','b','c'})
+        self.assertTrue(all(12 <= c['start'] < c['end'] <= 22 for c in result))
+        self.assertTrue(all(c['end']-c['start'] == 4 for c in result))
+        self.assertTrue(all('shotAnalysis' not in r for r in self.records.values()))
+
     def test_no_cache_does_not_invent_recommendations(self):
         for r in self.records.values(): r.pop('shotAnalysis')
         self.assertEqual(self.call()['recommendations'], [])

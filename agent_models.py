@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 # The frozen service also loads optional adapters from signed Resources.
 sys.dont_write_bytecode = True
 
-REQUIRED_ENGINE_VERSION = '0.9.1'
+SUPPORTED_ENGINE_VERSIONS = ('0.9.1', '0.9.2')
 
 
 def visionflow_runtime():
@@ -25,6 +25,19 @@ def visionflow_runtime():
     if configured: return Path(configured)
     preferred = Path.home() / 'work/visionflow/vf-agent-0.9.1'
     return preferred if preferred.is_dir() else Path.home() / 'work/visionflow/vf-agent'
+
+
+def runtime_dependencies(python):
+    """Probe the configured interpreter without importing models or loading weights."""
+    names = ['mlx.core', 'mlx_vlm', 'qwen3_asr_mlx', 'mlx_whisper', 'torch', 'transformers', 'PIL', 'cv2', 'av', 'scenedetect']
+    script = "import importlib.util,json\nr={}\nfor n in " + repr(names) + ":\n try: r[n]=importlib.util.find_spec(n) is not None\n except (ImportError,ValueError): r[n]=False\nprint(json.dumps(r))"
+    try:
+        result = subprocess.run([python, '-B', '-c', script], env=worker_environment(),
+                                capture_output=True, text=True, timeout=5, check=True)
+        found = json.loads(result.stdout)
+        return {name: found.get(name) is True for name in names}
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        return dict.fromkeys(names, False)
 
 
 class AgentCancelled(Exception): pass
@@ -113,12 +126,14 @@ class ModelGateway:
         self.hyperframes_runtime = Path(os.environ.get('PIXFUN_HYPERFRAMES_RUNTIME', str(bundled_hf if bundled_hf.is_dir() else Path(__file__).parent/'build-native/hyperframes-runtime')))
         self.vision = os.environ.get('PIXFUN_LOCAL_VLM', '') or cached_model('mlx-community/Qwen3-VL-4B-Instruct-4bit')
         self.speech = os.environ.get('PIXFUN_LOCAL_ASR', '') or cached_model('mlx-community/whisper-large-v3-turbo-q4')
+        self.speech_engine = os.environ.get('PIXFUN_ASR_ENGINE', 'whisper')
         self.retrieval = os.environ.get('PIXFUN_LOCAL_RETRIEVAL', '') or cached_model('google/siglip2-base-patch16-256')
         self.process = None
         self.lock = threading.Lock()
         from analysis_resources import AnalysisResources
         self.resources = AnalysisResources()
         self.observations = {}
+        self._dependency_cache = None
         self.output_language = os.environ.get('PIXFUN_LANGUAGE', 'zh-Hans')
         self.cloud = {'baseURL': os.environ.get('PIXFUN_AGENT_BASE_URL', 'https://api.openai.com/v1'),
                       'model': os.environ.get('PIXFUN_AGENT_MODEL', ''),
@@ -143,12 +158,20 @@ class ModelGateway:
             declared = re.search(r'^version\s*=\s*"([0-9][^"]*)"', (runtime/'pyproject.toml').read_text(), re.M)
             version = declared.group(1) if declared else 'unknown'
         except OSError: version = 'unknown'
-        available = available and version == REQUIRED_ENGINE_VERSION
+        available = available and version in SUPPORTED_ENGINE_VERSIONS
+        if self._dependency_cache is None or self._dependency_cache[0] != self.python:
+            self._dependency_cache = (self.python, runtime_dependencies(self.python))
+        modules = self._dependency_cache[1]
+        def has(*names): return available and all(modules.get(name) for name in names)
+        vision_ready = has('mlx.core', 'mlx_vlm') and bool(self.vision)
+        speech_ready = has('mlx.core', 'qwen3_asr_mlx' if self.speech_engine == 'qwen3asr' else 'mlx_whisper') and bool(self.speech)
+        retrieval_ready = has('torch', 'transformers', 'PIL') and bool(self.retrieval)
+        inspect_ready = has('cv2', 'PIL')
         hyperframes = available and all((self.hyperframes_runtime/p).is_file() for p in ('node', 'node_modules/hyperframes/bin/hyperframes.mjs', 'node_modules/gsap/dist/gsap.min.js'))
         hyperframes = hyperframes and all((Path(self.worker).parent/p).is_file() for p in ('vf_hyperframes.py', 'vf_travel_graphics.py', 'agent_process_security.py', 'hyperframes-templates/split-flap-board.html'))
         hyperframes = hyperframes and Path(os.environ.get('PIXFUN_HYPERFRAMES_BROWSER', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')).is_file() and Path('/usr/bin/sandbox-exec').is_file()
         beauty = False
-        adaptive = available and Path(self.worker).with_name('vf_media_catalog.py').is_file()
+        adaptive = has('av', 'scenedetect', 'cv2') and Path(self.worker).with_name('vf_media_catalog.py').is_file()
         scene_log = available and (runtime/'vf_agent/scene_log.py').is_file()
         trip_map = available and all((runtime/p).is_file() for p in (
             'vf_agent/trip_map.py', 'vf_agent/apple_maps.py', 'vf_agent/media_metadata.py'))
@@ -163,12 +186,12 @@ class ModelGateway:
                 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
                 beauty = available and bool(module.configuration())
             except (OSError, ValueError, KeyError, TypeError): pass
-        tools = [('ask','Qwen3-VL · intent / tool selection / vision / planning',bool(available and self.vision)),
-                 ('transcribe','Whisper · speech transcription',bool(available and self.speech)),
-                 ('rank','SigLIP2 · semantic retrieval',bool(available and self.retrieval)),
-                 ('catalog','Adaptive sampling / local visual index',bool(adaptive and self.retrieval)),
-                 ('inspect','OpenCV quality / Apple Vision OCR',available),
-                 ('motion','VisionFlow optical flow',available and (runtime/'scripts/vf_motion.py').is_file()),
+        tools = [('ask','Qwen3-VL · intent / tool selection / vision / planning',bool(vision_ready)),
+                 ('transcribe',('Qwen3-ASR 1.7B' if self.speech_engine=='qwen3asr' else 'Whisper')+' · speech transcription',bool(speech_ready)),
+                 ('rank','SigLIP2 · semantic retrieval',bool(retrieval_ready)),
+                 ('catalog','Adaptive sampling / local visual index',bool(adaptive and retrieval_ready)),
+                 ('inspect','OpenCV quality / Apple Vision OCR',inspect_ready),
+                 ('motion','VisionFlow optical flow',inspect_ready and (runtime/'scripts/vf_motion.py').is_file()),
                  ('scene_log','Scene logs / trip facts',scene_log),
                  ('trip_map','Apple Maps trip workspace',trip_map),
                  ('story','Story-led rough cut',story),
@@ -176,9 +199,10 @@ class ModelGateway:
                  ('final_export','Original-media final export / 4K',final_export),
                  ('hyperframes','HyperFrames · local motion titles',hyperframes),
                  ('beauty','Aesthetic ranking' if beauty else 'Aesthetic ranking · private weights required',beauty)]
-        return {'localText': bool(available and self.vision), 'localVision': bool(available and self.vision),
-                'localSpeech': bool(available and self.speech), 'cloudText': bool(self.cloud['apiKey'] and self.cloud['model']),
-                'localRetrieval': bool(available and self.retrieval), 'adaptiveSampling':bool(adaptive),
+        return {'localText': bool(vision_ready), 'localVision': bool(vision_ready),
+                'localSpeech': bool(speech_ready), 'cloudText': bool(self.cloud['apiKey'] and self.cloud['model']),
+                'localRetrieval': bool(retrieval_ready), 'adaptiveSampling':bool(adaptive),
+                'missingDependencies':[name for name, present in modules.items() if not present],
                 'engineVersion': version, 'analysisScheduling':self.resources.status(),
                 'localHyperframes':bool(hyperframes), 'localBeauty':bool(beauty), 'localSceneLog':bool(scene_log), 'localTripMap':bool(trip_map),
                 'localStory':bool(story), 'localEditorialQC':bool(editorial_qc), 'localFinalExport':bool(final_export),
@@ -199,14 +223,20 @@ class ModelGateway:
     def local(self, payload, cancel):
         if payload.get('operation') not in {'ask', 'transcribe', 'inspect', 'rank', 'motion', 'beauty', 'catalog', 'hyperframes', 'story'}:
             raise ValueError('Unsupported local operation')
+        capability = {'ask':'localVision', 'transcribe':'localSpeech', 'rank':'localRetrieval',
+                      'story':'localStory', 'hyperframes':'localHyperframes', 'beauty':'localBeauty'}.get(payload['operation'])
+        if payload['operation'] == 'catalog':
+            capability = 'adaptiveSampling' if payload.get('action') == 'sample' else 'localRetrieval'
+        if capability and self.capabilities().get(capability) is False:
+            raise CapabilityMissing('Local '+payload['operation']+' dependencies or cached model are unavailable. Check Models and the configured Python environment.')
         light = payload.get('operation') in {'inspect', 'motion', 'story'} or (payload.get('operation') == 'catalog' and payload.get('action') == 'sample')
         if light:
             with self.resources.lease('prepare', cancel):
                 return self.prepare_local(payload, cancel)
         with self.lock, self.resources.lease('model', cancel):
             if cancel.is_set(): raise AgentCancelled()
-            if self.capabilities().get('engineVersion') != REQUIRED_ENGINE_VERSION:
-                raise CapabilityMissing(f'This client requires VisionFlow {REQUIRED_ENGINE_VERSION}. An incompatible runtime was not used; your files are kept.')
+            if self.capabilities().get('engineVersion') not in SUPPORTED_ENGINE_VERSIONS:
+                raise CapabilityMissing(f"This client requires VisionFlow {' or '.join(SUPPORTED_ENGINE_VERSIONS)}. An incompatible runtime was not used; your files are kept.")
             if not Path(self.python).is_file() or not payload.get('model'):
                 raise CapabilityMissing('Local MLX runtime or cached model is missing. Configure the installed runtime; no model will be downloaded automatically.')
             if self.process is None or self.process.poll() is not None:
@@ -226,9 +256,10 @@ class ModelGateway:
                     if not result.get('ok'):
                         self.observations[payload['operation']] = 'failed'
                         failure = worker_response_error(result.get('error', 'Local inference failed'))
-                        if payload['operation'] == 'hyperframes' or failure.retryable: self.close()
+                        self.close()
                         raise failure
                     self.observations[payload['operation']] = 'verified'
+                    self.close() # Release MLX/Torch between tool stages instead of retaining both.
                     return result['value']
             self.close(); raise TimeoutError('Local inference timed out; completed results are retained.')
 
@@ -238,8 +269,8 @@ class ModelGateway:
 
     def prepare_local(self, payload, cancel):
         """One-shot CPU helper; never starts, unloads or waits on the MLX worker."""
-        if self.capabilities().get('engineVersion') != REQUIRED_ENGINE_VERSION or not Path(self.python).is_file():
-            raise CapabilityMissing(f'Local VisionFlow {REQUIRED_ENGINE_VERSION} preprocessing runtime is unavailable.')
+        if self.capabilities().get('engineVersion') not in SUPPORTED_ENGINE_VERSIONS or not Path(self.python).is_file():
+            raise CapabilityMissing(f"Local VisionFlow {' or '.join(SUPPORTED_ENGINE_VERSIONS)} preprocessing runtime is unavailable.")
         if cancel.is_set(): raise AgentCancelled()
         env = worker_environment()
         env.update(OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1')
@@ -334,7 +365,7 @@ class ModelGateway:
         return structured_result(result)
 
     def transcribe(self, source, cancel):
-        return self.local({'operation': 'transcribe', 'model': self.speech, 'source': str(source)}, cancel)
+        return self.local({'operation': 'transcribe', 'model': self.speech, 'engine':self.speech_engine, 'source': str(source)}, cancel)
 
     def inspect(self, images, cancel):
         return self.local({'operation': 'inspect', 'model': 'local-tools', 'images': images}, cancel)

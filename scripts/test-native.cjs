@@ -27,7 +27,7 @@ run(keyboardOutput, []);
 const mediaPlaybackOutput = path.join(root, 'build-native/MediaPlaybackTests');
 run('swiftc', ['-parse-as-library', '-module-cache-path', cache,
   'native/Sources/Pixfun/MediaPlayback.swift', 'native/Tests/MediaPlaybackTests.swift', '-o', mediaPlaybackOutput]);
-run(mediaPlaybackOutput, [path.join(root, 'native/Examples/wild-alaska/wild-alaska.mp4')]);
+run(mediaPlaybackOutput, [process.env.PIXFUN_TEST_VIDEO || path.join(root, 'native/Examples/wild-alaska/wild-alaska.mp4')]);
 const {skills,buildBrief} = require('../public/desktop-skills.js');
 for (const skill of skills) {
   if(skill.structure.length !== skill.beats.length || buildBrief(skill, '').length > 4000) throw new Error(`Invalid native skill: ${skill.id}`);

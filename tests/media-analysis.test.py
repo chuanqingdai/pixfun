@@ -55,6 +55,23 @@ class Tests(unittest.TestCase):
         deadline=time.monotonic()+3
         while not predicate() and time.monotonic()<deadline: time.sleep(.005)
         self.assertTrue(predicate())
+    def test_external_catalog_is_not_automatically_reanalyzed(self):
+        self.lib.items['v']['vfCatalog'] = {'asset': 'original-id'}
+        self.queue.recover()
+        self.assertNotIn('v', self.queue.jobs)
+        self.assertNotIn('mediaAnalysis', self.lib.items['v'])
+        self.assertTrue(self.queue.schedule('v', force=True))
+        self.wait('v')
+        self.assertEqual(self.lib.items['v']['mediaAnalysis']['status'], 'ready')
+
+    def test_development_upgrade_does_not_resume_old_work(self):
+        self.lib.items['v']['mediaAnalysis'] = {'status':'interrupted'}
+        with patch.dict('os.environ', {'PIXFUN_AUTO_ANALYZE_EXISTING':'0'}):
+            self.queue.recover()
+        self.assertFalse(self.queue.jobs)
+        self.assertTrue(self.queue.schedule('p'))
+        self.wait('p')
+
     def test_completed_worker_timeout_does_not_stall_the_queue(self):
         self.queue.retry_delays=(60,60)
         self.agent.observe.side_effect=TimeoutError('Local inference timed out')

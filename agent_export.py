@@ -44,6 +44,10 @@ class SourceSnapshot:
         bundled = catalog()
         for mid in selected:
             record, path = bundled[mid] if mid in bundled else engine.library.get(mid)
+            reference = record.get('vfCatalog') or {}
+            original = reference.get('originalSource')
+            if original and Path(original).resolve() != Path(path).resolve():
+                raise ValueError('该素材使用 VisionFlow 代理。原片与代理的时间、方向和 HDR 映射尚未验证，暂不能从原片导出；可继续使用预览。')
             self.entries[mid] = (copy.deepcopy(record), Path(path))
             self.identities[mid] = fingerprint(path)
         # The shared renderer only needs selected sources, not unused/offline attachments.

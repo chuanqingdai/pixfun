@@ -23,6 +23,12 @@ def source_speech(engine, record, path):
         if analysis.get('subtitleSignature') != signature:
             return None
         kind = 'asr'
+    elif state == 'catalog' and (record.get('vfCatalog') or {}).get('fingerprint'):
+        from vf_native import validate_source
+        validate_source(record, path)
+        # Projection already removed rejected text and unverified clocks.
+        # Still expose cue-level ASR guidance, never word-accurate alignment.
+        kind = 'asr'
     elif state in ('sidecar', 'embedded'):
         file = record.get('file') or {}
         if file.get('size') != stat.st_size or file.get('lastModified') != int(stat.st_mtime * 1000):
@@ -106,6 +112,10 @@ def assist(engine, payload):
             # Stale cached observations cannot recommend exact source ranges.
             valid = analysis.get('status') == 'ready' and analysis.get('signature') == analysis_signature(engine, record, path, run.get('mode', 'local'))
             segments = analysis.get('segments', []) if valid else []
+            if not valid and record.get('vfCatalog'):
+                from vf_evidence import catalog_evidence
+                cached = catalog_evidence(record, path)
+                segments = cached['segments'] if cached else []
             sources.append(dict(id=mid, kind=record['kind'], duration=(record.get('metadata') or {}).get('duration', 0),
                 revision=revision, segments=segments,
                 description=record.get('description') or (record.get('videoDescription') or {}).get('full_description', '')))

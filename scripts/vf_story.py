@@ -94,7 +94,7 @@ def editor_assist(job):
             if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in (a, b, limit)) or not 0 <= a < b <= limit or b-a < length:
                 continue
             role_match = bool(roles.intersection(ed.get('story_role', [])))
-            description = str(ed.get('description') or '')
+            description = str(ed.get('description') or segment.get('summary') or '')
             overlap = query & tokens(description)
             same = row['id'] == target['mediaId']
             if not overlap and not role_match and not same:

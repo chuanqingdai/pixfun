@@ -82,6 +82,7 @@ struct Segment: Codable, Identifiable {
         case "video_start": return "Video start"
         case "detected_cut": return "Detected visual cut"
         case "semantic_change": return "Semantic change · review timing"
+        case "catalog_shot": return "VisionFlow shot · saved boundary"
         default: return "Time-based split"
         }
     }
@@ -297,6 +298,7 @@ struct MediaItem: Codable, Identifiable {
     var coverUrl: String?
     var sampleCopy: VideoDescription?
     var analysisTags: [String]? = nil
+    var vfCatalog: VisionFlowReference? = nil
     var analysisEvidence: MediaEvidence? = nil
     var tagCorrections: TagCorrections? = nil
     var resolvedPlace: ResolvedPlace? = nil
@@ -471,6 +473,27 @@ struct MediaItem: Codable, Identifiable {
         MediaSearchDocument(self).match(MediaSearchQuery(query), scope: .all, location: nil) != nil
     }
 }
+struct VisionFlowReference: Codable {
+    var asset: String; var collection: String; var originalSource: String; var origin: Double
+    var shots: [VisionFlowEvidence]?
+    var excludedTranscripts: Int?
+}
+struct VisionFlowEvidence: Codable {
+    struct Score: Codable { var mean: Double?; var max: Double? }
+    struct Scores: Codable {
+        var beauty: Score?; var sharpness: Score?; var clipped_fraction: Score?
+    }
+    struct Cover: Codable { var locked: Bool?; var status: String? }
+    var id: String; var start: Double; var end: Double
+    var scores: Scores?; var cover_choice: Cover?
+}
+struct VisionFlowStatus: Decodable {
+    var connected: Bool; var message: String; var assets: Int; var shots: Int
+}
+struct VisionFlowMatch: Decodable {
+    var mediaId: String; var shotId: String; var start: Double; var label: String; var thumbnailUrl: String
+}
+
 /// Presentation identity uses declared source metadata, never image-based device guesses.
 struct MediaSourceIdentity {
     let name: String

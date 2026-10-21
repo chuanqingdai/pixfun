@@ -7,6 +7,7 @@ No GPU batch size is inferred from CPU count. No user media is read here.
 from concurrent.futures import ThreadPoolExecutor, Future, wait
 from contextlib import contextmanager
 import re
+import os
 import subprocess
 import sys
 import threading
@@ -36,7 +37,7 @@ class AnalysisResources:
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='media-preprocess')
         self.active = {'model': 0, 'prepare': 0}
         self.parallel = False
-        self.forced_serial = False
+        self.forced_serial = os.environ.get('PIXFUN_SERIAL_ANALYSIS') == '1'
         self.healthy_since = None
         self.checked_at = float('-inf')
         self.snapshot = None

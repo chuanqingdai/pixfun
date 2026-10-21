@@ -6,10 +6,10 @@ struct MediaCatalogControls: View {
     var body: some View {
         HStack(spacing: 10) {
             if store.catalogBusy { ProgressView().controlSize(.small) }
-            Text(store.catalogMessage).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+            Text(store.visionFlowStatus?.connected == true ? "VisionFlow 镜头库已接入；现有素材无需重复索引。" : store.catalogMessage).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
             if store.catalogBusy {
                 Button("Stop") { store.stopCatalog() }.buttonStyle(.plain)
-            } else {
+            } else if store.libraryItems.contains(where: { $0.kind == "video" && $0.vfCatalog == nil }) {
                 Button("Build visual index…") { confirmIndex = true }.buttonStyle(.plain)
                     .foregroundStyle(Color.pixfunGold)
             }
@@ -39,7 +39,7 @@ struct MediaSearchControls: View {
                     .accessibilityLabel("Search Media").accessibilityHint(store.searchScope.explanation)
                     .onExitCommand { store.query = "" }
                     .onSubmit { store.searchVisualMedia() }
-                if (store.catalogStatus?.indexed ?? 0) > 0 {
+                if store.visionFlowStatus?.connected == true || (store.catalogStatus?.indexed ?? 0) > 0 {
                     Button { store.searchVisualMedia() } label: { Image(systemName: "arrow.right").frame(width: 28, height: 30) }
                         .buttonStyle(.plain).disabled(store.catalogBusy || store.query.isEmpty)
                         .accessibilityLabel("Search indexed video frames")

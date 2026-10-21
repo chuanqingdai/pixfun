@@ -809,6 +809,16 @@ import Foundation
         check(searchStore.searchScope == .folder && searchStore.visibleItems.count == 1, "clear search keeps chosen scope")
         searchStore.resetMediaFilters()
         check(searchStore.searchScope == .all && !searchStore.hasMediaFilters, "reset restores everything scope")
+        var repairedCover = searchable
+        repairedCover.coverUrl = "/repaired-cover.jpg?v=corrected"
+        searchStore.visualMatches = [VisionFlowMatch(mediaId: repairedCover.id, shotId: "saved-shot", start: 7.25, label: "Lake", thumbnailUrl: "/old-overexposed-match.jpg")]
+        searchStore.items = [repairedCover]
+        check(searchStore.visibleItems.first?.cover == repairedCover.cover, "visual results retain the saved repaired cover")
+        check(searchStore.mediaSearchResults.first?.hits.first?.start == 7.25, "saved cover does not replace matching seek time")
+        check(searchStore.hasMediaFilters && (searchStore.mediaResultSummary.contains("result") || searchStore.mediaResultSummary.contains("找到")), "similar results are distinct from the ordinary library")
+        searchStore.clearVisualSearch()
+        check(searchStore.visualMatches == nil && searchStore.query.isEmpty && searchStore.visibleItems.first?.cover == repairedCover.cover, "show all restores normal media without changing the cover")
+        searchStore.items = [noAnalysis]
         searchStore.query = "river"
         check(searchStore.visibleItems.isEmpty, "typing an unmatched query never silently scans media")
         check(searchStore.visualMatchTime(noAnalysis.id) == nil, "unsearched media never has a fabricated visual match time")

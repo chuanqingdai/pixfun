@@ -39,3 +39,17 @@ def ranked_evidence(evidence, result):
         raise ValueError('Local retrieval returned invalid scores. Retry the request.')
     # Annotate, never silently drop or reorder source references.
     return [dict(row, similarity=round(float(score), 4)) for row, score in zip(evidence, scores)]
+
+
+def rank_available_evidence(candidates, evidence, rank):
+    """Catalog thumbnails have no local framePath. Keep those candidates unranked.
+
+    Never pass a URL to the encoder or assign a synthetic zero to missing frames.
+    Original indices must stay stable for downstream source references.
+    """
+    indices = [i for i, candidate in enumerate(candidates) if candidate.get('framePath')]
+    result = list(evidence)
+    if indices:
+        ranked = ranked_evidence([evidence[i] for i in indices], rank([candidates[i]['framePath'] for i in indices]))
+        for i, row in zip(indices, ranked): result[i] = row
+    return result, len(candidates)-len(indices)

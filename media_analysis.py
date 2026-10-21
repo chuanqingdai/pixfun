@@ -4,6 +4,7 @@ The coordinator waits outside the single model executor to avoid deadlocks.
 Existing results stay visible until replacement inference succeeds.
 """
 import concurrent.futures
+import os
 import threading
 import time
 import uuid
@@ -41,6 +42,8 @@ class MediaAnalysis:
         with self.lock:
             if self.closing: return False
             item, _ = self.library.get(key)
+            # Imported catalog evidence is maintained by VisionFlow. Reanalysis is explicit.
+            if item.get('vfCatalog') and not force: return False
             if key in self.jobs and not self.jobs[key][1].done(): return False
             old = item.get('mediaAnalysis') or {}
             if not force and old.get('status') == 'ready': return False
@@ -83,6 +86,7 @@ class MediaAnalysis:
             timer.start()
 
     def recover(self, force_all=False):
+        if not force_all and os.environ.get('PIXFUN_AUTO_ANALYZE_EXISTING') == '0': return
         for item in self.library.list():
             state = (item.get('mediaAnalysis') or {}).get('status')
             if force_all or state in (None, 'queued', 'running', 'interrupted'):

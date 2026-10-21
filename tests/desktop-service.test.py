@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import sys
 import urllib.request
 import urllib.error
 
@@ -72,6 +73,22 @@ class DesktopServiceTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as changed:
             self.api(route, {**payload,'action':'validate','candidate':candidate}, native=True)
         self.assertEqual(changed.exception.code, 400)
+
+    def test_missing_runtime_returns_actionable_json_not_disconnect(self):
+        from unittest.mock import patch
+        self.stop()
+        with patch.dict(os.environ, {'PIXFUN_MODEL_PYTHON':'/nonexistent/pixfun-python'}): self.start()
+        source=ROOT/'public/images/pixfun-lockup-v2.png'
+        record=dict(id='runtime-fixture',file={'name':source.name},kind='image',status='ready')
+        shots=[dict(id='shot',mediaId=record['id'],start=0,end=2,label='Fixture',reason='',locked=False)]
+        run=dict(id='e'*32,projectId='d'*32,requestId='c'*32,version=1,status='completed',mediaIds=[record['id']],timeline=shots)
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            db.execute('INSERT INTO media(id,source,record) VALUES(?,?,?)',(record['id'],str(source),json.dumps(record)))
+            db.execute('INSERT INTO agent_runs VALUES(?,?,?,?,?)',(run['id'],run['projectId'],run['requestId'],json.dumps(run),time.time()))
+        with self.assertRaises(urllib.error.HTTPError) as failure:
+            self.api('/api/desktop/agent/editor-assist',dict(id=run['id'],version=1,shots=shots,action='review'),native=True)
+        self.assertEqual(failure.exception.code,503)
+        self.assertIn('unavailable',json.load(failure.exception)['error'])
 
     def test_export_requires_native_auth_and_valid_saved_timeline(self):
         route = '/api/desktop/agent/export'
@@ -150,7 +167,9 @@ class DesktopServiceTests(unittest.TestCase):
 
     def start(self):
         env={**os.environ,'PIXFUN_DATA_DIR':self.temp.name,'PIXFUN_PUBLIC_DIR':str(ROOT/'public'),'PIXFUN_SERVICE_TOKEN':TOKEN,'PIXFUN_NATIVE_TOKEN':NATIVE,'PYTHONUNBUFFERED':'1'}
-        command=[str(ROOT/'build-desktop/backend/pixfun-service/pixfun-service')] if os.environ.get('PIXFUN_TEST_FROZEN') else [str(ROOT/'.desktop-venv/bin/python'),str(ROOT/'desktop_service.py')]
+        command=[str(ROOT/'build-desktop/backend/pixfun-service/pixfun-service')] if os.environ.get('PIXFUN_TEST_FROZEN') else [os.environ.get('PIXFUN_TEST_PYTHON',str(ROOT/'.desktop-venv/bin/python')),str(ROOT/'desktop_service.py')]
+        if os.environ.get('PIXFUN_TEST_TRACE'):
+            command=[command[0], '-c', "import faulthandler,runpy; faulthandler.dump_traceback_later(8); runpy.run_path('desktop_service.py',run_name='__main__')"]
         self.log=open(Path(self.temp.name)/'test.log','a')
         self.proc=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=self.log,text=True,env=env)
         line=self.proc.stdout.readline()
@@ -162,12 +181,18 @@ class DesktopServiceTests(unittest.TestCase):
 
     def stop(self):
         self.proc.terminate()
-        self.proc.wait(timeout=8)
-        self.proc.stdout.close()
-        self.log.close()
+        try: self.proc.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            self.proc.kill(); self.proc.wait(timeout=3)
+            self.fail('Desktop service did not shut down gracefully:\n' + (Path(self.temp.name)/'test.log').read_text()[-16000:])
+        finally:
+            self.proc.stdout.close()
+            self.log.close()
 
     def tearDown(self):
         if self.proc.poll() is None:self.stop()
+        if os.environ.get("PIXFUN_TEST_LOGS"):
+            print((Path(self.temp.name)/"test.log").read_text(),file=sys.stderr)
         self.temp.cleanup()
 
     def api(self,route,payload=None,native=False,headers=None):
@@ -328,7 +353,7 @@ class DesktopServiceTests(unittest.TestCase):
     def test_single_service_per_library(self):
         # Only one analyzer can own this library.
         env={**os.environ,'PIXFUN_DATA_DIR':self.temp.name,'PIXFUN_PUBLIC_DIR':str(ROOT/'public'),'PIXFUN_SERVICE_TOKEN':TOKEN,'PIXFUN_NATIVE_TOKEN':NATIVE,'PYTHONUNBUFFERED':'1'}
-        second=subprocess.run([str(ROOT/'.desktop-venv/bin/python'),str(ROOT/'desktop_service.py')],env=env,capture_output=True,text=True,timeout=5)
+        second=subprocess.run([os.environ.get('PIXFUN_TEST_PYTHON',str(ROOT/'.desktop-venv/bin/python')),str(ROOT/'desktop_service.py')],env=env,capture_output=True,text=True,timeout=5)
         self.assertNotEqual(second.returncode,0)
         self.assertIn('already open',second.stderr)
         self.assertTrue(self.json('/api/health')['ok'])
@@ -422,6 +447,10 @@ class DesktopServiceTests(unittest.TestCase):
 
     def test_stop_and_retry(self):
         source=ROOT/'public/media/travel/hero-citywalk.mp4'
+        if not source.exists():
+            source=Path(self.temp.name)/'synthetic.mp4'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24',
+                '-t','30','-c:v','mpeg4','-threads','2',str(source)],check=True)
         record=self.json('/api/desktop/register',{'paths':[str(source)]},native=True)['items'][0]
         self.json('/api/desktop/stop',{})
         stopped=self.wait_ready(record['id'])
