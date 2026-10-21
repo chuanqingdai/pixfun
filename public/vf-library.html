@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>镜头库 · Pixfun × VisionFlow</title>
+<link rel="icon" href="/assets/images/pixfun-icon-v2.png">
+<link rel="stylesheet" href="/assets/vf-library.css">
+<script defer src="/assets/vf-library.js"></script></head>
+<body><header><a class="brand" href="/"><img src="/assets/images/pixfun-lockup-v2.png" alt="Pixfun"></a><span class="badge">VisionFlow · 本地素材库</span><a href="/">创作工作台 ↗</a></header>
+<main><div class="heading"><div><p class="eyebrow">YOUR FOOTAGE, READY TO FIND</p><h1>找到值得留下的镜头。</h1><p id="counts">正在连接统一素材库…</p></div><button id="reload" type="button">刷新素材库</button></div>
+<form id="search"><label class="query">查找镜头<input name="q" placeholder="地点、人物动作、风景、转写原话…" autocomplete="off"></label><label>检索方式<select name="mode"><option value="text">文字／转写／标签</option><option value="hybrid">自然语言＋文字</option><option value="visual">画面语义</option></select></label><label>标签<select name="tag"><option value="">全部标签</option></select></label><button class="primary">搜索</button><button id="clear" type="button">全部镜头</button></form>
+<p class="hint">浏览和相似镜头复用已有索引；自然语言检索首次会加载本地模型。机器转写及自动标签仍需核对。</p>
+<p id="notice" role="status" aria-live="polite"></p><section id="grid" aria-label="镜头列表"></section>
+<nav class="pagination" aria-label="镜头分页"><button id="prev" disabled>上一页</button><span id="page">第 1 页</span><button id="next" disabled>下一页</button></nav>
+<footer>封面沿用素材库的人工选择与 HDR 显示修复。原片离线仍可搜索缓存；分数缺失显示“未评分”。<br>“用于创作”会生成所选 shot 的本地编辑副本，再打开 Pixfun 工作台。本轮支持单镜头，最长 10 分钟。</footer></main>
+<dialog id="detail"><div class="dialog-head"><h2 id="detailTitle">镜头预览</h2><button id="close" aria-label="关闭预览">关闭</button></div><video controls playsinline preload="metadata"></video><p id="playbackNotice" role="status"></p><div id="facts"></div><div class="dialog-actions"><button id="useShot" class="primary">用于创作</button><p id="useNotice" role="status"></p></div></dialog>
+</body></html>

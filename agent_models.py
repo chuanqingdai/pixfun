@@ -33,6 +33,7 @@ class ModelGateway:
         self.worker = os.environ.get('PIXFUN_AGENT_WORKER', str(Path(__file__).parent / 'scripts/agent-model-worker.py'))
         self.vision = os.environ.get('PIXFUN_LOCAL_VLM', '') or cached_model('mlx-community/Qwen3-VL-4B-Instruct-4bit')
         self.speech = os.environ.get('PIXFUN_LOCAL_ASR', '') or cached_model('mlx-community/whisper-large-v3-turbo-q4')
+        self.speech_engine = os.environ.get('PIXFUN_ASR_ENGINE', 'whisper')
         self.retrieval = os.environ.get('PIXFUN_LOCAL_RETRIEVAL', '') or cached_model('google/siglip2-base-patch16-256')
         self.process = None
         self.lock = threading.Lock()
@@ -57,7 +58,7 @@ class ModelGateway:
         runtime = Path(os.environ.get('PIXFUN_VF_ROOT', str(Path.home() / 'work/visionflow/vf-agent')))
         available = Path(self.python).is_file() and Path(self.worker).is_file() and (runtime / 'scripts/vf_engine.py').is_file()
         tools = [('ask','Qwen3-VL · intent / tool selection / vision / planning',bool(available and self.vision)),
-                 ('transcribe','Whisper · speech transcription',bool(available and self.speech)),
+                 ('transcribe',('Qwen3-ASR 1.7B' if self.speech_engine=='qwen3asr' else 'Whisper')+' · speech transcription',bool(available and self.speech)),
                  ('rank','SigLIP2 · semantic retrieval',bool(available and self.retrieval)),
                  ('inspect','OpenCV quality / Apple Vision OCR',available),
                  ('motion','VisionFlow optical flow',available and (runtime/'scripts/vf_motion.py').is_file())]
@@ -101,8 +102,10 @@ class ModelGateway:
                     result = json.loads(line)
                     if not result.get('ok'):
                         self.observations[payload['operation']] = 'failed'
+                        self.close()
                         raise CapabilityMissing(result.get('error', 'Local inference failed'))
                     self.observations[payload['operation']] = 'verified'
+                    self.close() # Release MLX/Torch between tool stages instead of retaining both.
                     return result['value']
             self.close(); raise TimeoutError('Local inference timed out; completed results are retained.')
 
@@ -141,7 +144,7 @@ class ModelGateway:
         return result
 
     def transcribe(self, source, cancel):
-        return self.local({'operation': 'transcribe', 'model': self.speech, 'source': str(source)}, cancel)
+        return self.local({'operation': 'transcribe', 'model': self.speech, 'engine':self.speech_engine, 'source': str(source)}, cancel)
 
     def inspect(self, images, cancel):
         return self.local({'operation': 'inspect', 'model': 'local-tools', 'images': images}, cancel)

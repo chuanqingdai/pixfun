@@ -21,7 +21,13 @@ final class WorkspaceStore: ObservableObject {
     @Published var projectDrafts: [String: Draft] = [:] { didSet { if restoredDraft { persistProjectDrafts() } } }
     @Published var selectedProjectID: String? { didSet { expandCompletedEditor() } }
     private var selectionProjectID: String?
-    @Published var query = "" { didSet { refreshMediaSearch() } }
+    @Published var query = "" { didSet { visualMatches = nil; visualSearchGeneration += 1; refreshMediaSearch() } }
+    @Published var visionFlowStatus: VisionFlowStatus?
+    @Published var visualSearching = false
+    @Published var catalogRefreshing = false
+    @Published var visualMatches: [VisionFlowMatch]?
+    @Published var visualSearchLabel = ""
+    private var visualSearchGeneration = 0
     @Published var category = MediaCategory.all { didSet { refreshMediaSearch() } }
     @Published var folder = "" { didSet { refreshMediaSearch() } }
     @Published var searchScope = MediaSearchScope.all { didSet { refreshMediaSearch() } }
@@ -221,13 +227,59 @@ final class WorkspaceStore: ObservableObject {
         mediaSearchResults.map(\.item)
     }
     private func refreshMediaSearch() {
+        if let matches = visualMatches {
+            let eligible = MediaFilter(category: category, query: "", scope: .all, folder: folder, sort: sort).apply(items, locations: locations)
+            let lookup = Dictionary(uniqueKeysWithValues: eligible.map { ($0.id, $0) })
+            var seen = Set<String>()
+            mediaSearchResults = matches.compactMap { match in
+                // Search changes ranking and seek time, never the saved cover.
+                // Match frames may still come from an older HDR analysis cache.
+                guard let item = lookup[match.mediaId], seen.insert(item.id).inserted else { return nil }
+                return MediaSearchResult(item: item, hits: [.init(id:0,label:"Visual match",text:match.label,start:match.start,segmentID:match.shotId,priority:100)])
+            }
+            return
+        }
         mediaSearchResults = MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort)
             .results(items, locations: locations, documents: searchDocuments)
+    }
+    func searchVisionFlow(similar: String? = nil, collection: String? = nil) {
+        guard !visualSearching else { return }
+        if similar == nil && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
+        visualSearchGeneration += 1
+        let generation = visualSearchGeneration
+        let resultLabel = similar != nil ? "Similar shots · \(collection ?? "all trips")" : "Visual search · \(query)"
+        var parts = URLComponents()
+        parts.queryItems = similar.map { [URLQueryItem(name:"similar",value:$0)] } ?? [URLQueryItem(name:"q",value:query)]
+        if let collection, !collection.isEmpty { parts.queryItems?.append(URLQueryItem(name:"collection",value:collection)) }
+        let path = "/api/desktop/vf/search?" + (parts.percentEncodedQuery ?? "")
+        visualSearching = true
+        Task {
+            defer { visualSearching = false }
+            do {
+                struct Matches: Decodable { var matches: [VisionFlowMatch] }
+                let response: Matches = try await service.get(path,native:true)
+                guard generation == visualSearchGeneration else { return }
+                visualSearchLabel = resultLabel
+                visualMatches = response.matches; detail = nil; page = .media; refreshMediaSearch()
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    func clearVisualSearch() { query = ""; visualSearchLabel = ""; refreshMediaSearch() }
+    func refreshVisionFlow() {
+        guard !catalogRefreshing else { return }
+        catalogRefreshing = true
+        Task {
+            defer { catalogRefreshing = false }
+            do {
+                visionFlowStatus = try await service.post("/api/desktop/vf/sync", [:], native:true)
+                service.clearImages(); try await refresh()
+            } catch { self.error = error.localizedDescription }
+        }
     }
     var isSearchingMedia: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var mediaResultSummary: String {
         let count = visibleItems.count
-        return isSearchingMedia ? "\(count) \(count == 1 ? "result" : "results") · \(items.filter { $0.kind != "audio" }.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
+        return isSearchingMedia || visualMatches != nil ? "\(count) \(count == 1 ? "result" : "results") · \(items.filter { $0.kind != "audio" }.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
     }
     var folders: [MediaFolder] {
         let paths = items.filter { $0.kind != "audio" }.compactMap { locations[$0.id]?.folder }
@@ -297,7 +349,7 @@ final class WorkspaceStore: ObservableObject {
         struct Library: Decodable { var items: [MediaItem] }
         struct Projects: Decodable { var projects: [Project] }
         struct Locations: Decodable { var items: [MediaLocation] }
-        let library: Library = try await service.get("/api/desktop/library")
+        let library: Library = try await service.get("/api/desktop/library", native: true)
         let history: Projects = try await service.get("/api/desktop/projects")
         let paths: Locations = try await service.get("/api/desktop/locations", native: true)
         locations = Dictionary(uniqueKeysWithValues: paths.items.map { ($0.id, $0) })
@@ -306,6 +358,7 @@ final class WorkspaceStore: ObservableObject {
         let runs: Runs = try await service.get("/api/desktop/agent/runs", native: true)
         agentRuns = runs.runs
         agentCapabilities = try await service.get("/api/desktop/agent/capabilities", native: true)
+        visionFlowStatus = try await service.get("/api/desktop/vf/status")
         selection.formIntersection(Set(items.map(\.id)))
     }
     func perform(_ operation: @escaping () async throws -> Void) {

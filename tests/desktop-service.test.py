@@ -22,7 +22,7 @@ class DesktopServiceTests(unittest.TestCase):
 
     def start(self):
         env={**os.environ,'PIXFUN_DATA_DIR':self.temp.name,'PIXFUN_PUBLIC_DIR':str(ROOT/'public'),'PIXFUN_SERVICE_TOKEN':TOKEN,'PIXFUN_NATIVE_TOKEN':NATIVE,'PYTHONUNBUFFERED':'1'}
-        command=[str(ROOT/'build-desktop/backend/pixfun-service/pixfun-service')] if os.environ.get('PIXFUN_TEST_FROZEN') else [str(ROOT/'.desktop-venv/bin/python'),str(ROOT/'desktop_service.py')]
+        command=[str(ROOT/'build-desktop/backend/pixfun-service/pixfun-service')] if os.environ.get('PIXFUN_TEST_FROZEN') else [os.environ.get('PIXFUN_TEST_PYTHON',str(ROOT/'.desktop-venv/bin/python')),str(ROOT/'desktop_service.py')]
         self.log=open(Path(self.temp.name)/'test.log','a')
         self.proc=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=self.log,text=True,env=env)
         line=self.proc.stdout.readline()
@@ -77,7 +77,7 @@ class DesktopServiceTests(unittest.TestCase):
     def test_single_service_per_library(self):
         # Only one analyzer can own this library.
         env={**os.environ,'PIXFUN_DATA_DIR':self.temp.name,'PIXFUN_PUBLIC_DIR':str(ROOT/'public'),'PIXFUN_SERVICE_TOKEN':TOKEN,'PIXFUN_NATIVE_TOKEN':NATIVE,'PYTHONUNBUFFERED':'1'}
-        second=subprocess.run([str(ROOT/'.desktop-venv/bin/python'),str(ROOT/'desktop_service.py')],env=env,capture_output=True,text=True,timeout=5)
+        second=subprocess.run([os.environ.get('PIXFUN_TEST_PYTHON',str(ROOT/'.desktop-venv/bin/python')),str(ROOT/'desktop_service.py')],env=env,capture_output=True,text=True,timeout=5)
         self.assertNotEqual(second.returncode,0)
         self.assertIn('already open',second.stderr)
         self.assertTrue(self.json('/api/health')['ok'])
@@ -164,6 +164,10 @@ class DesktopServiceTests(unittest.TestCase):
 
     def test_stop_and_retry(self):
         source=ROOT/'public/media/travel/hero-citywalk.mp4'
+        if not source.exists():
+            source=Path(self.temp.name)/'synthetic.mp4'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24',
+                '-t','30','-c:v','mpeg4','-threads','2',str(source)],check=True)
         record=self.json('/api/desktop/register',{'paths':[str(source)]},native=True)['items'][0]
         self.json('/api/desktop/stop',{})
         stopped=self.wait_ready(record['id'])

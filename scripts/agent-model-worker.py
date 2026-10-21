@@ -30,7 +30,7 @@ for line in sys.stdin:
                     import numpy as np
                     probe = json.loads(subprocess.check_output(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','json',path]))['streams'][0]
                     width=320; height=round(probe['height']*width/probe['width']/2)*2
-                    decoder=subprocess.Popen(['ffmpeg','-v','error','-i',path,'-vf',f'fps=8,scale={width}:{height},format=gray','-f','rawvideo','-pix_fmt','gray','-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+                    decoder=subprocess.Popen(['ffmpeg','-v','error','-threads','2','-filter_threads','2','-i',path,'-vf',f'fps=8,scale={width}:{height},format=gray','-threads','2','-f','rawvideo','-pix_fmt','gray','-'],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
                     try:
                         while True:
                             frame=decoder.stdout.read(width*height)
@@ -55,8 +55,13 @@ for line in sys.stdin:
                 photo_metrics._faces = lambda image: []
                 quality = [photo_metrics.metrics(cv2.imread(p)) for p in job['images']]
                 try:
-                    from vf_agent.web_analysis import ocr_images
-                    ocr = ocr_images(job['images'])
+                    # The installed OCR implementation is a CLI script; load only
+                    # its imports/function definitions, never its argument parser.
+                    module = ast.parse((runtime / 'scripts/vf_ocr.py').read_text())
+                    definitions = ast.Module(body=[n for n in module.body if isinstance(n,(ast.Import,ast.ImportFrom,ast.FunctionDef))],type_ignores=[])
+                    scope = {}
+                    exec(compile(definitions,str(runtime/'scripts/vf_ocr.py'),'exec'),scope)
+                    ocr = [{'image':p,'texts':[{'text':text,'confidence':confidence} for text,confidence in scope['ocr'](p)]} for p in job['images']]
                     ocr_status = 'complete'
                 except (ImportError, RuntimeError):
                     ocr = []; ocr_status = 'unavailable'
@@ -84,11 +89,25 @@ for line in sys.stdin:
                 if device == 'mps': torch.mps.empty_cache()
             elif job['operation'] == 'transcribe':
                 engine = None; gc.collect()
-                import mlx_whisper
-                result = mlx_whisper.transcribe(job['source'], path_or_hf_repo=job['model'], verbose=False,
-                    word_timestamps=False, condition_on_previous_text=False)
-                value = {'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
-                                  for s in result.get('segments', []) if s.get('text', '').strip()]}
+                if job.get('engine') == 'qwen3asr':
+                    import tempfile
+                    import vf_audio
+                    from qwen3_asr_mlx import Qwen3ASR
+                    with tempfile.TemporaryDirectory(prefix='pixfun-asr-') as tmp:
+                        wav = str(Path(tmp)/'speech.wav')
+                        subprocess.run(['ffmpeg','-v','error','-threads','2','-i',job['source'],
+                            '-vn','-ac','1','-ar','16000','-threads','2',wav],check=True,capture_output=True)
+                        vf_audio.Q = Qwen3ASR.from_pretrained(job['model'])
+                        try: cues = vf_audio.qwen_segments(wav)
+                        finally: vf_audio.Q = None
+                    value = {'cues':cues,'timing':'silence-delimited segments, not word alignment',
+                             'note':'Machine transcript; singing and unclear speech require review.'}
+                else:
+                    import mlx_whisper
+                    result = mlx_whisper.transcribe(job['source'], path_or_hf_repo=job['model'], verbose=False,
+                        word_timestamps=False, condition_on_previous_text=False)
+                    value = {'cues': [{'start': s['start'], 'end': s['end'], 'text': s['text'].strip()}
+                                      for s in result.get('segments', []) if s.get('text', '').strip()]}
             elif job['operation'] == 'ask':
                 if engine is None:
                     from vf_engine import Engine

@@ -43,7 +43,7 @@ struct MediaSearchControls: View {
                                 }
                             }
                             Divider()
-                            Text("Keywords match saved text, not unseen footage. All words must match the same file. Use the language of the saved text; translation and semantic search are not included.")
+                            Text("Keyword search matches saved text. Use Visual search to query VisionFlow's existing image index with natural language. Similar-shot search is available from a catalog shot's context menu.")
                                 .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                             Text("Missing details? Open a clip and choose Generate or Analyze shots. Searching and opening results never start analysis or upload files.")
                                 .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)

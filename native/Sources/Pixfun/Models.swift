@@ -26,6 +26,7 @@ struct Segment: Codable, Identifiable {
         case "video_start": return "Video start"
         case "detected_cut": return "Detected visual cut"
         case "semantic_change": return "Semantic change · review timing"
+        case "catalog_shot": return "VisionFlow shot · saved boundary"
         default: return "Time-based split"
         }
     }
@@ -69,6 +70,7 @@ struct MediaItem: Codable, Identifiable {
     var coverUrl: String?
     var sampleCopy: VideoDescription?
     var analysisTags: [String]? = nil
+    var vfCatalog: VisionFlowReference? = nil
     var cardSummary: String? {
         let candidates = [description, shotAnalysis?.summary, displayVideoDescription?.full_description]
         return candidates.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -103,6 +105,26 @@ struct MediaItem: Codable, Identifiable {
     func matches(_ query: String) -> Bool {
         MediaSearchDocument(self).match(MediaSearchQuery(query), scope: .all, location: nil) != nil
     }
+}
+struct VisionFlowReference: Codable {
+    var asset: String; var collection: String; var originalSource: String; var origin: Double
+    var shots: [VisionFlowEvidence]?
+    var excludedTranscripts: Int?
+}
+struct VisionFlowEvidence: Codable {
+    struct Score: Codable { var mean: Double?; var max: Double? }
+    struct Scores: Codable {
+        var beauty: Score?; var sharpness: Score?; var clipped_fraction: Score?
+    }
+    struct Cover: Codable { var locked: Bool?; var status: String? }
+    var id: String; var start: Double; var end: Double
+    var scores: Scores?; var cover_choice: Cover?
+}
+struct VisionFlowStatus: Decodable {
+    var connected: Bool; var message: String; var assets: Int; var shots: Int
+}
+struct VisionFlowMatch: Decodable {
+    var mediaId: String; var shotId: String; var start: Double; var label: String; var thumbnailUrl: String
 }
 struct Attachment: Codable, Identifiable, Equatable { var id: String; var name: String; var kind: String }
 struct ChosenSkill: Codable, Equatable { var id: String; var title: String; var strategy: String; var applicability: String? = nil }

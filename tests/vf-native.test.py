@@ -1,0 +1,87 @@
+import copy
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from desktop_service import Library
+from vf_native import NativeCatalog, project_asset, validate_source
+
+
+class NativeCatalogTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(); self.root=Path(self.temp.name)
+        self.source=self.root/'source.mp4'; self.source.write_bytes(b'media')
+        st=self.source.stat()
+        self.shot=dict(id='shot-1',asset='trip/clip.mp4',source=str(self.source),start=1.,end=5.,
+            playback=dict(start=1.2,end=5.2,origin=.2), representative='frame:1/600',
+            context=dict(place='Lake',collection='Trip',note='Unverified place'),tags=[dict(tag='Trip')],
+            metadata=dict(observation=dict(fingerprint=[str(self.source.resolve()),st.st_size,st.st_mtime_ns,st.st_ino],transform=dict(rotation=90)),
+                media=dict(data=dict(streams=[dict(codec_type='video',width=1920,height=1080),dict(codec_type='audio')]))),
+            transcript_segments=[dict(id='t1',start=1,end=3,text='Good',searchable=True),
+                dict(id='t2',start=3,end=4,text='Wrong singing',searchable=False),
+                dict(id='t3',start=4,end=5,text='Wrong clock',searchable=True,timing_status='legacy_clock_unverified')],
+            scores=dict(beauty=dict(max=4.2)),cover_choice=dict(locked=True),candidates=[])
+        self.library=Library(self.root/'native')
+        self.bridge=NativeCatalog(self.root/'server.json',self.library)
+        self.bridge.catalog.search=lambda params:[copy.deepcopy(self.shot)]
+
+    def tearDown(self): self.library.close(); self.temp.cleanup()
+
+    def test_clock_rotation_and_transcript_quarantine(self):
+        r,source=project_asset([self.shot]); a=r['result']['analysis']
+        self.assertEqual((r['metadata']['width'],r['metadata']['height']),(1080,1920))
+        self.assertEqual(a['segments'][0]['start'],1.2)
+        self.assertEqual(a['subtitleCues'],[dict(start=1.2,end=3.2,text='Good',human_verified=False)])
+        self.assertEqual(r['vfCatalog']['shots'][0]['scores'],self.shot['scores'])
+        self.assertTrue(r['vfCatalog']['shots'][0]['cover_choice']['locked'])
+        self.assertIn('frame%3A1%2F600',r['coverUrl'])
+        validate_source(r,Path(source)); self.source.write_bytes(b'changed')
+        with self.assertRaises(FileNotFoundError): validate_source(r,Path(source))
+
+    def test_refresh_preserves_edits_removal_and_does_not_enqueue(self):
+        with patch.object(self.library,'enqueue',side_effect=AssertionError('must not rescan')):
+            self.bridge.sync(); r=self.library.list()[0]
+            self.library.patch(r['id'],favorite=True,title='My title',description='My note',context={'location':'Corrected'})
+            self.bridge.sync(); again=self.library.list()[0]
+            self.assertEqual(len(self.library.list()),1)
+            self.assertEqual(again['title'],'My title'); self.assertTrue(again['favorite'])
+            self.assertEqual(again['context']['location'],'Corrected')
+            with self.library.connect() as db: db.execute('UPDATE media SET removed=1')
+            self.bridge.sync(); self.assertEqual(self.library.list(),[])
+            self.assertTrue((self.library.directory/'before-visionflow.sqlite3').is_file())
+
+    def test_no_partial_publish_on_bad_page(self):
+        self.bridge.sync()
+        invalid=copy.deepcopy(self.shot); invalid['playback']['end']=float('nan')
+        self.bridge.catalog.search=lambda params:[invalid]
+        with self.assertRaises(ValueError): self.bridge.sync()
+        self.assertEqual(len(self.library.list()),1)
+
+    def test_missing_context_is_decodable_by_native_string_dictionary(self):
+        self.shot['context'].update(place=None,collection=None,date=None)
+        r,_=project_asset([self.shot])
+        self.assertTrue(all(isinstance(v,str) for v in r['context'].values()))
+        self.assertEqual(r['vfCatalog']['collection'],'')
+
+    def test_similar_keeps_trip_and_maps_saved_identity(self):
+        self.bridge.sync(); received=[]
+        def search(p): received.append(p); return [self.shot]
+        self.bridge.catalog.search=search
+        rows=self.bridge.search(similar='shot-1',collection='Trip')
+        self.assertEqual(received[0]['tag'],'Trip')
+        self.assertEqual(rows[0]['start'],1.2)
+        self.assertEqual(rows[0]['mediaId'],self.library.list()[0]['id'])
+
+    def test_same_frame_display_repair_invalidates_cover_url(self):
+        self.bridge.sync(); before=self.library.list()[0]['coverUrl']
+        self.shot['frames']=[dict(frame_id=self.shot['representative'],display_sha256='repaired-pixels')]
+        self.bridge.sync(); after=self.library.list()[0]['coverUrl']
+        self.assertNotEqual(before,after)
+        self.assertTrue(after.endswith('?v=repaired-pixels'))
+        self.assertEqual(self.library.list()[0]['result']['analysis']['segments'][0]['thumbnailUrl'],after)
+
+if __name__=='__main__':unittest.main()

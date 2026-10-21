@@ -30,6 +30,21 @@ struct MediaView: View {
                     Button { store.pick() } label: { Label("Add files", systemImage: "plus") }.buttonStyle(PixfunButtonStyle(kind: .primary)).help("Reference local files without copying or uploading originals")
                 }
             }.disabled(store.importing)
+            if let catalog = store.visionFlowStatus, catalog.assets > 0 || catalog.connected {
+                HStack(spacing: 12) {
+                    Text("VisionFlow · \(catalog.assets) files · \(catalog.shots) shots").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    if !catalog.connected { Text(catalog.message).font(.pixfun(12)).foregroundStyle(.orange).lineLimit(1) }
+                    Spacer()
+                    if store.visualSearching || store.catalogRefreshing { ProgressView().controlSize(.small) }
+                    if store.visualMatches != nil { Button("Show all media", action: store.clearVisualSearch) }
+                    Button("Visual search") { store.searchVisionFlow() }.disabled(store.query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || store.visualSearching)
+                    Button("Refresh catalog", action: store.refreshVisionFlow).disabled(store.catalogRefreshing)
+                }
+                if store.visualMatches != nil {
+                    Text("\(store.visualSearchLabel) · Saved covers shown. View match jumps to the matching moment.")
+                        .font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                }
+            }
             HStack(spacing: 12) {
                 HStack(spacing: 18) {
                     ForEach(MediaCategory.allCases, id: \.self) { category in
@@ -134,7 +149,7 @@ struct MediaCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                if store.selecting { store.toggleSelection(item.id) } else { store.openMedia(item) }
+                if store.selecting { store.toggleSelection(item.id) } else { store.openMedia(item, at: matches.first?.start ?? 0) }
             } label: {
                 VStack(alignment: .leading, spacing: 0) {
                     ServiceImage(path: item.cover).aspectRatio(item.aspect, contentMode: .fit)
@@ -414,7 +429,7 @@ struct MediaDetailView: View {
                         playback.open(url, at: store.mediaSeekTime)
                         store.mediaSeekTime = 0
                         // Opening a search result is navigation, not permission to start new model work.
-                        if item.kind == "video" && !store.isSearchingMedia { store.describeVideo(item); store.analyzeShots(item) }
+                        if item.kind == "video" && !store.isSearchingMedia && item.vfCatalog == nil { store.describeVideo(item); store.analyzeShots(item) }
                     }
                 } catch { playerError = error.localizedDescription }
             }.onDisappear { playback.stop() }
@@ -433,6 +448,23 @@ struct MediaDetailView: View {
             if let segment = item.segments.first(where: { $0.id == selectedSegment }) ?? item.segments.first {
                 if let shot = segment.editorial { shotDetails(shot, segment: segment) }
                 else { HStack { Text(segment.label).fontWeight(.medium); Text(segment.splitReason).foregroundStyle(.secondary) }.font(.callout) }
+                if let reference = item.vfCatalog {
+                    HStack {
+                        Button("Similar shots in this trip") { store.searchVisionFlow(similar:segment.id,collection:reference.collection) }
+                        Button("All trips") { store.searchVisionFlow(similar:segment.id) }
+                    }.disabled(store.visualSearching)
+                    if let evidence = reference.shots?.first(where: { $0.id == segment.id }) {
+                        HStack(spacing:18) {
+                            if let beauty = evidence.scores?.beauty?.max { Text("Aesthetic \(beauty, specifier: "%.2f")") }
+                            if let clipping = evidence.scores?.clipped_fraction?.mean { Text("Highlight clipping \(clipping*100, specifier: "%.1f")%") }
+                            if evidence.cover_choice?.locked == true { Label("Cover locked",systemImage:"lock") }
+                        }.font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                        Text("Saved scan scores; display-only HDR repairs do not update these scores. Story and expression quality remain unverified.").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
+                    }
+                    if let count = reference.excludedTranscripts, count > 0 {
+                        Text("\(count) transcript entries need review and are excluded from search and editing text.").font(.pixfun(12)).foregroundStyle(.orange)
+                    }
+                }
             }
         }
     }
@@ -464,6 +496,12 @@ struct MediaDetailView: View {
             .accessibilityLabel("\(highlighted ? "Highlight · " : "")Jump to \(segment.label), \(timestamp(segment.start))")
             .accessibilityHint(segment.hoverDescription(analysisStatus: item.shotAnalysis?.status))
             .help(segment.hoverHelp(analysisStatus: item.shotAnalysis?.status))
+            .contextMenu {
+                if item.vfCatalog != nil {
+                    Button("Find similar shots in this trip") { store.searchVisionFlow(similar:segment.id,collection:item.vfCatalog?.collection) }
+                    Button("Find similar shots in all trips") { store.searchVisionFlow(similar:segment.id) }
+                }
+            }
     }
     var shotAnalysisStatus: some View {
         VStack(alignment: .leading, spacing: 8) {

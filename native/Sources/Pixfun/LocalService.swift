@@ -22,9 +22,11 @@ final class LocalService {
 
     init() {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 20
+        configuration.timeoutIntervalForRequest = 120
         configuration.connectionProxyDictionary = [:]
         session = URLSession(configuration: configuration)
+        images.totalCostLimit = 128 * 1024 * 1024
+        images.countLimit = 160
         if let test = ProcessInfo.processInfo.environment["PIXFUN_TEST_DATA_DIR"] {
             dataDirectory = URL(fileURLWithPath: test, isDirectory: true)
         } else {
@@ -52,6 +54,15 @@ final class LocalService {
         let child = Process(), pipe = Pipe()
         child.executableURL = resources.appendingPathComponent("backend/pixfun-service/pixfun-service")
         var env = ProcessInfo.processInfo.environment
+        if let data = try? Data(contentsOf: resources.appendingPathComponent("vf-local.json")),
+           let settings = try? JSONDecoder().decode([String:String].self, from:data) {
+            for key in ["VF_LIBRARY_STATE","PIXFUN_MODEL_PYTHON","PIXFUN_VF_ROOT","PIXFUN_LOCAL_VLM","PIXFUN_LOCAL_ASR","PIXFUN_ASR_ENGINE","PIXFUN_LOCAL_RETRIEVAL","PYTHONPATH"] {
+                if let value = settings[key] { env[key] = value }
+            }
+        }
+        env["OMP_NUM_THREADS"] = "2"; env["OPENBLAS_NUM_THREADS"] = "2"
+        env["MKL_NUM_THREADS"] = "2"; env["VECLIB_MAXIMUM_THREADS"] = "2"
+        env["HF_HUB_OFFLINE"] = "1"; env["TRANSFORMERS_OFFLINE"] = "1"
         env["PATH"] = resources.appendingPathComponent("bin").path + ":/usr/bin:/bin:/usr/sbin:/sbin"
         env["PIXFUN_DATA_DIR"] = dataDirectory.path
         env["PIXFUN_PUBLIC_DIR"] = resources.appendingPathComponent("public").path
@@ -148,7 +159,9 @@ final class LocalService {
     func image(_ path: String) async -> NSImage? {
         if let image = images.object(forKey: path as NSString) { return image }
         guard let request = try? request(path), let bytes = try? await data(request), let image = NSImage(data: bytes) else { return nil }
-        images.setObject(image, forKey: path as NSString, cost: bytes.count)
+        let pixelCost = image.representations.map { $0.pixelsWide * $0.pixelsHigh * 4 }.max() ?? bytes.count
+        images.setObject(image, forKey: path as NSString, cost: max(bytes.count,pixelCost))
         return image
     }
+    func clearImages() { images.removeAllObjects() }
 }
