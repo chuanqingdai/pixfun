@@ -302,6 +302,7 @@ struct MediaItem: Codable, Identifiable {
     var resolvedPlace: ResolvedPlace? = nil
     var locationReview: LocationReview? = nil
     var validResolvedPlace: ResolvedPlace? {
+        if locationReview?.validCoordinates != nil { return nil }
         guard let place = resolvedPlace, place.supported,
               place.latitude == metadata?.location?.latitude, place.longitude == metadata?.location?.longitude else { return nil }
         return place
@@ -403,6 +404,7 @@ struct MediaItem: Codable, Identifiable {
     }
     var recordedLocation: String? {
         if let value = locationReview?.place?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty { return value }
+        if locationReview?.validCoordinates != nil { return nil }
         if let value = context?["location"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !value.isEmpty, !["unknown", "unspecified", "none", "n/a", "未知", "无"].contains(value.lowercased()) { return value }
         if metadata?.location?.name?.isEmpty != false, let place = validResolvedPlace { return place.label }

@@ -24,18 +24,21 @@ struct MediaMapPoint: Identifiable {
         return datumKnown ? value : value + (chinese ? " · 坐标系未声明" : " · Datum unspecified")
     }
 
-    init?(_ item: MediaItem) {
-        guard item.isExample != true, let location = item.metadata?.location,
-              location.source == "file-metadata", location.coordinates != nil,
-              let lat = location.latitude, let lon = location.longitude,
-              !(lat == 0 && lon == 0) else { return nil }
-        let datum = (location.datum ?? "").uppercased().filter { $0.isLetter || $0.isNumber }
-        guard ["", "WGS84", "WGS1984"].contains(datum) else { return nil }
+    init?(_ item: MediaItem) { self.init(item, pendingLocation: nil) }
+    init?(_ item: MediaItem, pendingLocation: AgentTripLocation?) {
+        guard item.isExample != true else { return nil }
+        let location = item.metadata?.location
         let reviewed = item.locationReview?.validCoordinates
-        corrected = reviewed != nil
+        let override = pendingLocation.map { ($0.latitude, $0.longitude) } ?? reviewed
+        guard let lat = override?.0 ?? location?.latitude, let lon = override?.1 ?? location?.longitude,
+              lat.isFinite, lon.isFinite, abs(lat) <= 90, abs(lon) <= 180,
+              override != nil || (location?.source == "file-metadata" && !(lat == 0 && lon == 0)) else { return nil }
+        let datum = (location?.datum ?? "").uppercased().filter { $0.isLetter || $0.isNumber }
+        guard ["", "WGS84", "WGS1984"].contains(datum) else { return nil }
+        corrected = override != nil
         datumKnown = corrected || !datum.isEmpty
-        accuracy = location.horizontalAccuracy.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
-        self.item = item; latitude = reviewed?.0 ?? lat; longitude = reviewed?.1 ?? lon
+        accuracy = corrected ? nil : location?.horizontalAccuracy.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        self.item = item; latitude = lat; longitude = lon
         captured = item.metadata?.captureDate
         let raw = item.metadata?.capturedAt ?? ""
         // Preserve the recorded calendar day, not the Mac's current time zone.

@@ -239,7 +239,7 @@ struct PlaceAddress: Codable {
 
 extension MediaItem {
     func placeQuery(language: String) -> PlaceQuery? {
-        guard !hasSavedPlaceName, let location = metadata?.location else { return nil }
+        guard locationReview?.validCoordinates == nil, !hasSavedPlaceName, let location = metadata?.location else { return nil }
         return PlaceQuery(location, language: language)
     }
 }

@@ -40,6 +40,8 @@ def _place(record):
     review = record.get('locationReview') or {}
     if review.get('source') == 'user-confirmed' and isinstance(review.get('place'), str) and review['place'].strip():
         return review['place'].strip()
+    if review.get('source') == 'user-confirmed':
+        return ''
     explicit = (record.get('context') or {}).get('location')
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
@@ -118,6 +120,31 @@ def manual_correction(value, numbers, anchor_number, place=''):
     return result
 
 
+def map_correction(value, media_id, latitude=None, longitude=None, reset=False):
+    """A dragged WGS84 pin edits only the pending proposal, never source GPS."""
+    if value.get('status') != 'pending':
+        raise ValueError('行程已确认，不能继续移动位置。')
+    entries = [dict(e) for e in value.get('entries', [])]
+    entry = next((e for e in entries if e.get('mediaId') == media_id), None)
+    if entry is None:
+        raise ValueError('素材不在当前行程中，请刷新后重试。')
+    if reset:
+        entry['location'] = entry.get('originalLocation')
+        entry['correction'] = {'kind': 'reset', 'response': 'map'}
+        # The previous place label may describe a manually moved point.
+        entry['place'] = ''
+    else:
+        if not (_finite(latitude, -90, 90) and _finite(longitude, -180, 180)):
+            raise ValueError('请输入有效的经纬度。')
+        entry['location'] = {'latitude': float(latitude), 'longitude': float(longitude),
+                             'source': 'user-confirmed'}
+        entry['place'] = ''  # Do not carry an old place name to a new coordinate.
+        entry['correction'] = {'kind': 'map', 'response': 'drag'}
+    result = dict(value)
+    result.update(entries=entries, updatedAt=time.time() * 1000)
+    return result
+
+
 def revise(value, response, ask, cancel, mode='local'):
     text = response.strip()
     if CONFIRM.fullmatch(text):
@@ -186,6 +213,8 @@ def apply(library, value):
                   'anchorMediaId': correction.get('anchorMediaId'), 'confirmedAt': time.time() * 1000}
         context = dict(record.get('context') or {})
         if review['place']: context['location'] = review['place']
+        elif correction.get('kind') in ('map', 'reset'):
+            context.pop('location', None)
         library.patch(entry['mediaId'], locationReview=review, context=context)
         changed += 1
     return changed
@@ -195,5 +224,6 @@ def planning_context(value):
     if not value or not value.get('useLocations', True): return {'status': 'confirmed', 'useLocations': False, 'items': []}
     return {'status': value.get('status'), 'useLocations': True,
             'items': [{'mediaId': e['mediaId'], 'capturedAt': e.get('capturedAt', ''), 'place': e.get('place', ''),
+                       'location': {k: e['location'][k] for k in ('latitude', 'longitude')} if e.get('location') else None,
                        'locationStatus': 'user-confirmed' if e.get('correction') else 'file-metadata-unverified'}
                       for e in value.get('entries', [])]}

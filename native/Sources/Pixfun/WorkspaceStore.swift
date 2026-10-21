@@ -225,10 +225,74 @@ final class WorkspaceStore: ObservableObject {
     @Published var detail: MediaItem?
     @Published var importing = false
     @Published var saving = false
-    @Published var agentRuns: [AgentRun] = [] { didSet { expandCompletedEditor() } }
+    @Published var agentRuns: [AgentRun] = [] { didSet {
+        openCompletedMapCreation(previousRuns: oldValue)
+        expandCompletedEditor()
+    } }
     @Published var agentCapabilities: AgentCapabilities?
     @Published var agentMode = "local"
     @Published var agentActionPending = false
+    @Published var mapCreationRunID: String?
+    @Published var mapCreationHidden = false
+    @Published var mapCreationError: String?
+    var mapCreationRun: AgentRun? {
+        guard !mapCreationHidden else { return nil }
+        if let id = mapCreationRunID { return agentRuns.first { $0.id == id } }
+        return agentRuns.filter { $0.creationSurface == "map" }.max { $0.updatedAt < $1.updatedAt }
+    }
+    private func openCompletedMapCreation(previousRuns: [AgentRun]) {
+        // React only to a fresh completion of the visible map task. Loading
+        // history or returning to the map must never steal navigation.
+        guard page == .mediaMap, detail == nil, !settingsPresented,
+              let run = mapCreationRun, run.creationSurface == "map",
+              run.status == "completed", !run.timeline.isEmpty,
+              let preview = run.preview, preview.timelineVersion == nil || preview.timelineVersion == run.version,
+              let previous = previousRuns.first(where: { $0.id == run.id }),
+              previous.busy || previous.awaitingScriptConfirmation,
+              editorDrafts[run.id]?.dirty != true else { return }
+        openEditor(run.projectId)
+    }
+    func startMapCreation(_ ids: [String]) {
+        guard !saving, !agentActionPending, !agentRuns.contains(where: \.busy), !ids.isEmpty else { return }
+        let chosen = items.filter { ids.contains($0.id) }
+        guard chosen.count == Set(ids).count, chosen.allSatisfy(MediaMapCreation.eligible) else {
+            mapCreationError = "部分素材不可用，请重新选择。"; return
+        }
+        saving = true; mapCreationError = nil
+        Task {
+            defer { saving = false }
+            do {
+                struct Response: Decodable { var run: AgentRun }
+                let response: Response = try await service.post("/api/desktop/agent/start", [
+                    "prompt": MediaMapCreation.prompt(chinese: language == .chinese),
+                    "mediaIds": ids, "mode": "local", "creationSurface": "map",
+                    "requestId": UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+                ], native: true)
+                agentRuns.removeAll { $0.id == response.run.id }; agentRuns.insert(response.run, at: 0)
+                mapCreationRunID = response.run.id; mapCreationHidden = false
+                try await refresh()
+            } catch { mapCreationError = error.localizedDescription }
+        }
+    }
+    func moveMapTripPoint(_ run: AgentRun, mediaID: String, latitude: Double = 0, longitude: Double = 0, reset: Bool = false) {
+        guard !saving, !agentActionPending, run.status == "clarify",
+              run.clarificationKind == "trip_confirmation", let stamp = run.tripConfirmation?.updatedAt else { return }
+        agentActionPending = true; mapCreationError = nil
+        Task {
+            defer { agentActionPending = false }
+            do {
+                struct Response: Decodable { var run: AgentRun }
+                let response: Response = try await service.post("/api/desktop/agent/action", [
+                    "id": run.id, "action": "trip_coordinates", "mediaId": mediaID,
+                    "latitude": latitude, "longitude": longitude, "reset": reset, "tripUpdatedAt": stamp
+                ], native: true)
+                agentRuns.removeAll { $0.id == response.run.id }; agentRuns.insert(response.run, at: 0)
+            } catch {
+                mapCreationError = error.localizedDescription
+                try? await refresh()
+            }
+        }
+    }
     @Published var videoExport: VideoExportJob?
     @Published var exportedVideoURL: URL?
     @Published var videoExportSaving = false
@@ -644,6 +708,10 @@ final class WorkspaceStore: ObservableObject {
     func open(_ project: Project) {
         selectedProjectID = project.id
         agentMode = activeAgentRun?.mode ?? "local"
+        if let run = activeAgentRun, run.creationSurface == "map" {
+            mapCreationRunID = run.id; mapCreationHidden = false; page = .mediaMap
+            return
+        }
         page = .project
     }
     var canApplyAgentOption: Bool {
@@ -742,7 +810,11 @@ final class WorkspaceStore: ObservableObject {
                 }
             }
             self.agentActionPending = true
-            let response: Response = try await self.service.post("/api/desktop/agent/action", ["id": accepted.id, "action": action], native: true)
+            var payload: [String: Any] = ["id": accepted.id, "action": action]
+            if ["confirm_trip", "ignore_trip"].contains(action), let stamp = accepted.tripConfirmation?.updatedAt {
+                payload["tripUpdatedAt"] = stamp
+            }
+            let response: Response = try await self.service.post("/api/desktop/agent/action", payload, native: true)
             if ["use_videos", "use_visuals"].contains(action), let ids = response.run.mediaIds {
                 var next = self.draft(for: run.projectId)
                 // Keep attachments added while the action was in flight; only remove excluded sources.
@@ -750,7 +822,7 @@ final class WorkspaceStore: ObservableObject {
                 next.attachments.removeAll { original.contains($0.id) && !ids.contains($0.id) }
                 self.setDraft(next, for: run.projectId)
             }
-            self.agentRuns.removeAll { $0.id == response.run.id }; self.agentRuns.insert(response.run, at: 0)
+            self.agentRuns = [response.run] + self.agentRuns.filter { $0.id != response.run.id }
             try await self.refresh()
         }
     }

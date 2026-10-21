@@ -906,4 +906,5 @@
 "Capture numbers; equal times share a number" = "按拍摄时间编号，同一时间同号";
 "Original GPS is retained; user-confirmed corrections apply only inside Pixfun. Apple Maps loads online; media stays local." = "保留原始定位，修正仅在应用内生效。地图需联网，素材不上传。";
 "Clear map selection" = "取消选择";
+"Story chapters did not match the shot sequence. Retry planning; your analysis and confirmed route are kept." = "故事章节与分镜顺序未对应，请重试编排。素材分析和已确认行程均已保留。";
 "Add videos, then ask me to analyze or edit…" = "添加素材，开始分析或创作…";

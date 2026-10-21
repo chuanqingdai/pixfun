@@ -42,6 +42,8 @@ class FakeModels:
                 {'mediaId':row['mediaId'],'content':row['content'],'suggestion':'Fixture use suggestion'} for row in data['materials']]}
         if 'task router' in prompt:
             return {'intent':self.intent,'summary':'Fixture routing result','duration':3,'aspect':'16:9','question':'Which outcome?' if self.intent=='clarify' else '', **self.routerPatch}
+        if 'Repair only story chapter boundaries' in prompt:
+            return {'beats':[{'first':0, 'title':'Opening', 'intent':'Fixture chapter', 'bridge':''}]}
         if 'Plan sound for this validated video edit' in prompt:
             data=json.loads(prompt.split('INPUT: ')[1])
             return {'finishing':{'music':{'mediaId':data['musicSources'][0]['mediaId'],'sourceStart':0,'volume':.18,'loop':True,'ducking':True}}}
@@ -96,6 +98,41 @@ def write_test_tone(path):
 
 
 class AgentTests(unittest.TestCase):
+    def test_map_flow_saves_pending_coordinates_and_requires_fresh_confirmation(self):
+        import agent_trip
+        with patch.object(self.agent, 'dispatch'):
+            run = self.start('Create a travel video', creationSurface='map')
+        self.assertEqual(run['creationSurface'], 'map')
+        record, _ = self.library.get(self.asset)
+        trip = agent_trip.proposal({self.asset: record})
+        run.update(status='clarify', stage='trip', clarificationKind='trip_confirmation',
+                   tripConfirmation=trip, choices=self.agent.trip_choices(), question=agent_trip.question(trip))
+        self.agent.save(run)
+        payload = dict(id=run['id'], action='trip_coordinates', mediaId=self.asset,
+                       latitude=40.003, longitude=116.318, tripUpdatedAt=trip['updatedAt'])
+        moved = self.agent.action(payload)
+        self.assertEqual(moved['tripConfirmation']['status'], 'pending')
+        self.assertIsNone(self.library.get(self.asset)[0].get('locationReview'))
+        with self.assertRaisesRegex(ValueError, '已更新'):
+            self.agent.action(payload)
+        with self.assertRaisesRegex(ValueError, '已更新'):
+            self.agent.action(dict(id=run['id'], action='confirm_trip', tripUpdatedAt=trip['updatedAt']))
+        with patch.object(self.agent, 'dispatch'):
+            other = self.start('Create another video')
+        with self.assertRaisesRegex(ValueError, '另一个'):
+            self.agent.action(dict(id=run['id'], action='confirm_trip',
+                                   tripUpdatedAt=moved['tripConfirmation']['updatedAt']))
+        self.agent.action(dict(id=other['id'], action='stop'))
+        with patch.object(self.agent, 'dispatch') as dispatch:
+            confirmed = self.agent.action(dict(id=run['id'], action='confirm_trip',
+                                              tripUpdatedAt=moved['tripConfirmation']['updatedAt']))
+        dispatch.assert_called_once()
+        answer = next(d for d in confirmed['conversationHistory'] if d['state'] == 'answered')
+        self.assertEqual(answer['tripEntries'][0]['location']['latitude'], 40.003)
+        self.assertEqual(answer['selected'], 'confirm_trip')
+        with self.assertRaises(ValueError):
+            self.agent.action({**payload, 'tripUpdatedAt': moved['tripConfirmation']['updatedAt']})
+
     def test_story_workflow_pauses_for_trip_and_resumes_saved_highlights(self):
         self.models.intent = 'plan'
         started = self.start('Plan a travel story')
@@ -611,6 +648,43 @@ class AgentTests(unittest.TestCase):
             run = wait(self.agent, self.start('Plan a short film')['id'])
         self.assertEqual(run['status'], 'completed', run['message'])
         self.assertTrue(any('Story chapters must partition' in p for p in self.models.requests))
+        self.assertEqual(sum('Plan an edit using only' in p for p in self.models.requests), 1)
+        self.assertTrue((self.agent.root/run['id']/'planning-proposal.json').exists())
+        self.assertTrue((self.agent.root/run['id']/'planning-chapters-repair.json').exists())
+
+    def test_one_based_chapters_do_not_regenerate_valid_shots(self):
+        self.models.intent = 'plan'
+        original = self.models.ask
+        def ask(prompt, *args, **kwargs):
+            result = original(prompt, *args, **kwargs)
+            if 'Plan an edit using only' in prompt:
+                result['beats'] = [{'first':1, 'title':'Opening'}]
+            return result
+        with patch.object(self.models, 'ask', side_effect=ask), patch.object(self.models, 'story', wraps=self.models.story) as compiler:
+            run = wait(self.agent, self.start('Plan a short film')['id'])
+        self.assertEqual(run['status'], 'completed', run['message'])
+        job = next(c.args[0] for c in compiler.call_args_list if c.args[0]['action'] == 'compile')
+        self.assertEqual(job['beats'], [{'first':0, 'title':'Opening'}])
+        self.assertFalse(any('Repair only' in p for p in self.models.requests))
+
+    def test_repeated_bad_chapters_keep_cuts_and_manual_script_confirmation(self):
+        self.models.intent = 'create'
+        original = self.models.ask
+        def ask(prompt, *args, **kwargs):
+            result = original(prompt, *args, **kwargs)
+            if 'Plan an edit using only' in prompt or 'Repair only story chapter boundaries' in prompt:
+                result['beats'] = [{'first':99}]
+            return result
+        with patch.object(self.models, 'ask', side_effect=ask), patch.object(self.models, 'story', wraps=self.models.story) as compiler:
+            run = wait(self.agent, self.start('Create a short film')['id'], approve_review=False)
+        self.assertEqual(run['status'], 'review', run['message'])
+        self.assertEqual(run['tripConfirmation']['status'], 'confirmed')
+        self.assertIn('章节分组未通过校验', run['storyExecution']['chapterNotice'])
+        self.assertFalse(any(a['type'] == 'preview' for a in run['artifacts']))
+        job = next(c.args[0] for c in compiler.call_args_list if c.args[0]['action'] == 'compile')
+        self.assertEqual(job['beats'][0]['first'], 0)
+        self.assertEqual([(s['start'], s['end']) for s in job['shots']], [(0, 3)])
+        self.assertEqual(sum('Plan an edit using only' in p for p in self.models.requests), 1)
 
     def test_text_skill_invocation_and_followup_without_inheritance(self):
         self.models.intent='plan'

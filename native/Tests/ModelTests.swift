@@ -171,6 +171,12 @@ import Foundation
         mapComposer.items = [demoMapItem, audioMapItem]
         check(!mapComposer.hasMediaMap, "examples and audio do not unlock the media map")
         var unlocatedMapItem = mapA; unlocatedMapItem.metadata = nil; unlocatedMapItem.status = "queued"
+        let draftCoordinate = AgentTripLocation(latitude: 40.003, longitude: 116.318)
+        let draftPoint = MediaMapPoint(unlocatedMapItem, pendingLocation: draftCoordinate)
+        check(draftPoint?.latitude == 40.003 && draftPoint?.corrected == true, "explicit map placement supports sources without GPS")
+        check(unlocatedMapItem.metadata == nil && MediaMapPoint(unlocatedMapItem) == nil, "pending placement does not mutate original metadata")
+        check(MediaMapPoint(mapA, pendingLocation: .init(latitude: .nan, longitude: 116)) == nil, "invalid draft coordinates never reach MapKit")
+        check(MediaMapPoint(mapA, pendingLocation: draftCoordinate)?.accuracy == nil, "moving a pin never reuses original GPS accuracy")
         mapComposer.items = [unlocatedMapItem]
         check(mapComposer.hasMediaMap && mapComposer.sidebarMediaPages == [.media, .mediaMap, .mediaSync], "first registered visual import shows map immediately, without waiting for GPS or analysis")
         mapComposer.items = [mapA, mapB]
@@ -1376,6 +1382,8 @@ import Foundation
             check(unified.conciseFailure.contains("Restart Pixfun") && unified.failureDetail == nil, "stale archive failure gives a direct recovery action without a raw error")
             unified.message = "No space left on device"
             check(unified.conciseFailure.contains("disk space") && unified.failureDetail == nil, "disk exhaustion has a specific explanation")
+            unified.message = "Story chapters must partition all shots, starting at zero"
+            check(unified.conciseFailure.contains("shot sequence") && unified.failureDetail == nil, "chapter mismatch explains the cause without exposing index jargon")
             unified.message = "Shot 3 exceeds source duration\ninternal traceback"
             check(unified.failureDetail == "Shot 3 exceeds source duration", "unknown errors retain the actual short cause, not a traceback")
             unified.materialProgress = nil; unified.total = 0; unified.stage = "done"
@@ -1792,6 +1800,44 @@ import Foundation
         editorStore.closeEditor(); editorStore.page = .media
         generated.version += 1; editorStore.agentRuns = [generated]
         check(editorStore.editorProjectID == nil && editorStore.page == .media, "background completion does not interrupt media browsing")
+        let mapCompletion = WorkspaceStore()
+        var mapVideo = generated; mapVideo.creationSurface = "map"
+        mapCompletion.page = .mediaMap; mapCompletion.mapCreationRunID = mapVideo.id
+        mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "loading an already completed map task does not redirect")
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .project && mapCompletion.editorProjectID == mapVideo.projectId,
+              "a visible map render opens its editor on completion")
+        mapCompletion.closeEditor(); mapCompletion.page = .mediaMap; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap && mapCompletion.editorProjectID == nil, "returning to the map is not undone by polling")
+        for status in ["failed", "cancelled", "review", "clarify"] {
+            mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+            mapVideo.status = status; mapCompletion.agentRuns = [mapVideo]
+            check(mapCompletion.page == .mediaMap, "\(status) never bypasses map confirmation or recovery")
+        }
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapCompletion.mapCreationHidden = true
+        mapVideo.status = "completed"; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "hidden map tasks do not force the editor open")
+        mapCompletion.mapCreationHidden = false
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapCompletion.page = .media
+        mapVideo.status = "completed"; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .media, "leaving the map prevents automatic navigation")
+        mapCompletion.page = .mediaMap
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapVideo.artifacts = []; mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "a plan without rendered video stays on the map")
+        mapVideo.status = "running"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapVideo.artifacts = generated.artifacts
+        mapVideo.artifacts[0].timelineVersion = mapVideo.version - 1
+        mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.page == .mediaMap, "an old-version preview cannot trigger editor navigation")
+        mapVideo.status = "review"; mapCompletion.agentRuns = [mapVideo]
+        mapVideo.status = "completed"; mapVideo.artifacts[0].timelineVersion = mapVideo.version
+        mapCompletion.agentRuns = [mapVideo]
+        check(mapCompletion.editorProjectID == mapVideo.projectId, "immediate cached render completion also opens the editor")
         var chapterShots = [AgentShot(id: "chapter-a", mediaId: "p", start: 0, end: 3, label: "A", reason: "", locked: false),
                             AgentShot(id: "chapter-b", mediaId: "p", start: 0, end: 4, label: "B", reason: "", locked: false)]
         check(StoryTimeline.chapters(chapterShots).isEmpty, "unstructured films have no chapter controls")

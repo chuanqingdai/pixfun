@@ -1,7 +1,7 @@
 import SwiftUI
 import MapKit
 
-/// Full-width workspace destination; shares the library's records and Agent composer.
+/// Map-first creation using the library's records and the existing persisted workflow.
 struct MediaMapView: View {
     @EnvironmentObject var store: WorkspaceStore
     @State private var day = ""
@@ -16,8 +16,10 @@ struct MediaMapView: View {
     @State private var readTask: Task<Void, Never>?
     @State private var allPoints: [MediaMapPoint] = []
     @State private var visibleIDs: Set<String> = []
-    @State private var confirmCreation = false
-    @State private var creationError: String?
+    @State private var focusRequest = 0
+    @State private var focusSpan = 0.008
+    private var run: AgentRun? { store.mapCreationRun }
+    private var editingRoute: Bool { run?.status == "clarify" && run?.clarificationKind == "trip_confirmation" }
     // Preview injection uses isolated fixtures; production defaults remain unchanged.
     init(initialDay: String = "", initialOrder: Bool = false, initialSelection: Set<String> = [], mapEnabled: Bool? = nil) {
         _day = State(initialValue: initialDay); _showOrder = State(initialValue: initialOrder)
@@ -47,15 +49,39 @@ struct MediaMapView: View {
         }
     }
     private var days: [String] { Array(Set(allPoints.compactMap(\.day))).sorted(by: >) }
-    private var points: [MediaMapPoint] { allPoints.filter { day.isEmpty || $0.day == day } }
+    private var points: [MediaMapPoint] {
+        if let run {
+            let entries = run.tripConfirmation?.entries ?? []
+            return mapItems.filter { (run.mediaIds ?? []).contains($0.id) }.compactMap { item in
+                let entry = entries.first { $0.mediaId == item.id }
+                return MediaMapPoint(item, pendingLocation: entry?.correction != nil ? entry?.location : nil)
+            }
+        }
+        return allPoints.filter { day.isEmpty || $0.day == day }
+    }
     private var selected: [MediaMapPoint] { MediaMapData.ordered(points.filter { selectedIDs.contains($0.id) }) }
-    private var orderPoints: [MediaMapPoint] { selected.isEmpty ? points.filter { visibleIDs.contains($0.id) } : selected }
-    private var numbers: [String: Int] { showOrder ? MediaMapData.sequenceNumbers(orderPoints) : [:] }
+    private var selectedItems: [MediaItem] {
+        mapItems.filter { selectedIDs.contains($0.id) }.sorted {
+            ($0.metadata?.capturedAt ?? "9999", $0.id) < ($1.metadata?.capturedAt ?? "9999", $1.id)
+        }
+    }
+    private var unlocatedItems: [MediaItem] { mapItems.filter { MediaMapPoint($0) == nil } }
+    private var orderPoints: [MediaMapPoint] { run != nil ? points : (selected.isEmpty ? points.filter { visibleIDs.contains($0.id) } : selected) }
+    private var numbers: [String: Int] {
+        if let entries = run?.tripConfirmation?.entries { return Dictionary(entries.map { ($0.mediaId, $0.number) }, uniquingKeysWith: { first, _ in first }) }
+        return showOrder ? MediaMapData.sequenceNumbers(orderPoints) : [:]
+    }
+    private var shotNumbers: [String: String] {
+        guard let run, run.arrangementSummary != nil || run.awaitingScriptConfirmation || run.currentScriptConfirmed else { return [:] }
+        var groups: [String: [String]] = [:]
+        for (index, shot) in run.timeline.enumerated() { groups[shot.mediaId, default: []].append(String(index + 1)) }
+        return groups.mapValues { $0.joined(separator: "·") }
+    }
     private var routes: [MediaMapRoute] {
-        guard showOrder else { return [] }
+        guard (showOrder || run != nil) && run?.tripConfirmation?.useLocations != false else { return [] }
         return Set(orderPoints.compactMap(\.day)).sorted().flatMap { MediaMapData.routes(orderPoints, day: $0) }
     }
-    private var canCreate: Bool { !selected.isEmpty && selected.allSatisfy { MediaMapCreation.eligible($0.item) } && !store.saving && !store.importing }
+    private var canCreate: Bool { run == nil && !selectedItems.isEmpty && selectedItems.allSatisfy(MediaMapCreation.eligible) && !store.saving && !store.importing && !store.agentRuns.contains(where: \.busy) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,11 +92,32 @@ struct MediaMapView: View {
                         .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 }
                 Spacer()
-                Button { readOriginals() } label: { Label(reading ? "Reading locations" : "Read original locations", systemImage: "arrow.clockwise") }
-                    .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(reading)
-                    .help("Read capture metadata locally without rerunning analysis or changing files.")
+                if run == nil && !unlocatedItems.isEmpty {
+                    Menu("无定位素材 \(unlocatedItems.count)") {
+                        ForEach(unlocatedItems) { item in
+                            Button((selectedIDs.contains(item.id) ? "✓ " : "") + item.name) {
+                                if selectedIDs.contains(item.id) { selectedIDs.remove(item.id) }
+                                else { selectedIDs.insert(item.id) }
+                            }
+                        }
+                    }.fixedSize()
+                }
+                if run == nil && store.agentRuns.contains(where: { $0.creationSurface == "map" }) {
+                    Menu("继续创作") {
+                        ForEach(store.agentRuns.filter { $0.creationSurface == "map" }) { saved in
+                            Button("\(saved.attachments?.first?.name ?? "地图创作") · \(store.language.text(saved.statusLabel))") {
+                                store.mapCreationRunID = saved.id; store.mapCreationHidden = false
+                            }
+                        }
+                    }.fixedSize()
+                }
+                if run == nil {
+                    Button { readOriginals() } label: { Label(reading ? "Reading locations" : "Read original locations", systemImage: "arrow.clockwise") }
+                        .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(reading)
+                        .help("Read capture metadata locally without rerunning analysis or changing files.")
+                }
             }.padding(20)
-            if !allPoints.isEmpty {
+            if !allPoints.isEmpty && run == nil {
                 HStack(spacing: 14) {
                     Picker("Capture date", selection: $day) {
                         Text("All dates").tag("")
@@ -79,21 +126,23 @@ struct MediaMapView: View {
                     Toggle("Capture order", isOn: $showOrder).toggleStyle(.checkbox).disabled(days.isEmpty)
                         .help("Number recorded capture times. Connect points only when location evidence is sufficient.")
                     Spacer()
-                    Button {
-                        selectedIDs = visibleIDs.intersection(Set(points.map(\.id)))
-                        showOrder = true
-                    } label: { Label("Select this area", systemImage: "viewfinder") }
-                        .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!loadMap || visibleIDs.isEmpty)
-                    Button { fitRequest += 1 } label: { Label("Show all points", systemImage: "arrow.up.left.and.arrow.down.right") }
-                        .buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!loadMap || points.isEmpty)
                 }.font(.pixfun(12)).padding(.horizontal, 20).padding(.bottom, 12)
             }
+            if readMessage != nil || store.mapCreationError != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let readMessage { Text(verbatim: readMessage) }
+                    if let error = store.mapCreationError { Text(verbatim: error) }
+                }.font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.bottom, 12)
+            }
+            HStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
-                if allPoints.isEmpty {
+                if points.isEmpty {
                     VStack(spacing: 14) {
                         Image(systemName: "mappin.slash").font(.system(size: 32)).foregroundStyle(Color.pixfunMuted)
                         Text("No recorded coordinates to display").font(.pixfun(17, semibold: true))
-                        Text("Place names alone cannot position media on a map. Read original locations or import photos and videos with GPS metadata.")
+                        Text(run != nil ? "点击右侧素材的“调整位置”可补充坐标。" : "Place names alone cannot position media on a map. Read original locations or import photos and videos with GPS metadata.")
                             .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).multilineTextAlignment(.center).frame(maxWidth: 430)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if !loadMap {
@@ -106,64 +155,48 @@ struct MediaMapView: View {
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     MediaMapCanvas(points: points, routes: routes, numbers: numbers, store: store, chinese: chinese, selectedIDs: selectedIDs, fitRequest: fitRequest,
+                                   focusRequest: focusRequest, focusSpan: focusSpan,
+                                   editable: editingRoute && !store.agentActionPending && !store.saving,
+                                   states: Dictionary((run?.analysisMaterials(in: store.items) ?? []).map { ($0.mediaId, $0.status) }, uniquingKeysWith: { first, _ in first }),
+                                   shotNumbers: shotNumbers,
+                                   onMove: { id, coordinate in
+                                       if let run { store.moveMapTripPoint(run, mediaID: id, latitude: coordinate.latitude, longitude: coordinate.longitude) }
+                                   },
                                    onSelect: { selectedIDs = Set($0); showOrder = true }, onVisible: { visibleIDs = Set($0) }, onError: { mapError = $0 })
                     if mapError {
                         Text("Map background unavailable. Recorded points remain; check your connection.")
+                            .font(.pixfun(12)).padding(10).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8)).padding(12)
+                    } else if !shotNumbers.isEmpty {
+                        Text("角标为分镜编号；虚线仅表示拍摄顺序。")
                             .font(.pixfun(12)).padding(10).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8)).padding(12)
                     } else if showOrder && routes.isEmpty {
                         Text(numbers.isEmpty ? "Capture times are insufficient for numbering." : "Numbers show capture order. Location evidence is insufficient for connecting these points.")
                             .font(.pixfun(12)).padding(10).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8)).padding(12)
                     }
-                    if !selected.isEmpty {
-                        VStack(spacing: 0) {
-                            Divider()
-                            selectionStrip.padding(.bottom, 12)
-                                .background(Color.pixfunSurface.opacity(0.96))
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .transaction { $0.animation = nil }
-                    }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
-            HStack(alignment: .bottom, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                if let readMessage { Text(verbatim: readMessage).foregroundStyle(Color.pixfunGold) }
-                if let creationError { Text(verbatim: creationError).foregroundStyle(Color.pixfunGold) }
-                Text(showOrder ? "Dashed lines show capture order, not a verified route. Gaps, date changes and large jumps are not connected." : "Zoom to separate thumbnails. Click a thumbnail or a group to browse its media.")
-                HStack(alignment: .top) {
-                    Text("Original GPS is retained; user-confirmed corrections apply only inside Pixfun. Apple Maps loads online; media stays local.")
-                    Spacer(minLength: 12)
-                    let excluded = store.mediaMapItems.count - allPoints.count
-                    if excluded > 0 { Text(chinese ? "\(excluded) 个素材无可用坐标" : "\(excluded) without usable coordinates").fixedSize() }
+                Divider()
+                Group {
+                if let run {
+                    MapCreationPanel(run: run, selectedIDs: selectedIDs,
+                                     onSelect: { selectedIDs = [$0]; focusSpan = 0.008; focusRequest += 1 },
+                                     onAdjustLocation: { selectedIDs = [$0]; focusSpan = 0.0015; focusRequest += 1 })
+                } else {
+                    selectionPanel
                 }
-            }.font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).frame(maxWidth: .infinity, alignment: .leading)
-                Button {
-                    if store.draft.hasContent { confirmCreation = true } else { createFromSelection(replace: false) }
-                } label: { Label("Create", systemImage: "sparkles").frame(minWidth: 76) }
-                    .buttonStyle(PixfunButtonStyle(kind: .primary)).disabled(!canCreate)
-                    .accessibilityLabel("Create with selected media")
-                    .help(canCreate ? "Add selected media and an editable request to Agent. Nothing is sent yet." : "Select available photos or videos first. Remove unavailable items to continue.")
-            }.padding(.horizontal, 20).padding(.vertical, 12)
+                }
+                .frame(width: 340)
+                .accessibilityIdentifier("map-workflow-rail")
+            }
         }
         .frame(minWidth: 700, maxWidth: .infinity, minHeight: 540, maxHeight: .infinity)
         .navigationTitle("Media map")
         .background(Color.pixfunBackground).foregroundStyle(Color.pixfunInk)
         .task(id: inputKey) { allPoints = mapItems.compactMap(MediaMapPoint.init) }
+        .onChange(of: run?.id) { _ in selectedIDs = []; fitRequest += 1 }
         .onChange(of: day) { _ in selectedIDs = []; visibleIDs = []; fitRequest += 1 }
         .onChange(of: days) { values in if !day.isEmpty && !values.contains(day) { day = "" } }
         .onDisappear { readTask?.cancel() }
-        .alert("Existing creation draft", isPresented: $confirmCreation) {
-            Button("Keep draft and add media") { createFromSelection(replace: false) }
-            Button("Use selection and default request") { createFromSelection(replace: true) }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("Keep your existing text and attachments, or replace only the unsent draft with this selection. Saved projects are unchanged. Nothing is sent automatically.") }
-    }
-
-    private func createFromSelection(replace: Bool) {
-        guard canCreate, store.prepareMapCreation(selected.map(\.id), replaceDraft: replace) else {
-            creationError = chinese ? "素材状态已变化，请重新选择可用素材。" : "Media changed. Select available items again."
-            return
-        }
     }
 
     private func readOriginals() {
@@ -196,51 +229,84 @@ struct MediaMapView: View {
         }
     }
 
-    private var selectionStrip: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var selectionPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(chinese ? "所选位置 · \(selected.count) 个素材" : "Selected points · \(selected.count) items").font(.pixfun(12, semibold: true))
-                Text("Capture numbers; equal times share a number").font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
-                if selected.count == 1, let point = selected.first {
-                    Text(verbatim: point.accuracyLabel(chinese: chinese)).font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
+                if store.saving {
+                    ProgressView().controlSize(.small)
+                    Text("正在准备创作…").font(.pixfun(16, semibold: true))
+                } else {
+                    Text(chinese ? "已选 \(selectedItems.count) 个素材" : "\(selectedItems.count) selected items").font(.pixfun(18, semibold: true))
                 }
                 Spacer()
-                Button { selectedIDs = [] } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Clear map selection")
-            }
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 12) {
-                    ForEach(selected) { point in
+                Button { selectedIDs = [] } label: { Image(systemName: "xmark").frame(width: 28, height: 28).contentShape(Rectangle()) }
+                    .buttonStyle(.plain).accessibilityLabel("Clear map selection")
+                    .disabled(selectedItems.isEmpty || store.saving)
+            }.padding(16).background(Color.pixfunRaised)
+            Divider()
+            HStack(spacing: 8) {
+                Button {
+                    selectedIDs = visibleIDs.intersection(Set(points.map(\.id)))
+                    showOrder = true
+                } label: { Label("Select this area", systemImage: "viewfinder") }
+                    .buttonStyle(PixfunButtonStyle(kind: .quiet))
+                    .disabled(store.saving || !loadMap || visibleIDs.isEmpty)
+                Spacer(minLength: 0)
+                Button { fitRequest += 1 } label: {
+                    Label("Show all points", systemImage: "arrow.up.left.and.arrow.down.right")
+                }.buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!loadMap || points.isEmpty)
+            }.font(.pixfun(12)).padding(.horizontal, 12).padding(.vertical, 8)
+                .accessibilityIdentifier("map-selection-tools")
+            Divider()
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if selectedItems.isEmpty {
+                        Text("在地图上选择素材，或选择当前区域。")
+                            .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).padding(.vertical, 12)
+                    }
+                    ForEach(selectedItems) { item in
+                        HStack(alignment: .top, spacing: 6) {
                         Button {
-                            store.openMedia(point.item)
+                            store.openMedia(item)
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                ServiceImage(path: point.item.cover).frame(width: 112, height: 64).clipShape(RoundedRectangle(cornerRadius: 6))
+                            HStack(alignment: .top, spacing: 10) {
+                                ServiceImage(path: item.cover).frame(width: 64, height: 44).clipShape(RoundedRectangle(cornerRadius: 5))
                                     .overlay(alignment: .bottomLeading) {
-                                        if let number = numbers[point.id] {
-                                            Text(verbatim: "#\(number)").font(.pixfun(11, semibold: true)).padding(4)
-                                                .background(Color.pixfunBackground.opacity(0.85), in: RoundedRectangle(cornerRadius: 4)).padding(3)
+                                        if let number = numbers[item.id] {
+                                            MediaMapBadge(count: 1, sequence: number).padding(2)
                                         }
                                     }
-                                Text(verbatim: point.item.name).lineLimit(1)
-                                Text(point.day.map { "\($0) \(point.clock ?? "")" } ?? (chinese ? "拍摄时间未知" : "Capture time unknown"))
-                                    .foregroundStyle(Color.pixfunMuted).lineLimit(1)
-                            }.font(.pixfun(11)).frame(width: 112, alignment: .leading).contentShape(Rectangle())
-                        }.buttonStyle(.plain).help(chinese ? "打开 \(point.item.name)" : "Open \(point.item.name)")
-                            .overlay(alignment: .topTrailing) {
-                                Button { selectedIDs.remove(point.id) } label: {
-                                    Image(systemName: "minus.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.8)).padding(3)
-                                }.buttonStyle(.plain).accessibilityLabel(chinese ? "取消选择 \(point.item.name)" : "Deselect \(point.item.name)")
-                            }
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(verbatim: item.name).font(.pixfun(13, semibold: true)).lineLimit(2)
+                                    Text(MediaMapPoint(item).map { "\($0.day ?? "") \($0.clock ?? "")" } ?? "无定位")
+                                        .font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain).help(chinese ? "打开 \(item.name)" : "Open \(item.name)")
+                        Button { selectedIDs.remove(item.id) } label: {
+                            Image(systemName: "minus.circle").foregroundStyle(Color.pixfunMuted)
+                                .frame(width: 28, height: 44).contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel(chinese ? "取消选择 \(item.name)" : "Deselect \(item.name)")
+                            .disabled(store.saving)
+                        }
                     }
-                }
-            }.frame(height: 122)
-        }.padding(.horizontal, 20).padding(.top, 12)
+                }.padding(16)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            Button {
+                store.startMapCreation(selectedItems.map(\.id))
+            } label: { Label("Create", systemImage: "sparkles").frame(maxWidth: .infinity) }
+                .buttonStyle(PixfunButtonStyle(kind: .primary)).disabled(!canCreate)
+                .accessibilityLabel("Create with selected media")
+                .help("在地图中分析素材、确认行程与故事。")
+                .padding(16)
+        }.frame(maxHeight: .infinity).background(Color.pixfunSurface)
     }
 }
 
 private final class MediaMapAnnotation: NSObject, MKAnnotation {
     let point: MediaMapPoint
-    let coordinate: CLLocationCoordinate2D
+    @objc dynamic var coordinate: CLLocationCoordinate2D
     var title: String? { point.item.name }
     init(_ point: MediaMapPoint) {
         self.point = point
@@ -252,18 +318,56 @@ private struct MediaMapThumbnail: View {
     let point: MediaMapPoint
     let count: Int
     let sequence: Int?
+    var state: String?
+    var selected = false
+    var shotNumbers: String? = nil
+    var chinese = true
     var body: some View {
         ServiceImage(path: point.item.cover).frame(width: 68, height: 48)
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.pixfunGold,
                 style: StrokeStyle(lineWidth: 2, dash: point.datumKnown && point.accuracy.map { $0 <= MediaMapData.maximumAccuracy } == true ? [] : [3, 2])))
             .overlay(alignment: .bottomTrailing) {
-                if count > 1 || sequence != nil {
-                    Text(verbatim: count > 1 ? "\(count)" : "#\(sequence!)").font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.pixfunBackground).padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Color.pixfunGold, in: RoundedRectangle(cornerRadius: 4)).padding(3)
-                }
+                MediaMapBadge(count: count, sequence: sequence, shotNumbers: shotNumbers, chinese: chinese).padding(3)
             }.shadow(color: .black.opacity(0.35), radius: 3, y: 2).padding(4)
+            .overlay(alignment: .topLeading) {
+                if let state {
+                    Image(systemName: state == "running" ? "hourglass" : state == "completed" ? "checkmark.circle.fill" : state == "failed" ? "exclamationmark.circle.fill" : "circle.dotted")
+                        .font(.system(size: 12)).foregroundStyle(Color.pixfunGold)
+                        .padding(3).background(Color.pixfunBackground, in: Circle())
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Color.pixfunInk : .clear, lineWidth: 2))
+    }
+}
+
+/// Count is an aggregate, while a number is a position in a sequence.
+/// Distinguish them with wording, icon, shape and contrast—not color alone.
+struct MediaMapBadge: View {
+    var count: Int
+    var sequence: Int?
+    var shotNumbers: String?
+    var chinese = true
+    var body: some View {
+        if count > 1 {
+            HStack(spacing: 3) {
+                Image(systemName: "square.stack.fill").font(.system(size: 9))
+                Text(chinese ? "\(count) 项" : "\(count) items").monospacedDigit()
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Color.pixfunInk)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Color.pixfunBackground.opacity(0.95), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.pixfunMuted.opacity(0.5), lineWidth: 1))
+            .accessibilityLabel(chinese ? "聚合数量：\(count) 个素材" : "\(count) grouped items")
+        } else if let label = shotNumbers.map({ (chinese ? "镜头 " : "Shot ") + $0 }) ?? sequence.map({ "#\($0)" }) {
+            Text(verbatim: label).font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(Color.pixfunOnAccent)
+                .padding(.horizontal, 5).padding(.vertical, 3)
+                .background(Color.pixfunGold, in: RoundedRectangle(cornerRadius: 3))
+                .accessibilityLabel(shotNumbers.map { (chinese ? "分镜编号：" : "Shot numbers: ") + $0 }
+                                    ?? (chinese ? "拍摄顺序编号：" : "Capture number: ") + label)
+        }
     }
 }
 
@@ -297,6 +401,12 @@ private struct MediaMapCanvas: NSViewRepresentable {
     let chinese: Bool
     let selectedIDs: Set<String>
     let fitRequest: Int
+    var focusRequest = 0
+    var focusSpan = 0.008
+    var editable = false
+    var states: [String: String] = [:]
+    var shotNumbers: [String: String] = [:]
+    var onMove: (String, CLLocationCoordinate2D) -> Void = { _, _ in }
     let onSelect: ([String]) -> Void
     let onVisible: ([String]) -> Void
     let onError: (Bool) -> Void
@@ -327,6 +437,7 @@ private struct MediaMapCanvas: NSViewRepresentable {
         var routeOverlays: [MKPolyline] = []
         var accuracyOverlay: MKCircle?
         var fitted = -1
+        var focused = 0
         var sequence: [String: Int] = [:]
         var selectedIDs: Set<String> = []
         var reportedVisible: Set<String> = []
@@ -334,6 +445,8 @@ private struct MediaMapCanvas: NSViewRepresentable {
         var visibleWorkItem: DispatchWorkItem?
         init(_ parent: MediaMapCanvas) { self.parent = parent }
         func update(_ value: MediaMapCanvas, map: MKMapView) {
+            let editabilityChanged = parent.editable != value.editable
+            let presentationChanged = parent.editable != value.editable || parent.states != value.states || parent.selectedIDs != value.selectedIDs || parent.shotNumbers != value.shotNumbers
             parent = value
             let keys = Dictionary(uniqueKeysWithValues: value.points.map {
                 ($0.id, "\($0.latitude)|\($0.longitude)|\($0.accuracy ?? -1)|\($0.datumKnown)|\($0.item.cover ?? "")|\($0.item.name)")
@@ -344,7 +457,11 @@ private struct MediaMapCanvas: NSViewRepresentable {
             let pointsChanged = keys != pointKeys, routesChanged = nextRoutes != routeKeys
             let numbersChanged = sequence != value.numbers
             sequence = value.numbers
-            if pointsChanged {
+            if editabilityChanged {
+                map.removeAnnotations(Array(annotations.values))
+                annotations.removeAll()
+            }
+            if pointsChanged || editabilityChanged {
                 let changed = Set(pointKeys.keys.filter { keys[$0] != pointKeys[$0] })
                 let removed = changed.compactMap { annotations.removeValue(forKey: $0) }
                 if !removed.isEmpty { map.removeAnnotations(removed) }
@@ -373,7 +490,16 @@ private struct MediaMapCanvas: NSViewRepresentable {
                     map.addOverlay(circle)
                 }
             }
-            if numbersChanged { refreshVisibleAnnotations(map) }
+            if numbersChanged || presentationChanged || pointsChanged { refreshVisibleAnnotations(map) }
+            if focused != value.focusRequest {
+                focused = value.focusRequest
+                if let id = value.selectedIDs.first, let annotation = annotations[id] {
+                    let span = MKCoordinateSpan(latitudeDelta: min(map.region.span.latitudeDelta, value.focusSpan),
+                                                longitudeDelta: min(map.region.span.longitudeDelta, value.focusSpan))
+                    map.setRegion(MKCoordinateRegion(center: annotation.coordinate, span: span), animated: false)
+                    map.selectAnnotation(annotation, animated: false)
+                }
+            }
             if fitted != value.fitRequest || (fitted == -1 && !value.points.isEmpty) {
                 fitted = value.fitRequest
                 DispatchQueue.main.async { [weak map, weak self] in
@@ -413,6 +539,10 @@ private struct MediaMapCanvas: NSViewRepresentable {
                 map.setRegion(.init(center: first.coordinate, latitudinalMeters: 1600, longitudinalMeters: 1600), animated: false)
             } else {
                 map.showAnnotations(annotations, animated: false)
+                // Thumbnail annotations need more space than MapKit's point-pin inset.
+                map.setVisibleMapRect(map.visibleMapRect,
+                                      edgePadding: NSEdgeInsets(top: 50, left: 50, bottom: 60, right: 50),
+                                      animated: false)
             }
         }
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -436,13 +566,18 @@ private struct MediaMapCanvas: NSViewRepresentable {
             guard let point = MediaMapData.ordered(members.map(\.point)).first else { return }
             view.annotation = annotation
             // Cluster annotations are aggregates, never members of another cluster.
-            view.clusteringIdentifier = annotation is MKClusterAnnotation ? nil : "media"
+            view.clusteringIdentifier = annotation is MKClusterAnnotation || parent.editable ? nil : "media"
+            view.isDraggable = parent.editable && annotation is MediaMapAnnotation
             view.canShowCallout = false
             view.collisionMode = .rectangle; view.displayPriority = annotation is MKClusterAnnotation ? .defaultHigh : .defaultLow
-            let key = "\(members.map { $0.point.id }.sorted().joined(separator: ","))|\(point.item.cover ?? "")|\(sequence[point.id] ?? -1)"
+            let selected = members.contains { parent.selectedIDs.contains($0.point.id) }
+            if selected { view.displayPriority = .required }
+            let state = parent.states[point.id]
+            let shots = parent.shotNumbers[point.id]
+            let key = "\(members.map { $0.point.id }.sorted().joined(separator: ","))|\(point.item.cover ?? "")|\(sequence[point.id] ?? -1)|\(state ?? "")|\(selected)|\(shots ?? "")"
             if view.presentationKey != key {
                 view.presentationKey = key
-                view.host.rootView = AnyView(MediaMapThumbnail(point: point, count: members.count, sequence: sequence[point.id])
+                view.host.rootView = AnyView(MediaMapThumbnail(point: point, count: members.count, sequence: sequence[point.id], state: state, selected: selected, shotNumbers: shots, chinese: parent.chinese)
                     .environmentObject(parent.store).transaction { $0.animation = nil })
             }
             view.setAccessibilityLabel(members.count > 1 ? (parent.chinese ? "\(members.count) 个素材，点击展开" : "\(members.count) items, click to browse") : point.item.name + ", " + point.accuracyLabel(chinese: parent.chinese))
@@ -456,6 +591,19 @@ private struct MediaMapCanvas: NSViewRepresentable {
                     fit(mapView, annotations: members)
                 }
             } else if let point = view.annotation as? MediaMapAnnotation { parent.onSelect([point.point.id]) }
+        }
+        func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView,
+                     didChange newState: MKAnnotationView.DragState, fromOldState oldState: MKAnnotationView.DragState) {
+            guard let annotation = view.annotation as? MediaMapAnnotation else { return }
+            if newState == .ending || newState == .canceling {
+                let moved = annotation.coordinate
+                // Keep the saved proposal authoritative, including after a failed request.
+                annotation.coordinate = .init(latitude: annotation.point.latitude, longitude: annotation.point.longitude)
+                view.setDragState(.none, animated: false)
+                if newState == .ending && parent.editable {
+                    DispatchQueue.main.async { self.parent.onMove(annotation.point.id, moved) }
+                }
+            }
         }
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let circle = overlay as? MKCircle {

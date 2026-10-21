@@ -96,8 +96,8 @@ fs.writeFileSync(path.join(contents, 'Info.plist'), `<?xml version="1.0" encodin
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
-<key>CFBundleVersion</key><string>200</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleVersion</key><string>300</string>
 <key>CFBundleIconFile</key><string>Pixfun</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.video</string>

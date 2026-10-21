@@ -138,6 +138,23 @@ def validate_beats(beats, count):
         raise ValueError('Story chapters must partition all shots, starting at zero')
 
 
+def normalize_beats(beats, count):
+    """Accept the common one-based convention, never sort or guess boundaries."""
+    if (isinstance(beats, list) and beats and
+            all(isinstance(b, dict) and type(b.get('first')) is int for b in beats) and
+            beats[0]['first'] == 1):
+        beats = [dict(b, first=b['first'] - 1) for b in beats]
+    validate_beats(beats, count)
+    return beats
+
+
+def section_beats(shots):
+    """Describe existing contiguous sections without changing any source cut."""
+    return [dict(first=i, title=s.get('label', ''), intent=s.get('reason', ''), bridge='')
+            for i, s in enumerate(shots)
+            if i == 0 or s.get('section', 'body') != shots[i-1].get('section', 'body')]
+
+
 def handle(job):
     if job.get('action') == 'editor':
         return editor_assist(job)
@@ -185,10 +202,7 @@ def handle(job):
     if not beats:
         # Existing/skill edits can have no chapter proposal. Preserve their exact
         # sections and cuts; never manufacture a mandatory opening montage.
-        beats = []
-        for i, shot in enumerate(shots):
-            if i == 0 or shot.get('section', 'body') != shots[i-1].get('section', 'body'):
-                beats.append(dict(first=i, title=shot.get('label', ''), intent=shot.get('reason', ''), bridge=''))
+        beats = section_beats(shots)
     validate_beats(beats, len(shots))
     beats = [dict(first=b['first'], title=str(b.get('title', '')), intent=str(b.get('intent', '')),
                   bridge=str(b.get('bridge', ''))) for b in beats]

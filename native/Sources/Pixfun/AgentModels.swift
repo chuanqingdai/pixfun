@@ -78,6 +78,7 @@ struct AgentStoryExecution: Codable {
         var shotIds: [String]
     }
     var summary: String? = nil
+    var chapterNotice: String? = nil
     var outline: [Chapter]? = nil
     var sourceNames: [String: String]? = nil
     var sourceKinds: [String: String]? = nil
@@ -288,6 +289,7 @@ struct AgentMaterialProgress: Codable, Identifiable {
 }
 
 struct AgentRun: Codable, Identifiable {
+    var creationSurface: String? = nil
     struct SavedTimeline: Codable { var version: Int; var shots: [AgentShot] }
     var timelineHistory: [SavedTimeline]? = nil
     var id: String; var projectId: String; var prompt: String; var mode: String
@@ -384,6 +386,9 @@ struct AgentRun: Codable, Identifiable {
             return "The processing service could not be reached. Check the connection or model service, then retry."
         }
         if error.contains("coverage is incomplete") { return "The story plan did not include all required clips. Retry planning; your analysis is kept." }
+        if error.contains("story chapters") {
+            return "Story chapters did not match the shot sequence. Retry planning; your analysis and confirmed route are kept."
+        }
         if error.contains("more than 160 windows") || error.contains("planning context limit") { return "There is too much material for one story plan. Select fewer clips; your analysis is kept." }
         if error.contains("story adapter is unavailable") { return "The story engine is unavailable. Restart Pixfun or reinstall the update; your analysis is kept." }
         if error.contains("preview stream validation failed") || error.contains("rendered duration failed validation") {
@@ -608,6 +613,7 @@ struct AgentTripEntry: Codable, Identifiable {
 }
 struct AgentTripConfirmation: Codable {
     var status: String; var useLocations: Bool; var entries: [AgentTripEntry]
+    var updatedAt: Double? = nil
 }
 /// Presentation only: preserve the confirmed snapshot, never resolve it against today's library.
 struct AgentTripDisplayRow {

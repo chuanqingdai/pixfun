@@ -11,7 +11,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from agent_models import ModelGateway, AgentCancelled, CapabilityMissing, LocalWorkerError
-from scripts.vf_story import validate_beats
+from scripts.vf_story import validate_beats, normalize_beats, section_beats
 
 
 class StoryEngineTests(unittest.TestCase):
@@ -71,6 +71,13 @@ class StoryEngineTests(unittest.TestCase):
     def test_no_beats_preserves_short_photo_and_locked_shot(self):
         self.assertEqual(self.compile(beats=None)['timeline'], self.shots)
 
+    def test_recovered_chapters_compile_without_changing_sources_or_cuts(self):
+        for beats in (normalize_beats([dict(first=1, title='Opening'), dict(first=2, title='Event')], 2),
+                      section_beats(self.shots)):
+            result = self.compile(beats=beats)
+            self.assertEqual(result['timeline'], self.shots)
+            self.assertEqual([sid for b in result['outline'] for sid in b['shotIds']], ['one', 'two'])
+
     def test_duplicate_names_use_exact_media_ids(self):
         # Engine names use unique library IDs, not user filenames.
         context = copy.deepcopy(self.context)
@@ -114,6 +121,28 @@ class StoryEngineTests(unittest.TestCase):
     def test_invalid_chapters_are_rejected(self):
         for beats in ([], [{'first':True}], [{'first':1}], [{'first':0}, {'first':0}], [{'first':0}, {'first':2}]):
             with self.subTest(beats=beats), self.assertRaises(ValueError): validate_beats(beats, 2)
+
+
+class ChapterBoundaryTests(unittest.TestCase):
+    def test_one_based_conversion_preserves_metadata_and_input(self):
+        original = [dict(first=1, title='A', intent='Theme'), dict(first=3, title='B', bridge='End')]
+        self.assertEqual([b['first'] for b in normalize_beats(original, 4)], [0, 2])
+        self.assertEqual(original[0]['first'], 1)
+        self.assertEqual(normalize_beats(original, 4)[1]['bridge'], 'End')
+        zero = [dict(first=0), dict(first=2)]
+        self.assertEqual(normalize_beats(zero, 4), zero)
+
+    def test_ambiguous_or_invalid_boundaries_are_not_silently_reordered(self):
+        for beats in ([], [{'first':True}], [{'first':'1'}], [{'first':2}], [{'first':0}, {'first':0}],
+                      [{'first':1}, {'first':1}], [{'first':1}, {'first':5}], [{'first':0}, {'first':4}]):
+            with self.subTest(beats=beats), self.assertRaises(ValueError): normalize_beats(beats, 4)
+
+    def test_fallback_preserves_every_contiguous_section(self):
+        shots = [dict(section=s, label=str(i), reason='Existing reason') for i, s in enumerate(['intro','body','body','outro'])]
+        beats = section_beats(shots)
+        validate_beats(beats, len(shots))
+        self.assertEqual([b['first'] for b in beats], [0, 1, 3])
+        self.assertEqual(beats[1]['intent'], 'Existing reason')
 
 
 if __name__ == '__main__': unittest.main()

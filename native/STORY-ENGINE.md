@@ -7,6 +7,36 @@ montage is added by default. New-film creation analyzes the selected material,
 waits for itinerary confirmation, then prepares the script for explicit approval
 before rendering. Confirmation snapshots remain in the conversation history.
 
+## Map-first creation
+
+The Media map's Create action now starts the same local workflow directly. It
+does not replace an unsent conversation draft or navigate to the conversation.
+`creationSurface: "map"` is persisted with the run; project history and the map's
+Continue menu reopen that run after navigation or restart.
+
+The existing map remains on the left and a 340-point work column shows one
+current stage: per-source analysis progress, pending itinerary, story strategy,
+or preview. Source covers open Media details; selecting a route row or shot
+focuses its map point. Story badges identify shot numbers (including repeated
+uses); dashed connections continue to mean capture order, not actual travel.
+Unlocated sources are selectable from the map header and remain in the review
+list without invented pins.
+
+Only pending itinerary pins are draggable. `trip_coordinates` validates WGS84
+ranges, membership and the proposal's `updatedAt` revision, saves a pending
+overlay, and does not mutate original media. Typed coordinates provide an
+alternative to pointer dragging; restoring the original position is explicit.
+Moving a coordinate clears its previous place label and does not silently start
+geocoding. `confirm_trip` persists derived locations through the existing
+workflow; `ignore_trip` does not apply them. Both itinerary and script approval
+remain manual gates with immutable answered snapshots. Story compilation still
+uses the engine handoff, compiler and audit below; the map is presentation, not
+a new inference engine.
+
+The UI intentionally does not introduce a second editor, road routing, automatic
+GPS correction, or freeform Agent chat. Fine-grained timeline editing continues
+in the existing editor. Failure keeps completed work and exposes retry in place.
+
 1. `ModelGateway.story(context)` runs `story_hints.handoff` and returns the
    engine's director guidance. Indexed descriptions and source-timed transcripts
    remain unverified evidence. The existing text model proposes shots and chapter

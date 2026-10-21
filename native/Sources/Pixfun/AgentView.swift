@@ -720,11 +720,13 @@ struct AgentMaterialProgressView: View {
 
 struct AgentActivityView: View {
     let run: AgentRun
+    var prominent = false
     var body: some View {
         if run.busy {
             HStack(spacing: 12) {
-                PixfunActivityIndicator(queued: run.status == "queued", size: 12)
-                activityText.font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
+                PixfunActivityIndicator(queued: run.status == "queued", size: prominent ? 16 : 12)
+                activityText.font(.pixfun(prominent ? 18 : 13, semibold: prominent))
+                    .foregroundStyle(prominent ? Color.pixfunInk : Color.pixfunMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }.padding(.vertical, 4)
                 .accessibilityElement(children: .combine)

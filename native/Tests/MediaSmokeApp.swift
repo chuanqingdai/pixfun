@@ -27,6 +27,109 @@ import MapKit
         let shot = EditorialShot(shot_id:"canonical-a", start_time:"00:00:00.000", end_time:"00:00:06.000", description:"Water flows past a stone wall, with cars visible on the road above.", shot_size:"Wide shot", capture_type:"Static", camera_motion:"Slow pan", story_role:["Establishing"], dialogue:"", reaction:"", audio:[], importance_score:78, duplicate_candidate:false, unusable_candidate:false, edit_recommendation:.init(level:"Recommended", recommended_duration_sec:3, reason:"Introduces the riverside setting before the walkers appear."))
         evidenceItem.shotAnalysis = .init(status:"ready", segments:[.init(id:"canonical-a", label:shot.description, start:0, end:6, boundary:.init(type:"video_start"), editorial:shot)], revision:"fixture")
         let assets = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("public/media/travel")
+        if CommandLine.arguments.contains("--map-badges-only") {
+            let view = HStack(spacing: 24) {
+                ForEach(0..<4) { index in
+                    VStack(alignment: .leading, spacing: 10) {
+                        ServiceImage(path: assets.appendingPathComponent("city.jpg").path)
+                            .frame(width: 112, height: 76).clipShape(RoundedRectangle(cornerRadius: 7))
+                            .overlay(alignment: .bottomTrailing) {
+                                MediaMapBadge(count: index == 0 ? 3 : index == 3 ? 128 : 1,
+                                              sequence: index == 1 ? 3 : nil,
+                                              shotNumbers: index == 2 ? "3·7" : nil).padding(4)
+                            }
+                        Text(["聚合数量", "拍摄编号", "分镜编号", "较大数量"][index]).font(.pixfun(12))
+                    }
+                }
+            }.padding(24).foregroundStyle(Color.pixfunInk).background(Color.pixfunBackground)
+                .environmentObject(store).environment(\.colorScheme, .dark)
+            let host = NSHostingView(rootView: view)
+            let rect = NSRect(x: 0, y: 0, width: 568, height: 152)
+            let window = NSWindow(contentRect: rect, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host; host.frame = rect; host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+            let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("map-badges.png"))
+            print("Rendered map count / capture / story badges")
+            return
+        }
+        if CommandLine.arguments.contains("--map-workflow-only") {
+            var fixtures = baseline
+            for i in fixtures.indices {
+                fixtures[i].metadata = .init(duration: 12, capturedAt: "2026-10-11T14:0\(i):00+08:00", captureDeviceID: "camera-sha256:fixture",
+                    location: .init(latitude: 40.003 + Double(i) * 0.001, longitude: 116.32 + Double(i) * 0.002,
+                                    source: "file-metadata", datum: "WGS84", horizontalAccuracy: 5))
+                fixtures[i].coverUrl = assets.appendingPathComponent(["luxury.jpg", "city.jpg", "food.jpg"][i]).path
+                fixtures[i].file.name = "旅行素材 \(i + 1).MOV"
+            }
+            let trips: [[String: Any]] = fixtures.enumerated().map { i, item in
+                ["number": i + 1, "mediaId": item.id, "name": item.name,
+                 "capturedAt": item.metadata!.capturedAt!, "place": ["校园广场", "林荫路", "历史建筑"][i],
+                 "location": ["latitude": item.metadata!.location!.latitude!, "longitude": item.metadata!.location!.longitude!],
+                 "originalLocation": ["latitude": item.metadata!.location!.latitude!, "longitude": item.metadata!.location!.longitude!]]
+            }
+            let shots: [[String: Any]] = fixtures.enumerated().map { i, item in
+                ["id": "shot-\(i)", "mediaId": item.id, "start": 0, "end": 6, "locked": false,
+                 "label": ["广场空镜开场", "跟随人物走入林荫路", "建筑细节收尾"][i],
+                 "reason": ["先交代环境，为人物进入建立空间。", "选择行走动作完整的高光段，承接开场。", "用建筑近景收束节奏，与开场呼应。"][i]]
+            }
+            for state in ["analysis", "plan", "trip", "strategy", "failed", "trip-narrow", "trip-no-gps"] {
+                let isTrip = state.hasPrefix("trip")
+                var data: [String: Any] = [
+                    "id": "map-run", "projectId": "map-project", "creationSurface": "map",
+                    "prompt": "制作旅行视频", "mode": "local", "status": isTrip ? "clarify" : state == "strategy" ? "review" : state == "failed" ? "failed" : "running",
+                    "stage": isTrip ? "trip" : ["strategy", "plan"].contains(state) ? "plan" : "highlights",
+                    "message": state == "failed" ? "Original file missing. Relink it in Media." : "", "summary": "",
+                    "intent": "create", "question": "", "resultText": "", "events": [], "artifacts": [],
+                    "mediaIds": fixtures.map(\.id), "timeline": state == "strategy" ? shots : [],
+                    "version": 1, "completed": 1, "total": 3, "duration": 18, "aspect": "16:9", "updatedAt": 1,
+                    "materialProgress": fixtures.enumerated().map { i, item in ["mediaId": item.id, "name": item.name, "status": i == 0 ? "completed" : i == 1 ? "running" : "pending"] }]
+                if isTrip || ["strategy", "plan"].contains(state) {
+                    var entries = trips
+                    if state == "trip-no-gps" {
+                        entries[2].removeValue(forKey: "location"); entries[2].removeValue(forKey: "originalLocation")
+                    }
+                    data["tripConfirmation"] = ["status": isTrip ? "pending" : "confirmed", "useLocations": true, "entries": entries, "updatedAt": 1]
+                }
+                if isTrip { data["clarificationKind"] = "trip_confirmation" }
+                if state == "strategy" {
+                    data["storySummary"] = "以校园漫步为线索：先交代空间，再跟随人物移动，最后用建筑细节收束。"
+                    data["storyExecution"] = ["timelineVersion": 1, "outline": [
+                        ["id": "one", "title": "先看校园环境", "intent": "先交代广场空间，让观众知道故事从哪里开始。", "bridge": "由空镜转向人物行走，自然带入下一段。", "shotIds": ["shot-0"]],
+                        ["id": "two", "title": "跟随人物漫步", "intent": "保留行走动作完整的高光片段，让故事向前推进。", "bridge": "从人物移动切到建筑细节，节奏逐渐放缓。", "shotIds": ["shot-1"]],
+                        ["id": "three", "title": "用建筑细节收尾", "intent": "用稳定的近景结束漫步，与开场的环境镜头呼应。", "bridge": "", "shotIds": ["shot-2"]]]]
+                }
+                store.items = fixtures; store.ready = true; store.page = .mediaMap
+                if state == "trip-no-gps" { store.items[2].metadata?.location = nil }
+                store.agentRuns = [try JSONDecoder().decode(AgentRun.self, from: JSONSerialization.data(withJSONObject: data))]
+                store.mapCreationHidden = false; store.mapCreationRunID = "map-run"
+                let rect = NSRect(x: 0, y: 0, width: state == "trip-narrow" ? 760 : 1120, height: 780)
+                let host = NSHostingView(rootView: MediaMapView(mapEnabled: true).environmentObject(store)
+                    .environment(\.locale, Locale(identifier: "zh-Hans")).environment(\.colorScheme, .dark))
+                let window = NSWindow(contentRect: rect, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                window.contentView = host; host.frame = rect; host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(2))
+                let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("workflow-\(state).png"))
+                func maps(_ view: NSView) -> [MKMapView] { (view as? MKMapView).map { [$0] } ?? view.subviews.flatMap(maps) }
+                let map = maps(host).first!
+                let draggable = map.annotations.compactMap { map.view(for: $0) }.filter(\.isDraggable)
+                precondition(isTrip ? !draggable.isEmpty : draggable.isEmpty, "Only pending route pins may be dragged")
+                precondition(store.page == .mediaMap, "Workflow must stay on the map")
+                print("PASS workflow-\(state): \(draggable.count) draggable pins, map \(map.frame.size)")
+                if (state == "trip" && CommandLine.arguments.contains("--interactive-workflow"))
+                    || (state == "plan" && CommandLine.arguments.contains("--interactive-plan")) {
+                    window.title = "地图创作 · 独立测试"
+                    window.makeKeyAndOrderFront(nil)
+                    NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+                    NSApp.run()
+                }
+                window.orderOut(nil)
+            }
+            return
+        }
         if CommandLine.arguments.contains("--map-only") {
             // Synthetic points and existing local photos, never the user's database.
             var fixtures: [MediaItem] = []
