@@ -24,7 +24,9 @@ from urllib.parse import urlparse, unquote
 
 import app as engine
 from photo_source import prepare_photo
+from media_metadata import photo_capture_metadata
 from agent_engine import AgentEngine
+from agent_editor import assist as editor_assist
 from video_description import VideoDescriptions
 from shot_analysis import ShotAnalyses
 from media_sync import MediaSync
@@ -92,6 +94,22 @@ class Library:
         if not row:
             raise FileNotFoundError('Media not found')
         return json.loads(row[0]), Path(row[1])
+
+    def map_metadata(self, media_id):
+        """Explicit, one-file local read. No analysis, source edits or database mutations."""
+        record, source = self.get(media_id)
+        if record.get('isExample') or record.get('kind') not in ('image', 'video'):
+            raise ValueError('No original capture metadata for this item')
+        before = source.stat()
+        if record['kind'] == 'image':
+            metadata = photo_capture_metadata(source)
+        else:
+            metadata = engine.probe_media(source)
+            if not metadata.get('available'): raise ValueError('Original metadata could not be read')
+        after = source.stat()
+        if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+            raise ValueError('Source changed during metadata read; try again')
+        return {key: metadata.get(key) for key in ('camera', 'captureDeviceID', 'capturedAt', 'dateSource', 'location')}
 
     def install_example(self, directory):
         """Index the bundled example once. Never copy media or resurrect removed entries."""
@@ -225,6 +243,8 @@ class Library:
             metadata = engine.probe_media(decoded)
             if record['kind'] == 'image':
                 metadata.update(duration=None, fps=None, hasAudio=False)
+                try: metadata.update(photo_capture_metadata(source))
+                except (OSError, ValueError, TypeError): pass  # Unsupported original formats remain unlocated.
             if not metadata.get('available') or not (metadata.get('hasAudio') if record['kind'] == 'audio' else metadata.get('width')):
                 raise ValueError('Cannot read this media. Try another format.')
             self.patch(media_id, metadata=metadata)
@@ -307,8 +327,7 @@ class Library:
             if len(record['messages']) >= 100:
                 raise ValueError('This project has reached 100 briefs. Start a new project.')
             record.update(updatedAt=now, status='draft', attachments=attachments)
-            if 'skill' in payload:
-                record['skill'] = skill
+            record['skill'] = skill
             record['messages'].append({'text': prompt.strip(), 'createdAt': now, 'attachments': attachments, 'skill': record.get('skill')})
             db.execute('INSERT INTO projects(id,record,updated) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record,updated=excluded.updated', (project_id, json.dumps(record), now))
         return record
@@ -433,7 +452,10 @@ class Handler(engine.Handler):
             if not isinstance(payload, dict):
                 raise ValueError('Invalid request')
             library = self.server.library
-            if path == '/api/desktop/analysis/place':
+            if path == '/api/desktop/analysis/map-metadata':
+                if not isinstance(payload.get('id'), str): raise ValueError('A media ID is required')
+                self.send_json({'ok': True, 'metadata': library.map_metadata(payload['id'])})
+            elif path == '/api/desktop/analysis/place':
                 from place_context import validate_place
                 if not isinstance(payload.get('id'), str): raise ValueError('A media ID is required')
                 record, _ = library.get(payload['id'])
@@ -488,6 +510,10 @@ class Handler(engine.Handler):
                 self.send_json({'run': self.server.agent.start(payload)})
             elif path == '/api/desktop/agent/action':
                 self.send_json({'run': self.server.agent.action(payload)})
+            elif path == '/api/desktop/agent/export':
+                self.send_json({'export': self.server.agent.exports.action(payload)})
+            elif path == '/api/desktop/agent/editor-assist':
+                self.send_json(editor_assist(self.server.agent, payload))
             elif path == '/api/desktop/agent/beauty-sort':
                 self.send_json({'job': self.server.agent.beauty_sort.request(payload)})
             elif path == '/api/desktop/agent/configure':

@@ -20,6 +20,12 @@ struct StoryEditorWorkspace: View {
     @State private var dragging = Set<String>()
     @State private var dropTarget: String?
     @State private var replacing: AgentShot?
+    @State private var reviewHints: [StoryReviewHint] = []
+    @State private var reviewedKey = ""
+    @State private var speechGuide: StorySpeechGuide?
+    @State private var loadedSpeechKey = ""
+    @State private var applyingSpeechBoundary = false
+    @State private var speechIssue: String?
     @State private var removedCount = 0
     @State private var showCaptions = false
     @State private var showAudio = false
@@ -46,7 +52,7 @@ struct StoryEditorWorkspace: View {
     var playing: Bool { sourcePreview ? sequence.playing : rendered.playing }
     var activeID: String? { !sourcePreview && stale ? nil : StoryTimeline.index(at: currentTime, in: shots).map { shots[$0].id } }
     var preview: AgentArtifact? { run?.lastPreview }
-    var busy: Bool { saving || store.activeAgentRun?.busy == true || store.agentActionPending || store.saving }
+    var busy: Bool { saving || applyingSpeechBoundary || store.activeAgentRun?.busy == true || store.agentActionPending || store.saving }
     var conflict: Bool { draft != nil && (run?.id != draft?.runID || run?.version != draft?.version) }
     var stale: Bool { draft?.dirty == true || run?.preview?.id != preview?.id }
     var photoIDs: Set<String> { Set(store.items.filter { $0.kind == "image" }.map(\.id)) }
@@ -55,6 +61,14 @@ struct StoryEditorWorkspace: View {
     var validation: String? { draft?.validation(durations: durations, photoIDs: photoIDs) }
     var visible: [AgentShot] { shots.filter { filter.isEmpty || $0.label.localizedCaseInsensitiveContains(filter) || (item($0)?.file.name.localizedCaseInsensitiveContains(filter) == true) } }
     func item(_ shot: AgentShot) -> MediaItem? { store.items.first { $0.id == shot.mediaId } }
+    var reviewKey: String { StoryAssistance.key(runID: run?.id, version: run?.version, shots: draft?.shots ?? []) }
+    var speechKey: String {
+        guard selection.count == 1, let shot = shots.first(where: { $0.id == primary }), !photoIDs.contains(shot.mediaId) else { return "" }
+        return "\(run?.id ?? ""):\(run?.version ?? 0):\(shot.id):\(shot.mediaId):\(shot.locked):\(item(shot)?.result?.analysis?.subtitleState ?? "")"
+    }
+    func guide(_ shot: AgentShot) -> StorySpeechGuide? {
+        loadedSpeechKey == speechKey && speechGuide?.mediaId == shot.mediaId ? speechGuide : nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,8 +87,14 @@ struct StoryEditorWorkspace: View {
             .onAppear { load(); rendered.load(preview?.path) }
             .onDisappear { sequence.stop(); boundary.stop(); rendered.player?.pause() }
             .sheet(item: $replacing) { shot in
-                StoryReplacementPicker(items: replacementItems, current: shot.mediaId) { replacement in replace(shot, with: replacement) }
+                if let run {
+                    StoryReplacementPicker(items: replacementItems, shot: shot, runID: run.id, version: run.version, shots: shots) { replacement, candidate in
+                        try await replace(shot, with: replacement, recommendation: candidate)
+                    }.environmentObject(store)
+                }
             }
+            .task(id: reviewKey) { await refreshReviewHints() }
+            .task(id: speechKey) { await refreshSpeechGuide() }
             .sheet(isPresented: $addingClip) {
                 StoryAddClipPicker { insertClip($0) }.environmentObject(store)
             }
@@ -208,9 +228,15 @@ struct StoryEditorWorkspace: View {
                 Button { step(1) } label: { Image(systemName: "forward.end.fill") }.help("Next clip").accessibilityLabel("Next clip").disabled(!sourcePreview && stale)
                 Spacer()
                 finishingBar
-                if let preview {
-                    Button { store.exportArtifact(preview) } label: { Image(systemName: "square.and.arrow.up") }
-                        .help(stale ? "Render your changes before exporting" : "Export video").accessibilityLabel("Export video").disabled(stale || busy)
+                if let run, !shots.isEmpty {
+                    Menu {
+                        Button("1080p (Default)") { store.exportVideo(run, resolution: "1080p") }
+                        Button("4K") { store.exportVideo(run, resolution: "4k") }
+                    } label: { Image(systemName: "square.and.arrow.up") }
+                        .menuStyle(.borderlessButton).fixedSize()
+                        .help(draft?.dirty == true ? "Save timeline changes before exporting" : "Export video").accessibilityLabel("Export video")
+                        .disabled(draft?.dirty == true || conflict || busy || store.videoExportBusy)
+                    VideoExportStatus(runID:run.id)
                 }
             }.buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(trimBase != nil)
             if let issue = issue ?? validation { Text(issue).font(.pixfun(12)).foregroundStyle(.orange).textSelection(.enabled) }
@@ -346,6 +372,15 @@ struct StoryEditorWorkspace: View {
                     }
             }
             if primary == shot.id && selection.count == 1 {
+                if reviewedKey == reviewKey && trimBase == nil {
+                    ForEach(reviewHints.filter { $0.shot == shot.id && $0.message != nil }) { hint in
+                        Button { seek(start, play: false) } label: {
+                            Label(LocalizedStringKey(hint.message!), systemImage: "info.circle")
+                                .font(.pixfun(11)).frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(.plain).foregroundStyle(Color.pixfunMuted)
+                            .help("Review hint only. Click to locate; your edit is unchanged.")
+                    }
+                }
                 let linked = StoryTimeline.narrationIndices(for: shot.id, shots: shots, cues: finish.narration)
                 if !linked.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -402,7 +437,7 @@ struct StoryEditorWorkspace: View {
         } else {
             VStack(spacing: 8) {
                 if let item = item(shot) {
-                    StorySourceRange(item: item, start: shot.start, end: shot.end, enabled: canEdit(shot), changing: { range, edge in
+                    StorySourceRange(item: item, start: shot.start, end: shot.end, enabled: canEdit(shot), speechBoundaries: guide(shot)?.boundaries.filter { $0.time >= shot.start - 1 && $0.time <= shot.end + 1 } ?? [], changing: { range, edge in
                         setRange(shot, range, edge: edge)
                     }, editing: trimEditing)
                 }
@@ -413,7 +448,57 @@ struct StoryEditorWorkspace: View {
                     Text("Out")
                     StoryTimeField(value: shot.end, label: "Source out point", valid: { $0 >= shot.start + 0.25 && $0 <= (durations[shot.mediaId] ?? shot.end) }) { setTrim(shot, leading: false, to: $0) }
                 }
+                if let guide = guide(shot) {
+                    StorySpeechHints(kind: guide.kind,
+                        inPoint: speechSuggestion(shot, guide: guide, leading: true),
+                        outPoint: speechSuggestion(shot, guide: guide, leading: false),
+                        disabled: trimBase != nil || applyingSpeechBoundary) { point, leading in
+                        Task { await applySpeechBoundary(shot, guide: guide, point: point, leading: leading) }
+                    }
+                }
+                if let speechIssue { Text(LocalizedStringKey(speechIssue)).foregroundStyle(.orange) }
             }.font(.pixfun(10)).foregroundStyle(Color.pixfunMuted).disabled(!canEdit(shot))
+        }
+    }
+
+    func speechSuggestion(_ shot: AgentShot, guide: StorySpeechGuide, leading: Bool) -> StorySpeechBoundary? {
+        guard let point = guide.nearby(shot, leading: leading, sourceDuration: durations[shot.mediaId] ?? 0), var base = draft else { return nil }
+        base.shots = shots
+        guard let next = base.trimming(shot.id, leading: leading, delta: point.time - (leading ? shot.start : shot.end), durations: durations, photoIDs: photoIDs),
+              let changed = next.first(where: { $0.id == shot.id }),
+              abs((leading ? changed.start : changed.end) - point.time) < 0.001 else { return nil }
+        return point
+    }
+    func refreshSpeechGuide() async {
+        let key = speechKey
+        speechGuide = nil; loadedSpeechKey = ""; speechIssue = nil
+        guard !key.isEmpty, let run, let draft, let shot = draft.shots.first(where: { $0.id == primary }), !shot.locked else { return }
+        do {
+            try await Task.sleep(nanoseconds: 150_000_000)
+            let payload = try StoryAssistance.payload(runID: run.id, version: run.version, shots: draft.shots, action: "trim", shotID: shot.id)
+            let response: StoryAssistance = try await store.service.post("/api/desktop/agent/editor-assist", payload, native: true)
+            try Task.checkCancellation()
+            guard key == speechKey else { return }
+            speechGuide = response.speech; loadedSpeechKey = key
+        } catch { /* Missing speech evidence leaves ordinary manual trimming intact. */ }
+    }
+    func applySpeechBoundary(_ shot: AgentShot, guide: StorySpeechGuide, point: StorySpeechBoundary, leading: Bool) async {
+        guard canEdit(shot), trimBase == nil, let original = draft, let run,
+              speechSuggestion(shot, guide: guide, leading: leading) == point else { return }
+        let key = speechKey
+        applyingSpeechBoundary = true; speechIssue = nil
+        defer { applyingSpeechBoundary = false }
+        do {
+            var payload = try StoryAssistance.payload(runID: run.id, version: run.version, shots: original.shots, action: "validate-trim", shotID: shot.id)
+            payload["candidate"] = ["mediaId": guide.mediaId, "revision": guide.revision, "evidenceRevision": guide.evidenceRevision, "edge": point.edge, "time": point.time]
+            let _: StoryAssistance = try await store.service.post("/api/desktop/agent/editor-assist", payload, native: true)
+            guard key == speechKey, draft == original, self.run?.id == run.id, self.run?.version == run.version,
+                  !conflict, !saving, store.activeAgentRun?.busy != true, !store.agentActionPending, !store.saving,
+                  let next = original.trimming(shot.id, leading: leading, delta: point.time - (leading ? shot.start : shot.end), durations: durations, photoIDs: photoIDs),
+                  let changed = next.first(where: { $0.id == shot.id }), abs((leading ? changed.start : changed.end)-point.time) < 0.001 else { return }
+            draft?.replace(next); edited()
+        } catch {
+            if key == speechKey { speechGuide = nil; speechIssue = "Speech boundaries changed or are unavailable. Reselect this clip to refresh; manual trimming still works." }
         }
     }
 
@@ -467,10 +552,35 @@ struct StoryEditorWorkspace: View {
         guard let id = activeID ?? primary ?? shots.first?.id, let shot = shots.first(where: { $0.id == id }) else { return }
         playClip(shot)
     }
-    func replace(_ shot: AgentShot, with item: MediaItem) {
-        guard canEdit(shot), replacementItems.contains(where: { $0.id == item.id }),
-              let replacement = StoryTimeline.replacing(shot, with: item), let index = draft?.shots.firstIndex(where: { $0.id == shot.id }), var next = draft?.shots else { return }
-        next[index] = replacement; draft?.replace(next); replacing = nil; edited()
+    func replace(_ shot: AgentShot, with item: MediaItem, recommendation: StoryReplacement?) async throws {
+        guard canEdit(shot), let original = draft, let run, replacementItems.contains(where: { $0.id == item.id }),
+              let index = original.shots.firstIndex(of: shot) else { throw ServiceError(message: "The edit changed. Reopen Replace.") }
+        if let recommendation {
+            var payload = try StoryAssistance.payload(runID: run.id, version: run.version, shots: original.shots, action: "validate", shotID: shot.id)
+            payload["candidate"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(recommendation))
+            let _: StoryAssistance = try await store.service.post("/api/desktop/agent/editor-assist", payload, native: true)
+        }
+        guard draft == original, self.run?.id == run.id, self.run?.version == run.version, canEdit(shot), replacing?.id == shot.id,
+              let currentItem = replacementItems.first(where: { $0.id == item.id }),
+              let replacement = recommendation.map({ StoryTimeline.replacing(shot, with: currentItem, recommendation: $0) }) ?? StoryTimeline.replacing(shot, with: currentItem)
+        else { throw ServiceError(message: "The edit or source changed. Reopen Replace.") }
+        var next = original.shots; next[index] = replacement
+        var candidate = original; candidate.replace(next)
+        if let error = candidate.validation(durations: durations, photoIDs: photoIDs) { throw ServiceError(message: error) }
+        draft = candidate; replacing = nil; edited()
+    }
+    func refreshReviewHints() async {
+        let key = reviewKey
+        reviewHints = []; reviewedKey = ""
+        guard let run, let draft, !draft.shots.isEmpty else { return }
+        do {
+            try await Task.sleep(nanoseconds: 600_000_000)
+            let payload = try StoryAssistance.payload(runID: run.id, version: run.version, shots: draft.shots, action: "review")
+            let result: StoryAssistance = try await store.service.post("/api/desktop/agent/editor-assist", payload, native: true)
+            try Task.checkCancellation()
+            guard key == reviewKey else { return }
+            reviewHints = result.issues; reviewedKey = key
+        } catch { /* Advisory only: editing and export never depend on review availability. */ }
     }
     func editWithAI(_ shot: AgentShot) {
         guard canEdit(shot) else { return }
@@ -670,6 +780,13 @@ extension StoryEditorWorkspace {
     }
     var captionPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if store.agentCapabilities?.tools?.contains(where: { $0.id == "hyperframes" && $0.installed }) == true {
+                StoryTitlePicker(current: finish.motionTitle, suggestedText: "",
+                    canPlaceOpening: shots.contains { $0.end - $0.start >= 2.5 }, canPlaceEnding: duration >= 2.5) { title in
+                    var next = finish; next.motionTitle = title; applyLayers(next)
+                }
+                Divider()
+            }
             HStack {
                 Text("Captions").font(.pixfun(12, semibold: true))
                 Spacer()

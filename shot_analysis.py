@@ -74,6 +74,13 @@ def normalize_shot_response(answer,start,end,cues,has_audio=True,include_focus=F
         raise ValueError('Return a single unambiguous shot container.')
     if 'shots' in value:
         shots = value['shots']
+        # Qwen occasionally emits primary_subjects as a second object inside
+        # the one-shot array. This is a structural placement error, not a
+        # second observed shot; merge only this exact auxiliary shape.
+        if (isinstance(shots,list) and len(shots)==2 and isinstance(shots[0],dict) and
+                isinstance(shots[1],dict) and set(shots[1]) == {'primary_subjects'} and
+                'primary_subjects' not in shots[0]):
+            shots = [{**shots[0], 'primary_subjects':shots[1]['primary_subjects']}]
         if not isinstance(shots,list) or len(shots)!=1:
             raise ValueError('Describe the whole verified interval as exactly one shot; sampled images are not separate shots.')
         value = shots[0]
@@ -85,6 +92,9 @@ def normalize_shot_response(answer,start,end,cues,has_audio=True,include_focus=F
         value = dict(value)
         edit = value.get('edit_recommendation')
         if isinstance(edit,dict):
+            canonical = ('level', 'recommended_duration_sec', 'reason')
+            if all(key in edit for key in canonical):
+                value['edit_recommendation'] = edit = {key: edit[key] for key in canonical}
             duration = edit.get('recommended_duration_sec')
             # This is an editorial suggestion, NOT a source timestamp or an
             # approved timeline edit. Accommodate sub-100ms rounding (e.g. a

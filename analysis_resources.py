@@ -36,6 +36,7 @@ class AnalysisResources:
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='media-preprocess')
         self.active = {'model': 0, 'prepare': 0}
         self.parallel = False
+        self.forced_serial = False
         self.healthy_since = None
         self.checked_at = float('-inf')
         self.snapshot = None
@@ -46,8 +47,11 @@ class AnalysisResources:
         self.checked_at = now
         self.snapshot = self.probe()
         sample = self.snapshot
-        healthy = bool(sample and sample['pressure'] == 1 and
-                       sample['total'] >= 16 * 1024**3 and
+        # A 16 GiB Apple-silicon Mac shares memory with MLX/Metal. Two Python
+        # helpers importing OpenCV + Vision can be killed even while vm pressure
+        # still reports normal, so only larger machines may use lookahead=2.
+        healthy = bool(not self.forced_serial and sample and sample['pressure'] == 1 and
+                       sample['total'] >= 24 * 1024**3 and
                        sample['available'] >= max(3 * 1024**3, sample['total'] * .20))
         if not healthy:
             self.parallel = False
@@ -94,6 +98,14 @@ class AnalysisResources:
             return {'modelProcesses': 1, 'preprocessingLimit': 2 if self.parallel else 1,
                     'serial': not self.parallel, 'active': dict(self.active),
                     'reason': 'memory-headroom' if self.parallel else 'memory-pressure-or-warmup'}
+
+    def force_serial(self):
+        """Keep future preprocessing single-file after an OS resource kill."""
+        with self.condition:
+            self.forced_serial = True
+            self.parallel = False
+            self.healthy_since = None
+            self.condition.notify_all()
 
     def shutdown(self):
         self.executor.shutdown(wait=True, cancel_futures=True)

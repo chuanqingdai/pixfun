@@ -13,6 +13,13 @@ function verify(bin) {
   if (!probe.streams.some(s => s.width === 320 && s.height === 180)) throw Error('Bundled image-to-video validation failed');
   run('ffmpeg', ['-v','error','-xerror','-i',movie,'-f','null','-']);
   console.log('Bundled JPEG → PNG → video → full decode: PASS');
+  const hd = path.join(directory, 'source-export.mp4');
+  run('ffmpeg', ['-v','error','-loop','1','-framerate','30','-i',png,'-t','0.5','-vf','scale=1920:1080',
+    '-c:v','h264_videotoolbox','-allow_sw','1','-b:v','16M','-pix_fmt','yuv420p',hd]);
+  const encoded = JSON.parse(run('ffprobe', ['-v','error','-show_streams','-of','json',hd]));
+  if (!encoded.streams.some(s => s.codec_name === 'h264' && s.width === 1920 && s.height === 1080)) throw Error('Bundled H.264 export validation failed');
+  run('ffmpeg', ['-v','error','-xerror','-i',hd,'-f','null','-']);
+  console.log('Bundled original-source 1080p H.264 export: PASS');
 }
 module.exports = verify;
 if (require.main === module) verify(path.resolve(process.argv[2] || path.join(root,'build-desktop/media/bin')));

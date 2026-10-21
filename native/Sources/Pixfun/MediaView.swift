@@ -29,7 +29,7 @@ struct MediaView: View {
                     }
                     Button {
                         store.requestMediaRemoval(store.libraryItems.filter { store.selection.contains($0.id) })
-                    } label: { Text("Delete…").frame(height: 36).contentShape(Rectangle()) }
+                    } label: { Text("Delete").frame(height: 36).contentShape(Rectangle()) }
                         .buttonStyle(.plain).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
                         .disabled(store.selection.isEmpty)
                         .help("Remove selected items from the library. Original files are kept.")
@@ -39,7 +39,7 @@ struct MediaView: View {
                             Text("Select").frame(height: 36).contentShape(Rectangle())
                         }
                         Button { selectingForRemoval = true; store.beginSelection() } label: {
-                            Text("Delete…").frame(height: 36).contentShape(Rectangle())
+                            Text("Delete").frame(height: 36).contentShape(Rectangle())
                         }.help("Select items to remove from the library. Original files are kept.")
                     }.buttonStyle(.plain).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
                         .padding(.trailing, 8)
