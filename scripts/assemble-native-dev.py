@@ -28,7 +28,8 @@ shutil.copy2(root / 'build-native/release/Pixfun', executable)
 executable.chmod(0o755)
 launcher = resources / 'backend/pixfun-service/pixfun-service'
 launcher.parent.mkdir(parents=True, exist_ok=True)
-python = str(Path(args.python).resolve())
+# Preserve venv launcher paths: resolving the symlink selects the base interpreter.
+python = str(Path(args.python).expanduser().absolute())
 launcher.write_text('\n'.join([
     '#!/bin/bash', 'set -euo pipefail',
     'export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 VECLIB_MAXIMUM_THREADS=2',
@@ -37,9 +38,13 @@ launcher.write_text('\n'.join([
     '',
 ]))
 launcher.chmod(0o755)
+# Captions and static titles are part of the native renderer, not HyperFrames.
+subprocess.run(['swiftc', '-O', '-module-cache-path', str(root/'build-native/cache/swift'),
+                str(root/'scripts/render-title.swift'), '-o', str(root/'build-native/pixfun-title')], check=True)
 for relative, source in {
     'bin/ffmpeg': Path('/opt/homebrew/bin/ffmpeg'),
     'bin/ffprobe': Path('/opt/homebrew/bin/ffprobe'),
+    'bin/pixfun-title': root/'build-native/pixfun-title',
     **{name: root / 'scripts' / name for name in ('agent-model-worker.py', 'vf_story.py', 'vf_media_catalog.py', 'vf_beauty.py', 'vf_hyperframes.py', 'vf_travel_graphics.py', 'agent_process_security.py', 'hyperframes-templates')},
     'public': root / 'public',
     'Fonts': root / 'public/fonts',
@@ -56,7 +61,7 @@ for locale in (root/'native/Localization').glob('*.lproj'):
     shutil.copytree(locale, resources/locale.name)
 
 config = {'VF_LIBRARY_STATE':str(Path(args.catalog_state).resolve()),
-          'PIXFUN_MODEL_PYTHON':str(Path(args.model_python).resolve()),
+          'PIXFUN_MODEL_PYTHON':str(Path(args.model_python).expanduser().absolute()),
           'PIXFUN_VF_ROOT':str(Path(args.vf_root).resolve()),
           'PYTHONPATH':str(Path(args.vf_root).resolve()),
           'PIXFUN_LOCAL_VLM':cached_model('mlx-community/Qwen3-VL-4B-Instruct-4bit'),

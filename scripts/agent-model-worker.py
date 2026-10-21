@@ -15,7 +15,7 @@ os.environ['HF_HUB_OFFLINE'] = '1'
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
-required_version = '0.9.1'
+supported_versions = ('0.9.1', '0.9.2')
 configured_runtime = os.environ.get('PIXFUN_VF_ROOT')
 preferred_runtime = Path.home() / 'work/visionflow/vf-agent-0.9.1'
 runtime = Path(configured_runtime) if configured_runtime else (preferred_runtime if preferred_runtime.is_dir() else Path.home() / 'work/visionflow/vf-agent')
@@ -30,8 +30,8 @@ for line in sys.stdin:
         if preprocess_only and not light:
             raise ValueError('Inference is prohibited in the preprocessing worker')
         declared = re.search(r'^version\s*=\s*"([0-9][^"]*)"', (runtime/'pyproject.toml').read_text(), re.M)
-        if not declared or declared.group(1) != required_version:
-            raise RuntimeError(f'VisionFlow {required_version} is required; incompatible runtime was not loaded.')
+        if not declared or declared.group(1) not in supported_versions:
+            raise RuntimeError('VisionFlow 0.9.1 or 0.9.2 is required; incompatible runtime was not loaded.')
         with contextlib.redirect_stdout(sys.stderr):
             if job['operation'] == 'story':
                 from vf_story import handle
@@ -42,7 +42,7 @@ for line in sys.stdin:
                     import mlx.core as mx
                     mx.clear_cache()
                 from vf_media_catalog import handle
-                value = handle(job)
+                value = {**handle(job), 'engineVersion':declared.group(1)}
                 if job.get('action') != 'sample':
                     import torch
                     if torch.backends.mps.is_available(): torch.mps.empty_cache()

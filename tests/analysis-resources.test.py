@@ -153,9 +153,9 @@ class RoutingTests(unittest.TestCase):
         import os
         with tempfile.TemporaryDirectory() as folder:
             model = ModelGateway(folder)
-            if not Path(model.python).is_file() or model.capabilities()['engineVersion'] != '0.9.1':
+            if not Path(model.python).is_file() or model.capabilities()['engineVersion'] not in ('0.9.1', '0.9.2'):
                 model.resources.shutdown()
-                self.skipTest('Installed VisionFlow 0.9.1 runtime unavailable')
+                self.skipTest('Installed compatible VisionFlow runtime unavailable')
             try:
                 with patch.dict(os.environ, {'PATH':str(ROOT/'build-desktop/media/bin')+os.pathsep+os.environ.get('PATH','')}):
                     sample = model.local({'operation':'catalog', 'action':'sample',

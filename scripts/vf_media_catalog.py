@@ -1,4 +1,4 @@
-"""Reviewed local v0.9.1 adapter. One immutable-source catalog per media item.
+"""Reviewed local v0.9.1/v0.9.2 adapter. One immutable-source catalog per media item.
 
 No discovery, downloads, cloud calls or source writes. The native service chooses
 all paths; requests from UI contain registered media IDs, never filesystem paths.
@@ -68,7 +68,7 @@ def index(source, folder, context, speech, shots=None, revision=None):
                     'context': context, 'speech': speech, 'candidates': []}]})
     counts = shot_library.import_report(report, folder/'catalog', log=lambda _: None)
     atomic_json(folder/'shot-map.json', mapping)
-    return {'status': 'ready', 'counts': counts, 'engineVersion': '0.9.1'}
+    return {'status': 'ready', 'counts': counts}
 
 
 def search(catalogs, query):

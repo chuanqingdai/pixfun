@@ -184,8 +184,10 @@ class DesktopServiceTests(unittest.TestCase):
         try: self.proc.wait(timeout=8)
         except subprocess.TimeoutExpired:
             self.proc.kill(); self.proc.wait(timeout=3)
-        self.proc.stdout.close()
-        self.log.close()
+            self.fail('Desktop service did not shut down gracefully:\n' + (Path(self.temp.name)/'test.log').read_text()[-16000:])
+        finally:
+            self.proc.stdout.close()
+            self.log.close()
 
     def tearDown(self):
         if self.proc.poll() is None:self.stop()

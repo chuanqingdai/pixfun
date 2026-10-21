@@ -564,7 +564,7 @@ final class WorkspaceStore: ObservableObject {
         if similar == nil && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
         visualSearchGeneration += 1
         let generation = visualSearchGeneration
-        let resultLabel = similar != nil ? "Similar shots · \(collection ?? "all trips")" : "Visual search · \(query)"
+        let resultLabel = similar != nil ? "\(language.text("Similar shots")) · \(collection ?? language.text("All trips"))" : "\(language.text("Visual search")) · \(query)"
         var parts = URLComponents()
         parts.queryItems = similar.map { [URLQueryItem(name:"similar",value:$0)] } ?? [URLQueryItem(name:"q",value:query)]
         if let collection, !collection.isEmpty { parts.queryItems?.append(URLQueryItem(name:"collection",value:collection)) }

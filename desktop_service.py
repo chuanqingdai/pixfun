@@ -40,6 +40,11 @@ PHOTO = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.heic', '.heif', '.
 AUDIO = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.aiff', '.aif', '.opus'}
 FINAL = {'ready', 'error', 'cancelled'}
 
+# Some bundled SQLite builds can deadlock when opening a connection concurrently
+# with another connection's final close (including WAL teardown). Serialize only
+# lifecycle calls; queries/transactions still use independent WAL connections.
+_sqlite_lifecycle = threading.RLock()
+
 
 class Cancelled(Exception):
     pass
@@ -66,12 +71,14 @@ class Library:
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=15)
+        with _sqlite_lifecycle:
+            db = sqlite3.connect(self.path, timeout=15)
         try:
             with db:
                 yield db
         finally:
-            db.close()
+            with _sqlite_lifecycle:
+                db.close()
 
     def list(self):
         with self.connect() as db:
@@ -105,6 +112,11 @@ class Library:
         record, source = self.get(media_id)
         if record.get('isExample') or record.get('kind') not in ('image', 'video'):
             raise ValueError('No original capture metadata for this item')
+        playback_source = source
+        # Explicit metadata reads use the catalog-linked camera file, not a
+        # stripped proxy header. This does NOT certify a render-time mapping.
+        original = (record.get('vfCatalog') or {}).get('originalSource')
+        if original: source = Path(original).resolve(strict=True)
         before = source.stat()
         if record['kind'] == 'image':
             metadata = photo_capture_metadata(source)
@@ -114,7 +126,9 @@ class Library:
         after = source.stat()
         if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
             raise ValueError('Source changed during metadata read; try again')
-        return {key: metadata.get(key) for key in ('camera', 'captureDeviceID', 'capturedAt', 'dateSource', 'location')}
+        validate_source(record, playback_source)
+        return {**{key: metadata.get(key) for key in ('camera', 'captureDeviceID', 'capturedAt', 'dateSource', 'location')},
+                'metadataSource': 'catalog-linked-original' if original else 'original-file'}
 
     def install_example(self, directory):
         """Index the bundled example once. Never copy media or resurrect removed entries."""
@@ -350,7 +364,8 @@ def cancellable_command(args, timeout=120):
     if event and event.is_set():
         raise Cancelled()
     try:
-        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        from media_commands import bounded_command
+        process = subprocess.Popen(bounded_command(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     except OSError as exc:
         return 127, '', str(exc)
     deadline = time.monotonic() + timeout

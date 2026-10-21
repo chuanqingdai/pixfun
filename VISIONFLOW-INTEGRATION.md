@@ -1,49 +1,37 @@
-# Pixfun × VisionFlow 本地联调
+# Pixfun 0.3.0 × VisionFlow
 
-当前已合入 Pixfun 0.3.0 `88e0a7d`（`origin/codex/media-0.3.0`），已有网页 `/library` 与 SwiftUI 原生客户端两条入口，复用 vf-agent 统一镜头库。未替换 Pixfun 的完整导演引擎。
+面向 `codex/media-0.3.0` 的本地接入。SwiftUI 与网页素材库复用 vf-agent 0.9.1 / 0.9.2 的镜头目录；原片只读，不复制视频或重新建立向量库。
 
-## 0.3.0 升级验收（2026-10-21）
+## 已接通及修复
 
-上游 main 仍是 `bf698f8`，实际新版在 `codex/media-0.3.0`。本地分支 `codex/vf-integration-update` 保留旧接入恢复点 `37b0f29` 后合入新版；未推送。vf-agent 工作区原有修改未动。启动前数据库/草稿备份位于忽略目录 `data/vf-integration/pre-0.3.0-20261021/`。
+- 导入已有 shots、时间区间、评分、可用转写、地点、封面和人工封面锁定状态；素材 ID 稳定。刷新保留标题、收藏、人工标签、地点修正和删除状态。
+- 原生文字、语义和相似镜头搜索使用统一目录。默认封面始终使用目录当前代表帧，搜索命中只改变排序和播放起点；图片内容版本变化会刷新缓存。
+- 播放及编辑前验证源文件指纹。目录时间转为播放时间：`shot.start/end + playback.origin`；疑似错误转写和未验证时钟不进入剪辑文本。
+- 故事初选、替换建议和语音裁剪参考可复用保存的镜头区间、上下文、评分及过滤后的转写。它们明确标为目录证据，不生成假的精细审片签名、主体判断或审美结论。明确执行“分析”时仍走完整分析。
+- 混合目录/新分析素材时，只有具有本地分析帧的候选参加新排序；目录候选保留且标明未重排，不补零分、不丢素材。目录语义检索继续使用已有向量。
+- 旧检测标签映射为带镜头区间的“细节”标签，支持人工隐藏；不会把背景物体自动升级为主体/行为，也不把行程地点当作画面标签。
+- 地图的明确元信息读取会访问目录关联原片，校验读取期间文件未变；只返回拍摄事实，不覆盖代理时钟/尺寸、不自动更改人工地点。日期标签不补造拍摄时刻，地点文字不补造 GPS。
+- 修复 SQLite 并发创建/关闭连接时的卡住：串行化连接生命周期，查询仍使用独立 WAL 连接。测试要求正常退出，强制杀进程不算通过。
+- FFmpeg 解码、过滤、编码线程池各限制为 2。开发包默认串行重任务，模型调用后释放，图片缓存最多 128 MiB / 160 张。
+- 开发包保留 Python 虚拟环境启动器路径，包含静态标题/字幕渲染器及中文资源。能力检测检查实际配置解释器的模块；缺失依赖不再显示为已安装，不自动下载模型或回退到云端。
+- 旧目录不自动重复分析；开发包设置 `PIXFUN_AUTO_ANALYZE_EXISTING=0`。新导入和明确重分析仍可执行。
+- 关联原片与播放代理不同时，原片导出明确拒绝；预览保留。不会把代理放大后冒称原片导出。
 
-### 已修复的接入问题
+## 构建和启动 SwiftUI
 
-- 新版自动恢复队列会把旧库当成未分析素材：外部目录不自动重扫；本机开发包设置 `PIXFUN_AUTO_ANALYZE_EXISTING=0`，旧任务不因升级自动恢复，新导入和明确重分析仍可执行。首次试启动涉及的 5 个旧条目已从启动前备份恢复。
-- 复用统一库搜索和向量；原生独立索引按钮只索引非目录素材。语义查询加入模型资源调度，开发包 `PIXFUN_SERIAL_ANALYSIS=1`，工作进程默认 2 线程，推理后释放。
-- 刷新保留新版人工标签、地点修正、导入分组与已有分析状态。单镜头仍可从右键菜单找相似镜头；默认封面不被命中帧替换，详情优先使用修复封面。
-- 新版故事、编辑、采样等 worker 适配器和中文资源纳入本机开发包；仍然引用已安装的 vf-agent 0.9.1，不下载模型。
-- 缓存文件头的 GPS、设备、编解码信息进入原生元信息；容器创建时间不冒充拍摄时间，地点文字不冒充 GPS。
-- 缺少本地运行时的编辑建议返回 JSON 503，避免无响应断连。
-- 原片导出发现代理引用时明确拒绝，避免把低分辨率代理放大后声称来自原片；原片时间/方向/HDR 映射待实现。预览流程保持可用。
+需要 macOS、Swift/Xcode 工具链、FFmpeg/ffprobe，以及两个已准备好的 Python 环境：
 
-### 验证证据
+- 服务 Python 3.9–3.12，安装 Pillow；当前 `app.py` 仍依赖 `cgi`，不能用 Python 3.13 运行服务。
+- 模型 Python 使用已有 vf-agent/MLX 环境与本地权重缓存。抽帧需要 PyAV、PySceneDetect、OpenCV；本地模型分别需要 MLX/VLM、ASR 和 Torch/Transformers 等对应依赖。模型环境可以使用 Python 3.13。
 
-- Swift release 构建、签名验证通过；867 项 native 模型检查、2 项字体、13 项输入框、172 项编辑快捷键、13 项技能检查通过；合成 30 秒视频验证 AVFoundation 画面、暂停起点、seek、播放和取消。
-- 目录适配器 8 项、桥接 8 项、分析队列 23 项通过。实际 vf-agent CPU 故事编译 14 项、编辑辅助 17 项通过（指定已安装运行时，未调用生成模型）。缺失运行时 HTTP 503 回归通过。
-- 实库隔离数据库：330 素材 / 380 shots / 714 可用转写，6 段隔离；封面 JPEG、视频 Range、鉴权、30 条同旅行相似结果、30 条语义结果及刷新保留人工修改通过。详见 `data/vf-integration/native-http-check.json`。
-- 原生 UI 显示 335 项（330 目录 + 5 旧导入）；“霍比屯”搜索 3 项；单镜头相似检索返回 24 个去重素材，扫描证据可见。截图在 `data/vf-integration/0.3.0-ui/`，含私人素材，不提交。
-- 上游 desktop-service 21 项检查初轮仍有素材同步超时；其他项目在配置运行时、补齐合成素材后可运行。同步问题普通启动出现 2 次，带线程诊断的启动连续 4 次通过；**原因未定位，不能宣称全套回归通过**。测试服务已回收，保留该问题继续排查，不用调大超时掩盖。
+先启动一个统一素材库服务：
 
-### 尚未完成（按优先级）
+```bash
+cd /path/to/vf-agent
+python -m vf_agent library serve --db /path/to/shot-library --port 62600
+```
 
-1. **P1 原片回链导出**：330 项中 226 项播放路径不同于原片路径。必须校验身份、时钟、旋转和 HDR；当前明确拒绝把这些代理作为原片导出。
-2. **P1 素材同步偶发超时**：继续抓取普通启动下卡住线程/锁，验收导入、归档、暂停及退出；当前建议先使用已经接入的库。
-3. **P2 故事/编辑证据复用**：新版 `understand()` 仍走自己的 `shotAnalysis`，替换建议要求其 signature；旧库的 `result.analysis.segments` 不自动获得该签名。进入导演流程仍可能重复分析，尚未做真实整片生成验收。
-4. **P2 地图与时间覆盖**：缓存投影仅 12 项带 GPS，0 项有明确 QuickTime 拍摄时间；大量代理丢失文件头。应按来源指纹从原片补元信息，不能用日期标签补出虚构拍摄时刻/路线。地图网络服务未做本轮实测。
-5. **P2 标签与界面**：旧标签可文本搜索，尚未完整映射新版“主体/行为”分类；目录按钮有中英文混排。当前筛选不能代表全量结构化内容理解。
-6. HyperFrames 运行时、私有美学权重未安装；仅显示能力缺失，不自动下载。开发包仍非独立发行包。API 运行时固定为 vf-agent 0.9.1，版本一致不代表所有深层接口都已验收。
-
-## SwiftUI 接入（2026-10-17）
-
-原生 Media 页已接入 330 个真实素材、380 个镜头、714 段可用转写。统一库另有 12 条已排除且没有源文件的生成素材占位，不导入；6 段识别或时间存在疑点的转写不进入搜索与剪辑文本。本机原有 5 个文件保留，因此界面显示 335 local files。
-
-- 关键词搜索、Visual search 自然语言画面搜索、镜头详情中的本次旅行/全部旅行相似检索已接通。命中显示小图和时间，点击跳到对应位置。
-- 复用当前封面、原片/代理、镜头区间、评分、地点和人工封面锁定状态；不复制视频或向量，不重新扫描。旧扫描评分仍标示来源，不视为 HDR 修复后的重新评分。
-- 原生 SQLite 保存可刷新元数据投影和本地编辑状态；统一库仍是镜头证据来源。首次同步前备份，刷新保留人工标题、收藏、删除状态和已有分析。可用 Refresh catalog 手动同步。
-- 本地模型接入 Qwen3-VL-4B 4bit、Qwen3-ASR-1.7B bf16、SigLIP2 Base，以及 OpenCV/OCR 工具。仅用现有缓存，离线、默认 2 线程；模型工具串行执行且调用后释放，语义搜索结束释放统一库编码器。原生图片缓存限制 128 MiB / 160 张。
-- 播放前核对源文件指纹，按 playback.origin 映射时间，保留视频方向。打开已有目录素材不自动触发重新分析。
-
-先启动下文统一素材库服务，然后在 pixfun 目录构建本机开发包：
+在 Pixfun 仓库构建开发包：
 
 ```bash
 CLANG_MODULE_CACHE_PATH="$PWD/build-native/cache/clang" \
@@ -51,125 +39,61 @@ SWIFTPM_MODULECACHE_OVERRIDE="$PWD/build-native/cache/swift" \
 swift build --package-path native --scratch-path build-native \
   --cache-path build-native/cache -c release --disable-sandbox -j 2
 
-/opt/homebrew/Caskroom/miniconda/base/envs/clawtrading/bin/python \
-  scripts/assemble-native-dev.py \
-  --python /opt/homebrew/Caskroom/miniconda/base/envs/clawtrading/bin/python \
-  --model-python /opt/homebrew/Caskroom/miniconda/base/bin/python \
-  --vf-root ../vf-agent \
-  --catalog-state ../sampling-pilot-2026-10-16/run-unified/shot-library/server.json
+/path/to/service-python scripts/assemble-native-dev.py \
+  --python /path/to/service-python \
+  --model-python /path/to/model-venv/bin/python \
+  --vf-root /path/to/vf-agent \
+  --catalog-state /path/to/shot-library/server.json
 
 open "$(cat build-native/connected-app-path.txt)"
 ```
 
-这是引用本机仓库和 Python 环境的开发包，不是可独立分发的安装包。统一库服务须保持运行，才能刷新目录、获取封面和使用语义/相似搜索。原生人工标签与封面写回、完整多镜头成片流程仍待后续验收。
+脚本编译并打包 `pixfun-title`，执行临时签名校验；当前 FFmpeg 路径为 Homebrew Apple Silicon 默认路径。配置只写入被忽略的开发产物，虚拟环境路径不解析到基础解释器。这是引用本机代码和环境的开发包，不是独立发行安装包。
 
-验证：原生适配器 5 项测试通过；桥接器 8 项通过；原有 desktop service 8 项通过、2 项跳过（分批运行）；Swift release 构建和 native 检查通过。真实 HTTP 检查覆盖封面 JPEG、视频 Range、鉴权、30 条同旅行相似结果、30 条语义结果及刷新保留修改。SwiftUI 实际打开素材、播放视频和相似搜索通过。Qwen3-VL、SigLIP2、Qwen3-ASR 与 OCR 均已执行本地推理；这只验证接入，不代表内容准确性或审美验收。
+原生数据库在 `~/Library/Application Support/Pixfun/Library/`。首次接入前自动创建 SQLite 备份。更新前建议另外备份该目录。统一服务需保持运行，才能刷新、获取缩略图和做语义搜索。
 
-```bash
-python tests/vf-native.test.py
-python tests/vf-bridge.test.py
-/path/to/python3.11 tests/vf-native-live.py
-node scripts/test-native.cjs
-```
+## 网页入口
 
-私人验证证据保留在被 Git 忽略的 `data/vf-integration/native-http-check.json` 和 `native-model-check.json`。
-
-### 列表封面回归修复
-
-原生语义/相似检索曾将 `item.coverUrl` 替换为未统一转换的搜索命中帧，返回 Media 仍保持相似结果，造成“默认封面再次过曝”的观感。现改为卡片始终使用目录当前封面，搜索只改变排序和播放跳转时间；结果页明确显示搜索模式，Show all media 清空搜索状态。没有将搜索帧冒充已重新调色，也未修改原片。
-
-封面 URL 带显示图片内容版本；同一 frame ID 安装修复图后刷新目录即可重载，避免 SwiftUI 已加载视图继续保留旧图。接口禁止 HTTP 缓存。新增封面与跳转时间独立、退出搜索和版本更新回归：原生模型检查 401 项、适配器 6 项通过。全库封面审计及实际 HTTP 对照保存在 `../sampling-pilot-2026-10-17/cover-audit/`。默认封面修复不代表旧代理视频、全部候选和全部搜索帧都已完成 HDR 重处理；该部分仍属于 L1。
-
-## 网页启动
-
-不需要 npm 构建或 Electron。需要 Python **3.9–3.12**、Pillow、FFmpeg/ffprobe；Python 3.13+ 不支持现有 `app.py` 的 `cgi` 模块。前端服务不安装或加载视觉/ASR 模型。
-
-先在另一个终端启动统一素材库（vf-agent 使用其现有 Python 环境，要求 3.11+）：
+无需 npm 构建。在统一服务运行后：
 
 ```bash
-cd /path/to/vf-agent
-python -m vf_agent library serve --db /path/to/run-unified/shot-library --port 62600
+VF_LIBRARY_STATE=/path/to/shot-library/server.json \
+PIXFUN_PYTHON=/path/to/service-python bash scripts/start-vf.sh
 ```
 
-再启动 Pixfun：
+打开 `http://127.0.0.1:8765/library`，端口可用 `PIXFUN_PORT` 修改。网页列出 shots、筛选、展开相似小图，并可生成单镜头编辑副本进入现有工作台；该入口尚不支持完整多镜头导演编排。
 
-```bash
-cd /path/to/pixfun
-export VF_LIBRARY_STATE=/path/to/run-unified/shot-library/server.json
-export PIXFUN_PYTHON=/path/to/python3.11
-bash scripts/start-vf.sh
-```
+编辑副本从 0 开始，时长最多 10 分钟，保留宽高比，最长边不超过 1280；原片不变。跨镜头语句保留完整文本但明确记录裁剪及原始句子区间，不冒充逐字对齐。只转码所选段，不重扫、不重建向量；缓存绑定源指纹和证据版本。
 
-打开 <http://127.0.0.1:8765/library>。端口可用 `PIXFUN_PORT` 改；地址使用 `127.0.0.1`，不要改成 `localhost`。服务只绑定回环地址。停止对应终端即可；停止前端不会删除素材库。两端应使用同一台机器；前端从 server.json 读取后端当前访问路径，不把 token 写进浏览器。
+## 本地接口及安全边界
 
-本工作区启动命令（在 visionflow 根目录）：
+原生 `/api/desktop/vf/status`、`search`、`sync`、`frame/<encoded_id>` 使用现有桌面鉴权；搜索复用统一服务。网页 `/api/vf/` 提供 status、search、shot、frame、video、use-shot 和 job。
 
-```bash
-bash sampling-pilot-2026-10-16/run-unified/start-library.sh
-# 上一行已启动服务时，不重复运行；以下在另一终端执行：
-VF_LIBRARY_STATE="$PWD/sampling-pilot-2026-10-16/run-unified/shot-library/server.json" \
-PIXFUN_PYTHON=/opt/homebrew/Caskroom/miniconda/base/envs/clawtrading/bin/python \
-bash pixfun/scripts/start-vf.sh
-```
+固定读取配置的回环服务地址，不接受浏览器指定任意目标 URL/源路径；不使用环境代理，不跟随重定向。保留 Host、Origin、Fetch-Site 检查和视频 Range 行为。网页目录模式关闭云端视觉入口。
 
-此处复用本机已有 Python 3.11 和 Pillow，没有向这个环境安装依赖。联调副本、项目、输出默认保存在 `pixfun/data/vf-integration/`，已被仓库忽略规则排除。可通过 `PIXFUN_DATA_DIR` 指定其他目录。新部署建议用独立虚拟环境。
+## 验证（2026-10-21）
 
-## 已接通
+运行测试需使用服务 Python；`PIXFUN_TEST_PYTHON` 指向该解释器，`PIXFUN_MODEL_PYTHON` 指向完整模型环境，`PIXFUN_VF_ROOT` 指向兼容仓库。导出测试需将编译好的 `pixfun-title` 所在目录加入 PATH。合成素材通过 `node scripts/prepare-media-test.cjs` 准备；AVFoundation 测试可用 `PIXFUN_TEST_VIDEO` 指定本地合成视频。
 
-- 分页列出真实 shots；默认文字检索，也支持本地自然语言/混合检索和标签筛选。
-- 相似镜头在卡片下展开小图，可查看具体命中时间；复用 LanceDB 向量。
-- 封面使用 vf-agent 当前代表帧，包括人工锁定和 HDR 显示覆盖；不重新选封面。
-- 详情包含原片时间区间、元信息、评分、候选、标签、可信状态和 ASR。未评分保持缺失，不伪造为 0。
-- 预览通过 Range 转接原库播放接口；带入 `playback.origin`，源文件变化/离线由原库拒绝播放。
-- “用于创作”：生成所选 shot 的 H.264/AAC 编辑副本，最长边不超过 1280，保留宽高比。原片只读。只做这一段的转码，不重扫、不重跑 ASR、不重建向量。
-- 进入现有 Pixfun 网页工作台，可以查看时间线/转写、保存创作指令、使用原型导出功能。两线程转码，选段和导出互斥。
-
-## 时间与可信度约定
-
-vf-agent 的 shot 时间是 video-relative，实际播放时间 = `shot.start/end + playback.origin`。编辑副本统一从 0 开始；ASR 的 shot 交集减去 `shot.start` 后带入。跨镜头句子保留全文，明确记录 `clipped` 和原始句子时间，不假装有逐字对齐。
-
-`searchable=false` 或 `timing_status=legacy_clock_unverified` 的转写只在待复核详情中展示，不进入剪辑文本。正常机器转写也不等于人工真值。完整原库证据保存在项目 `analysis.catalogEvidence`，镜头引用保存在 `vfSource`。
-
-副本 job ID 根据镜头、时间、源指纹、封面与证据快照生成。重用副本前再次请求原库检查源指纹；输入改变会生成新的 job。此缓存不覆盖原片、旧副本、人工标签或封面选择。
-
-## 接口
-
-| Pixfun 同源接口 | 后端行为 |
+| 验证 | 结果 |
 |---|---|
-| `GET /api/vf/status` | 原库 `api/status`，增加 `ok` |
-| `GET /api/vf/search?q=&mode=text&tag=&k=49&offset=0` | 原库 `api/search`，返回 `{ok, shots}`；单页最多 100 |
-| `GET /api/vf/search?similar=<shot_id>&k=6` | 相似镜头；排除参考 shot |
-| `GET /api/vf/shot?shot_id=...` | 原库新增 `api/shot`：按稳定 ID 获取当前详情 |
-| `GET /api/vf/frame/<encoded_frame_id>` | 当前封面/命中帧；完整编码 ID，保留时间基准中的 `/` |
-| `GET /api/vf/video/<shot_id>` | 流式转接视频及 206/416 Range 状态 |
-| `POST /api/vf/use-shot` | JSON `{shot_id}`，单任务生成编辑副本，返回 `jobId/analysis/sourceUrl` |
-| `GET /api/vf/job?id=...` | 读取已保存的目录镜头项目；不重分析 |
+| 目录投影 / HTTP 桥接 | 13 / 8 项通过 |
+| 分析队列 / 资源调度 / 工具边界 | 23 / 15 / 7 项通过 |
+| 真实 vf-agent CPU 编辑辅助 / 故事编译 | 18 / 14 项通过 |
+| 桌面 HTTP | 21 项通过，1 项因可选长视频样本未下载而跳过 |
+| 同步单元检查 / 同步导入归档重启循环 | 43 项通过 / 连续 20 轮正常退出 |
+| 真实视频导出 / 非零起点裁剪 | 9 / 1 项通过，含 1080p/4K、字幕、取消、源变化拒绝 |
+| Swift release / 签名 / 原生检查 | 构建和签名通过；867 模型、2 字体、13 输入框、172 快捷键、13 技能检查通过 |
+| AVFoundation | 真实像素、暂停起点、seek、播放、取消通过 |
+| 现有目录隔离验证 | 330 素材、380 shots、714 可用转写、6 段隔离；JPEG、Range、鉴权、关联原片文件头、搜索及刷新保留编辑通过 |
 
-适配器固定读取配置的本地服务，不接受客户端指定的 URL、路径或转发目标，不使用环境 HTTP 代理，不跟随重定向。API 验证 Host、Origin 和 Fetch-Site；首次顶层页面导航允许从外部页面进入，但不放开跨站 API。此模式关闭 `/api/vision` 云分析。
+本地证据、截图、数据库备份位于忽略的 `data/vf-integration/`，不提交私人媒体或元数据。实库测试 `tests/vf-native-live.py` 可通过参数指定预期数量，操作自己的临时原生数据库。上述结果验证接入和执行正确性，不代表视觉理解、歌词或剪辑审美已经人工验收。
 
-## 验证与证据（2026-10-17）
+最后核对时 vf-agent 工作区已发布 0.9.2；主服务和 worker 使用相同的显式版本白名单，目录返回实际引擎版本。0.9.2 的 CPU 编辑、故事、采样与 HTTP 接口重新验证；此兼容范围不代表其全部新增创作能力均已接入。
 
-```bash
-python tests/vf-bridge.test.py
-python tests/vf-clip-media.test.py
-node tests/studio.test.cjs
-python tests/vf-live-smoke.py --semantic --output data/vf-integration/live-smoke.json
-```
+## 后续事项
 
-- vf-agent `tests/test_shot_library.py`：66 项通过，包含新增稳定 ID 详情查询。
-- Pixfun adapter：8 项通过，覆盖时间映射、转写隔离、地址限制、帧 ID 编码/Range、缓存、失败不发布和单任务锁。
-- FFmpeg 真实回归：取合成素材 2.04–3.96 秒，解码 48 帧全部为目标蓝色段，未混入前后红/绿段；音画起点均为 0，时长差 <40ms，方向/尺寸为 160×90。
-- 原有 studio 控制器回归通过。
-- 真实 HTTP 验证：5 个素材集、342 assets、380 个唯一 shots、97,773 缓存帧、720 转写段；70 个 shot 有 HDR 显示修复；保留 5 个被标记的 ASR 关联记录。
-- “霍比屯”返回 3 个镜头，“新西兰之行”标签返回 83 个镜头，相似检索返回 6 个其他镜头；三张代表图 JPEG 可解码，视频 Range 206/416 正常。语义查询“湖边的风景”返回 6 个结果，本机该次调用约 6.45 秒，非性能基准或质量验收。
-- Chrome 实际点击：中文搜索 → 相似小图 → 镜头预览 → 用于创作 → 指令 → 导出。真实 13.380 秒霍比屯镜头生成 1280×720 编辑副本，导出 720×1280，浏览器两者都能播放；音画起点均为 0，视频 13.380033 秒、音频 13.376 秒。
-- 本地证据：`data/vf-integration/live-smoke.json`、`studio-export.jpg`、`library.jpg`。这些含私人素材信息，不纳入 Git。
-
-## 本轮边界与接续
-
-1. 网页端当前一次只选一个 shot。多镜头 selects/时间线、直接导出剪映/Resolve 待后续实现；原生素材库接入情况见文首。
-2. Pixfun 网页创作指令仍使用其原型规则，不是 vf-agent 或云端模型的导演决策。导出沿用竖屏加字/留边功能，不代表自动完成一部旅行片。刷新工作台会重新载入镜头分析，尚未完整恢复编辑会话。
-3. 仅复用已完成的封面显示修复；未改变旧代理的色彩或评分，也未解决所有原片曝光问题。编辑副本沿用目录播放源的色彩。
-4. 本次以只读镜头库接入为主；在原素材库修改人工标签/封面后，刷新 Pixfun 读取新结果。本页尚未提供写回控件。
-5. 没有启动新扫描、模型训练或定时任务。原有 L1–L7 和模型迭代 session 保持各自状态。
-6. 本地检出省略了完整演示长视频和原生离线示例；库与真实素材工作台不依赖它们。打包或检查宣传案例全片前应补全相应 Git/LFS 资源。
+1. **原片回链导出**：目录目前只有播放源指纹，没有完整、源绑定的代理→原片映射。需在 vf-agent 输出可核验的原片身份、时间偏移、音画起点、旋转及 HDR 处理策略，再启用对应导出。本地样本有 226 项路径不同，当前全部受保护。
+2. **精细视觉复核与成片验收**：目录上下文不等于逐镜头视觉描述。需要按需细看候选，再用真实旅行项目验收完整多镜头流程；未开启新的云端调用或合成。
+3. **更完整的地图/分类**：原片缺少 GPS/明确拍摄时间时继续显示未知；更多主体/行为分类需要真实视觉证据。不得用地名、文件名或背景检测补造这些事实。
+4. **统一库写回与发行**：原生人工标签/封面目前保存在 Pixfun，尚未回写统一库；发行包、HyperFrames 及私有美学能力另行验证。本轮未改 vf-agent 工作区、原片或暂停的自动任务。

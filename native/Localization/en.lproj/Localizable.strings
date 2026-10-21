@@ -1,1 +1,11 @@
 /* English source strings are the fallback; filenames and user content are verbatim. */
+
+/* VisionFlow catalog */
+"Show all media" = "Show all media";
+"Visual search" = "Visual search";
+"Refresh catalog" = "Refresh catalog";
+"Find similar shots in this trip" = "Find similar shots in this trip";
+"Find similar shots in all trips" = "Find similar shots in all trips";
+"VisionFlow · %lld files · %lld shots" = "VisionFlow · %lld files · %lld shots";
+"Similar shots" = "Similar shots";
+"All trips" = "All trips";

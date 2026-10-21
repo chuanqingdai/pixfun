@@ -68,6 +68,15 @@ def project_asset(shots):
             if finish > begin:
                 cues.append(dict(start=begin, end=finish, text=t['text'], human_verified=t.get('human_verified',False)))
     tags.update(filter(None, [context.get('collection'), context.get('date')]))
+    detail_tags = []
+    context_tags = {context.get('collection'), context.get('date'), context.get('place')}
+    for tag in sorted(tags - context_tags):
+        references = [dict(start=float(s['playback']['start']), end=float(s['playback']['end']),
+                           shotIds=[s['id']], text=tag)
+                      for s in shots if any(t.get('tag') == tag for t in s.get('tags', []))]
+        if references:
+            detail_tags.append(dict(id='vf-detail-' + hashlib.sha256(tag.encode()).hexdigest()[:24],
+                category='detail', key=tag, label=tag, aliases=[], source='visionflow-catalog', evidence=references))
     source = first['source']
     fp = meta.get('observation', {}).get('fingerprint')
     metadata = dict(width=width, height=height, duration=duration,
@@ -93,6 +102,7 @@ def project_asset(shots):
                   context=dict(location=context.get('place') or '', source='VisionFlow',
                                collection=context.get('collection') or '', date=context.get('date') or '',
                                locationStatus='confirmed' if context.get('place_confirmed') else 'needs review'),
+                  analysisEvidence=dict(version=1, tags=detail_tags, source='visionflow-catalog'),
                   analysisTags=sorted(tags), coverUrl=segments[0]['thumbnailUrl'],
                   url=f'/api/desktop/media/{identity}',
                   result={'analysis':dict(segments=segments, subtitleCues=sorted(cues,key=lambda t:t['start']),
@@ -148,6 +158,7 @@ class NativeCatalog:
                                     'tagCorrections','resolvedPlace','locationReview','analysisEvidence',
                                     'mediaAnalysis','analysisRevision','vectorIndex','syncSourceId','syncSourceName',
                                     'syncSourceKind','importBatchId','importedAt'):
+                            if key == 'analysisEvidence' and (previous.get(key) or {}).get('source') == 'visionflow-catalog': continue
                             if key in previous: incoming[key] = previous[key]
                         old_projection = previous.get('vfCatalog', {}).get('projectedContext', {})
                         for key, value in previous.get('context', {}).items():

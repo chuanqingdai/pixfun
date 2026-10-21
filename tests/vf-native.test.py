@@ -95,6 +95,77 @@ class NativeCatalogTests(unittest.TestCase):
         self.assertEqual(rows[0]['start'],1.2)
         self.assertEqual(rows[0]['mediaId'],self.library.list()[0]['id'])
 
+    def test_planning_reuses_ranges_without_model_or_editorial_signature(self):
+        from agent_engine import AgentEngine
+        from types import SimpleNamespace
+        import threading
+        r, source = project_asset([self.shot])
+        agent = SimpleNamespace(ready_source=lambda *_: (r, Path(source)))
+        with patch('shot_analysis.analyze_shots', side_effect=AssertionError('no repeat inference')):
+            returned, result = AgentEngine.understand(agent, {'mode':'local', 'intent':'create'}, r['id'], threading.Event())
+        self.assertIs(returned, r)
+        self.assertEqual(result['segments'][0]['start'], 1.2)
+        self.assertNotIn('editorial', result['segments'][0])
+        self.assertNotIn('shotAnalysis', r)
+        self.assertEqual([c['text'] for c in result['speechEvidence']['cues']], ['Good'])
+        self.assertEqual(result['speechEvidence']['excluded'], 2)
+        from agent_editor import source_speech
+        speech=source_speech(agent, r, Path(source))
+        self.assertEqual(speech['kind'],'asr')
+        self.assertEqual(speech['cues'],[{'start':1.2,'end':3.2,'text':'Good'}])
+
+        with patch('shot_analysis.analyze_shots', return_value=(r, {'segments':[]})) as analyze:
+            AgentEngine.understand(agent, {'intent':'analyze'}, r['id'], threading.Event())
+            analyze.assert_called_once()
+
+    def test_catalog_evidence_rejects_changed_or_unbound_source(self):
+        from vf_evidence import catalog_evidence
+        r, source = project_asset([self.shot])
+        no_fp = copy.deepcopy(r); no_fp['vfCatalog']['fingerprint'] = None
+        self.assertIsNone(catalog_evidence(no_fp, source))
+        self.source.write_bytes(b'changed')
+        with self.assertRaises(FileNotFoundError): catalog_evidence(r, source)
+
+    def test_original_header_read_never_changes_proxy_clock_or_user_place(self):
+        original=self.root/'original.mp4'; original.write_bytes(b'original')
+        self.shot['context']['original_source']=str(original)
+        self.bridge.sync(); record=self.library.list()[0]
+        before=copy.deepcopy(record)
+        with patch('desktop_service.engine.probe_media', return_value=dict(available=True,
+                duration=999, capturedAt='2024-10-01T12:00:00+08:00',location={'latitude':39.9,'longitude':116.4})) as probe:
+            metadata=self.library.map_metadata(record['id'])
+        probe.assert_called_once_with(original.resolve())
+        self.assertEqual(metadata['metadataSource'], 'catalog-linked-original')
+        self.assertNotIn('duration',metadata)
+        self.assertEqual(self.library.get(record['id'])[0], before)
+        original.unlink()
+        with self.assertRaises(FileNotFoundError): self.library.map_metadata(record['id'])
+
+    def test_legacy_detection_tags_are_details_not_primary_subjects(self):
+        self.shot['tags'].extend([{'tag':'dog'}, {'tag':'Lake'}])
+        self.bridge.sync(); record=self.library.list()[0]
+        tag=record['analysisEvidence']['tags'][0]
+        self.assertEqual((tag['label'],tag['category']),('dog','detail'))
+        self.assertEqual(tag['evidence'][0]['start'],1.2)
+        self.library.patch(record['id'], tagCorrections={'hidden':[tag['id']], 'added':[]})
+        self.shot['tags'].append({'tag':'bird'})
+        self.bridge.sync(); updated=self.library.get(record['id'])[0]
+        self.assertEqual({t['label'] for t in updated['analysisEvidence']['tags']},{'dog','bird'})
+        self.assertEqual(updated['tagCorrections']['hidden'],[tag['id']])
+
+    def test_mixed_catalog_ranking_keeps_every_reference_without_fake_scores(self):
+        from agent_tools import rank_available_evidence
+        candidates=[{'id':'cached'}, {'id':'local','framePath':'frame.jpg'}, {'id':'cached2'}]
+        def rank(paths):
+            self.assertEqual(paths,['frame.jpg'])
+            return {'scores':[.75]}
+        ranked, missing=rank_available_evidence(candidates,candidates,rank)
+        self.assertEqual([r['id'] for r in ranked],['cached','local','cached2'])
+        self.assertEqual(missing,2)
+        self.assertNotIn('similarity',ranked[0]); self.assertNotIn('similarity',ranked[2])
+        self.assertEqual(ranked[1]['similarity'],.75)
+        self.assertNotIn('similarity',candidates[1])
+
     def test_proxy_is_not_exported_as_an_original(self):
         from agent_export import SourceSnapshot
         from types import SimpleNamespace

@@ -908,3 +908,13 @@
 "Clear map selection" = "取消选择";
 "Story chapters did not match the shot sequence. Retry planning; your analysis and confirmed route are kept." = "故事章节与分镜顺序未对应，请重试编排。素材分析和已确认行程均已保留。";
 "Add videos, then ask me to analyze or edit…" = "添加素材，开始分析或创作…";
+
+/* VisionFlow catalog */
+"Show all media" = "显示全部素材";
+"Visual search" = "画面搜索";
+"Refresh catalog" = "刷新镜头库";
+"Find similar shots in this trip" = "本次旅行的相似镜头";
+"Find similar shots in all trips" = "全部旅行的相似镜头";
+"VisionFlow · %lld files · %lld shots" = "VisionFlow · %lld 个素材 · %lld 个镜头";
+"Similar shots" = "相似镜头";
+"All trips" = "全部旅行";

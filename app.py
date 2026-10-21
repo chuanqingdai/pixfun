@@ -52,9 +52,10 @@ def command_exists(name: str) -> bool:
 
 
 def run_command(args: list[str], timeout: int = 120) -> tuple[int, str, str]:
+    from media_commands import bounded_command
     try:
         proc = subprocess.run(
-            args,
+            bounded_command(args),
             capture_output=True,
             text=True,
             timeout=timeout,

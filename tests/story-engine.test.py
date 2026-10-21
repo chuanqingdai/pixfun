@@ -22,7 +22,7 @@ class StoryEngineTests(unittest.TestCase):
         self.gateway = ModelGateway(self.folder)
         if not self.gateway.capabilities().get('localStory'):
             self.temp.cleanup()
-            self.skipTest('Installed VisionFlow 0.9.1 runtime unavailable')
+            self.skipTest('Installed compatible VisionFlow runtime unavailable')
         self.cancel = threading.Event()
         self.photo = ROOT/'public/images/pixfun-lockup-v2.png'
         self.video = Path(os.environ.get('PIXFUN_TEST_VIDEO', str(ROOT/'native/Examples/wild-alaska/wild-alaska.mp4')))
