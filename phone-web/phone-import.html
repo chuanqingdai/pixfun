@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#151819"><meta name="referrer" content="no-referrer"><title>Import from phone — Pixfun</title><link rel="stylesheet" href="/phone-import.css"><script src="/phone-sha256.js" defer></script><script src="/phone-import.js" defer></script></head>
+<body data-screen="connecting"><header><span class="brand">Pixfun</span><span class="header-label">Phone import</span></header>
+<main aria-labelledby="transferTitle">
+<h1 id="transferTitle" tabindex="-1">Connecting to your Mac…</h1>
+<p id="guidance">Keep Pixfun running on your Mac and both devices on the same Wi-Fi.</p>
+<div id="chooser" hidden><label class="choose-button" for="files"><span aria-hidden="true">＋</span> Choose photos &amp; videos</label><input id="files" type="file" accept="image/*,video/*" multiple><p class="hint">Up to 200 files · 8 GB per file · RAW not supported</p></div>
+<details id="selectedFiles" hidden><summary><span id="selection"></span><span class="details-label">View files</span></summary><ul id="fileList" aria-label="Selected files"></ul></details>
+<div id="progressArea" hidden><p id="progressLabel" role="status" aria-live="polite"></p><progress id="progress" max="100" value="0" aria-label="Current file progress"></progress></div>
+<p id="error" class="error" role="alert" hidden></p>
+<button id="start" class="primary" type="button" disabled hidden>Start transfer</button>
+<p id="result" class="result" role="status" hidden></p>
+<p id="completionNote" hidden>You can close this page.<br>To import more, scan a new code on your Mac.</p>
+<p id="privacyNote" class="hint" hidden>Only files you select are sent. Originals stay on your phone.</p>
+</main></body></html>

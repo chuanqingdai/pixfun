@@ -2,18 +2,93 @@
 import base64
 import json
 import os
+import re
 from pathlib import Path
 import select
 import signal
 import subprocess
+import sys
 import threading
 import time
+from scripts.agent_process_security import worker_environment
 from urllib import request, error
 from urllib.parse import urlparse
+
+# The frozen service also loads optional adapters from signed Resources.
+sys.dont_write_bytecode = True
+
+REQUIRED_ENGINE_VERSION = '0.9.1'
+
+
+def visionflow_runtime():
+    configured = os.environ.get('PIXFUN_VF_ROOT')
+    if configured: return Path(configured)
+    preferred = Path.home() / 'work/visionflow/vf-agent-0.9.1'
+    return preferred if preferred.is_dir() else Path.home() / 'work/visionflow/vf-agent'
 
 
 class AgentCancelled(Exception): pass
 class CapabilityMissing(Exception): pass
+class ModelOutputError(ValueError): pass
+class LocalWorkerError(CapabilityMissing):
+    """A failed worker invocation, distinct from missing runtime/configuration."""
+    def __init__(self, message, retryable=False):
+        super().__init__(message)
+        self.retryable = retryable
+
+
+def retryable_analysis_error(exc):
+    # Allowlist temporary failures; never retry missing files, credentials,
+    # unsupported runtimes or exhausted structured-output repairs blindly.
+    if isinstance(exc, (TimeoutError, BrokenPipeError, ConnectionResetError, MemoryError)):
+        return True
+    return getattr(exc, 'retryable', False) is True
+
+
+def worker_response_error(message):
+    message = str(message)
+    temporary = any(token in message.lower() for token in (
+        'out of memory', 'memoryerror', 'insufficient memory', 'timeout', 'timed out'))
+    return LocalWorkerError(message, retryable=temporary)
+
+
+def structured_result(value):
+    """Accept a JSON object or an exact fenced JSON object, never eval or prose."""
+    if isinstance(value, dict) and set(value) == {'raw'}: value = value['raw']
+    if isinstance(value, str):
+        value = value.strip()
+        fence = re.fullmatch(r'```(?:json)?\s*\n?(.*?)\n?```', value, re.S | re.I)
+        if fence: value = fence[1].strip()
+        try: value = json.loads(value)
+        except (ValueError, TypeError):
+            # Some local VLM responses contain every JSON token but use `}`
+            # for a final array closer. Repair delimiters only when the
+            # mismatch is confined to the closing tail. Never complete text,
+            # strings, values or a genuinely truncated response.
+            characters = list(value); stack = []; quoted = escaped = False; repaired = False
+            for index, character in enumerate(characters):
+                if quoted:
+                    if escaped: escaped = False
+                    elif character == '\\': escaped = True
+                    elif character == '"': quoted = False
+                    continue
+                if character == '"': quoted = True
+                elif character in '{[': stack.append('}' if character == '{' else ']')
+                elif character in '}]':
+                    if not stack: stack = []; break
+                    expected = stack.pop()
+                    if character != expected:
+                        if any(rest not in '}] \t\r\n' for rest in characters[index:]): stack = []; break
+                        characters[index] = expected; repaired = True
+            if repaired and not quoted and len(stack) <= 1:
+                characters.extend(reversed(stack)); stack = []
+                try: value = json.loads(''.join(characters))
+                except (ValueError, TypeError): raise ModelOutputError('Model output is not a complete JSON object.') from None
+            else:
+                raise ModelOutputError('Model output is not a complete JSON object.') from None
+    if not isinstance(value, dict) or 'raw' in value:
+        raise ModelOutputError('Model did not return a valid structured result.')
+    return value
 
 
 def cached_model(name):
@@ -29,14 +104,22 @@ class NoRedirect(request.HTTPRedirectHandler):
 class ModelGateway:
     def __init__(self, directory):
         self.directory = Path(directory)
-        self.python = os.environ.get('PIXFUN_MODEL_PYTHON', str(Path.home() / '.local/bin/python3.12'))
+        runtime = visionflow_runtime()
+        self.runtime = runtime
+        runtime_python = runtime / '.pixfun-venv/bin/python'
+        self.python = os.environ.get('PIXFUN_MODEL_PYTHON', str(runtime_python))
         self.worker = os.environ.get('PIXFUN_AGENT_WORKER', str(Path(__file__).parent / 'scripts/agent-model-worker.py'))
+        bundled_hf = Path(self.worker).parent/'HyperFrames'
+        self.hyperframes_runtime = Path(os.environ.get('PIXFUN_HYPERFRAMES_RUNTIME', str(bundled_hf if bundled_hf.is_dir() else Path(__file__).parent/'build-native/hyperframes-runtime')))
         self.vision = os.environ.get('PIXFUN_LOCAL_VLM', '') or cached_model('mlx-community/Qwen3-VL-4B-Instruct-4bit')
         self.speech = os.environ.get('PIXFUN_LOCAL_ASR', '') or cached_model('mlx-community/whisper-large-v3-turbo-q4')
         self.retrieval = os.environ.get('PIXFUN_LOCAL_RETRIEVAL', '') or cached_model('google/siglip2-base-patch16-256')
         self.process = None
         self.lock = threading.Lock()
+        from analysis_resources import AnalysisResources
+        self.resources = AnalysisResources()
         self.observations = {}
+        self.output_language = os.environ.get('PIXFUN_LANGUAGE', 'zh-Hans')
         self.cloud = {'baseURL': os.environ.get('PIXFUN_AGENT_BASE_URL', 'https://api.openai.com/v1'),
                       'model': os.environ.get('PIXFUN_AGENT_MODEL', ''),
                       'visionModel': os.environ.get('PIXFUN_AGENT_VISION_MODEL', ''),
@@ -54,16 +137,51 @@ class ModelGateway:
         self.cloud = {k: str(values.get(k, '')).strip() for k in ('baseURL', 'model', 'visionModel', 'apiKey')}
 
     def capabilities(self):
-        runtime = Path(os.environ.get('PIXFUN_VF_ROOT', str(Path.home() / 'work/visionflow/vf-agent')))
+        runtime = self.runtime
         available = Path(self.python).is_file() and Path(self.worker).is_file() and (runtime / 'scripts/vf_engine.py').is_file()
+        try:
+            declared = re.search(r'^version\s*=\s*"([0-9][^"]*)"', (runtime/'pyproject.toml').read_text(), re.M)
+            version = declared.group(1) if declared else 'unknown'
+        except OSError: version = 'unknown'
+        available = available and version == REQUIRED_ENGINE_VERSION
+        hyperframes = available and all((self.hyperframes_runtime/p).is_file() for p in ('node', 'node_modules/hyperframes/bin/hyperframes.mjs', 'node_modules/gsap/dist/gsap.min.js'))
+        hyperframes = hyperframes and all((Path(self.worker).parent/p).is_file() for p in ('vf_hyperframes.py', 'vf_travel_graphics.py', 'agent_process_security.py', 'hyperframes-templates/split-flap-board.html'))
+        hyperframes = hyperframes and Path(os.environ.get('PIXFUN_HYPERFRAMES_BROWSER', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')).is_file() and Path('/usr/bin/sandbox-exec').is_file()
+        beauty = False
+        adaptive = available and Path(self.worker).with_name('vf_media_catalog.py').is_file()
+        scene_log = available and (runtime/'vf_agent/scene_log.py').is_file()
+        trip_map = available and all((runtime/p).is_file() for p in (
+            'vf_agent/trip_map.py', 'vf_agent/apple_maps.py', 'vf_agent/media_metadata.py'))
+        story = available and Path(self.worker).with_name('vf_story.py').is_file() and all((runtime/p).is_file() for p in (
+            'vf_agent/story_workflow.py', 'vf_agent/story_restore.py', 'vf_agent/story_hints.py', 'vf_agent/story_qc.py'))
+        editorial_qc = available and (runtime/'vf_agent/story_qc.py').is_file()
+        final_export = available and (runtime/'vf_agent/story_final.py').is_file()
+        if os.environ.get('PIXFUN_BEAUTY_MANIFEST') and Path(self.worker).with_name('vf_beauty.py').is_file():
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location('pixfun_beauty_config', Path(self.worker).with_name('vf_beauty.py'))
+                module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+                beauty = available and bool(module.configuration())
+            except (OSError, ValueError, KeyError, TypeError): pass
         tools = [('ask','Qwen3-VL · intent / tool selection / vision / planning',bool(available and self.vision)),
                  ('transcribe','Whisper · speech transcription',bool(available and self.speech)),
                  ('rank','SigLIP2 · semantic retrieval',bool(available and self.retrieval)),
+                 ('catalog','Adaptive sampling / local visual index',bool(adaptive and self.retrieval)),
                  ('inspect','OpenCV quality / Apple Vision OCR',available),
-                 ('motion','VisionFlow optical flow',available and (runtime/'scripts/vf_motion.py').is_file())]
+                 ('motion','VisionFlow optical flow',available and (runtime/'scripts/vf_motion.py').is_file()),
+                 ('scene_log','Scene logs / trip facts',scene_log),
+                 ('trip_map','Apple Maps trip workspace',trip_map),
+                 ('story','Story-led rough cut',story),
+                 ('editorial_qc','Editorial QC',editorial_qc),
+                 ('final_export','Original-media final export / 4K',final_export),
+                 ('hyperframes','HyperFrames · local motion titles',hyperframes),
+                 ('beauty','Aesthetic ranking' if beauty else 'Aesthetic ranking · private weights required',beauty)]
         return {'localText': bool(available and self.vision), 'localVision': bool(available and self.vision),
                 'localSpeech': bool(available and self.speech), 'cloudText': bool(self.cloud['apiKey'] and self.cloud['model']),
-                'localRetrieval': bool(available and self.retrieval),
+                'localRetrieval': bool(available and self.retrieval), 'adaptiveSampling':bool(adaptive),
+                'engineVersion': version, 'analysisScheduling':self.resources.status(),
+                'localHyperframes':bool(hyperframes), 'localBeauty':bool(beauty), 'localSceneLog':bool(scene_log), 'localTripMap':bool(trip_map),
+                'localStory':bool(story), 'localEditorialQC':bool(editorial_qc), 'localFinalExport':bool(final_export),
                 'tools': [{'id':key,'name':name,'installed':bool(installed),'lastExecution':self.observations.get(key,'not-tested')} for key,name,installed in tools],
                 'cloudVision': bool(self.cloud['apiKey'] and self.cloud['visionModel']),
                 'baseURL': self.cloud['baseURL'], 'model': self.cloud['model'], 'visionModel': self.cloud['visionModel'],
@@ -79,16 +197,22 @@ class ModelGateway:
             p.stdin.close(); p.stdout.close()
 
     def local(self, payload, cancel):
-        if payload.get('operation') not in {'ask', 'transcribe', 'inspect', 'rank', 'motion'}:
+        if payload.get('operation') not in {'ask', 'transcribe', 'inspect', 'rank', 'motion', 'beauty', 'catalog', 'hyperframes', 'story'}:
             raise ValueError('Unsupported local operation')
-        with self.lock:
+        light = payload.get('operation') in {'inspect', 'motion', 'story'} or (payload.get('operation') == 'catalog' and payload.get('action') == 'sample')
+        if light:
+            with self.resources.lease('prepare', cancel):
+                return self.prepare_local(payload, cancel)
+        with self.lock, self.resources.lease('model', cancel):
             if cancel.is_set(): raise AgentCancelled()
+            if self.capabilities().get('engineVersion') != REQUIRED_ENGINE_VERSION:
+                raise CapabilityMissing(f'This client requires VisionFlow {REQUIRED_ENGINE_VERSION}. An incompatible runtime was not used; your files are kept.')
             if not Path(self.python).is_file() or not payload.get('model'):
                 raise CapabilityMissing('Local MLX runtime or cached model is missing. Configure the installed runtime; no model will be downloaded automatically.')
             if self.process is None or self.process.poll() is not None:
                 self.close()
-                env = {**os.environ, 'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'}
-                self.process = subprocess.Popen([self.python, '-u', self.worker], stdin=subprocess.PIPE,
+                env = worker_environment()
+                self.process = subprocess.Popen([self.python, '-B', '-u', self.worker], stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env, start_new_session=True)
             p = self.process
             p.stdin.write(json.dumps(payload) + '\n'); p.stdin.flush()
@@ -97,18 +221,88 @@ class ModelGateway:
                 if cancel.is_set(): self.close(); raise AgentCancelled()
                 if select.select([p.stdout], [], [], .2)[0]:
                     line = p.stdout.readline()
-                    if not line: self.close(); raise CapabilityMissing('Local model process stopped. Check MLX/Metal and available memory.')
+                    if not line: self.close(); raise LocalWorkerError('Local model process stopped. Check MLX/Metal and available memory.', retryable=True)
                     result = json.loads(line)
                     if not result.get('ok'):
                         self.observations[payload['operation']] = 'failed'
-                        raise CapabilityMissing(result.get('error', 'Local inference failed'))
+                        failure = worker_response_error(result.get('error', 'Local inference failed'))
+                        if payload['operation'] == 'hyperframes' or failure.retryable: self.close()
+                        raise failure
                     self.observations[payload['operation']] = 'verified'
                     return result['value']
             self.close(); raise TimeoutError('Local inference timed out; completed results are retained.')
 
+    def hyperframes(self, items, folder, cancel):
+        return self.local({'operation':'hyperframes', 'model':'hyperframes-0.8.123', 'runtime':str(self.hyperframes_runtime),
+                           'folder':str(folder), 'items':items}, cancel)
+
+    def prepare_local(self, payload, cancel):
+        """One-shot CPU helper; never starts, unloads or waits on the MLX worker."""
+        if self.capabilities().get('engineVersion') != REQUIRED_ENGINE_VERSION or not Path(self.python).is_file():
+            raise CapabilityMissing(f'Local VisionFlow {REQUIRED_ENGINE_VERSION} preprocessing runtime is unavailable.')
+        if cancel.is_set(): raise AgentCancelled()
+        env = worker_environment()
+        env.update(OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1')
+        # SIGKILL (-9) is the observed macOS resource-failure mode. Retry the
+        # same immutable payload once after permanently degrading this session
+        # to serial preprocessing; outer window checkpoints remain reusable.
+        for attempt in range(2):
+            p = subprocess.Popen([self.python, '-B', '-u', self.worker, '--preprocess-only'],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, env=env, start_new_session=True)
+            deadline = time.monotonic() + 600
+            data = json.dumps(payload) + '\n'
+            retry = False
+            try:
+                while True:
+                    if cancel.is_set(): raise AgentCancelled()
+                    if time.monotonic() >= deadline: raise TimeoutError('Local preprocessing timed out.')
+                    try:
+                        output, _ = p.communicate(data, timeout=.2)
+                        break
+                    except subprocess.TimeoutExpired: data = None
+                if cancel.is_set(): raise AgentCancelled()
+                # Report operation and exit code only, never arbitrary stderr (which
+                # can contain local paths/credentials). A failed process is not success
+                # even if it emitted an OK packet before crashing during cleanup.
+                if p.returncode:
+                    self.observations[payload['operation']] = 'failed'
+                    if p.returncode == -signal.SIGKILL and attempt == 0:
+                        self.resources.force_serial()
+                        retry = True
+                    else:
+                        raise LocalWorkerError(f"Local preprocessing stopped ({payload['operation']}, exit {p.returncode}).", retryable=True)
+                else:
+                    try: result = json.loads(output)
+                    except ValueError: raise LocalWorkerError('Local preprocessing stopped without a valid result.', retryable=True) from None
+                    if not isinstance(result, dict) or not result.get('ok'):
+                        self.observations[payload['operation']] = 'failed'
+                        raise worker_response_error(result.get('error', 'Local preprocessing failed') if isinstance(result, dict) else 'Invalid preprocessing result')
+                    self.observations[payload['operation']] = 'verified'
+                    return result['value']
+            finally:
+                if p.poll() is None:
+                    os.killpg(p.pid, signal.SIGTERM)
+                    try: p.wait(timeout=3)
+                    except subprocess.TimeoutExpired: os.killpg(p.pid, signal.SIGKILL); p.wait()
+                p.stdin.close(); p.stdout.close()
+            if retry: continue
+
+    def story(self, payload, cancel):
+        if not self.capabilities().get('localStory'):
+            raise CapabilityMissing('VisionFlow story adapter is unavailable. Rebuild the app or check the local engine; analysis is retained.')
+        return self.local({**payload, 'operation':'story'}, cancel)
+
+    def beauty(self, images, cancel):
+        if not self.capabilities().get('localBeauty'): raise CapabilityMissing('Trusted aesthetic weights are not configured.')
+        return self.local({'operation':'beauty', 'model':'vf-aesthetic', 'images':images},cancel)
+
     def ask(self, prompt, cancel, mode='local', images=None, max_tokens=1800):
-        from product_language import ENGLISH_DEFAULT
-        prompt = ENGLISH_DEFAULT + prompt
+        from product_language import language_instruction
+        instruction = language_instruction(getattr(self, 'output_language', 'zh-Hans'))
+        prompt = instruction + prompt
+        if getattr(self, 'output_language', 'zh-Hans') == 'zh-Hans':
+            prompt += '\n' + instruction
         if mode == 'local':
             result = self.local({'operation': 'ask', 'model': self.vision, 'prompt': prompt,
                                  'images': images or [], 'maxTokens': max_tokens}, cancel)
@@ -131,14 +325,13 @@ class ModelGateway:
                 if len(raw) > 2_000_000: raise ValueError('Cloud response exceeded the size limit.')
                 answer = json.loads(raw)['choices'][0]
                 if answer.get('finish_reason') == 'length': raise ValueError('Model output was truncated. Retry with a smaller task.')
-                result = json.loads(answer['message']['content'])
+                result = structured_result(answer['message']['content'])
             except error.HTTPError as exc:
                 raise CapabilityMissing('Cloud request failed (HTTP %s). Check model access, key and quota.' % exc.code) from None
             except error.URLError:
                 raise CapabilityMissing('Cloud connection failed. Local processing was not substituted.') from None
         if cancel.is_set(): raise AgentCancelled()
-        if not isinstance(result, dict) or 'raw' in result: raise ValueError('Model did not return a valid structured result.')
-        return result
+        return structured_result(result)
 
     def transcribe(self, source, cancel):
         return self.local({'operation': 'transcribe', 'model': self.speech, 'source': str(source)}, cancel)

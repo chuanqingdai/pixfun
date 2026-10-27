@@ -1,9 +1,13 @@
 # Pixfun desktop preview — third-party components
 
+- Motion graphics: HyperFrames 0.8.123 (Apache-2.0), GSAP 3.14.2 (GSAP Standard License), and Node.js 24.6.0 (its bundled LICENSE and dependency notices). Full runtime notices are retained under `Contents/Resources/HyperFrames`, including `NODE-LICENSE` and each package's license files. The split-flap template's Apache-2.0 license and attribution are included under `Contents/Resources/hyperframes-templates`. Chrome is supplied by the user and is not redistributed.
+
 - Electron: MIT; Chromium and bundled dependencies have their own licenses, included by Electron in the application resources.
 - Python: PSF License; the standalone service includes the Python runtime. PyInstaller is GPL with its bootloader exception allowing distribution of bundled applications.
 - FFmpeg and FFprobe: built from the official FFmpeg 9.0.2 release, **without GPL or nonfree components** and without optional third-party libraries. LGPL v2.1 or later. They run as separate command-line programs, not linked into Pixfun. The complete unmodified corresponding source archive, license and exact build script are included under `Contents/Resources/licenses/ffmpeg`. Users may rebuild and replace these programs under `Contents/Resources/bin` in this unsigned development build. FFmpeg project: https://ffmpeg.org/.
 - Existing website fonts and visual media retain their original licenses and credits in the repository's ASSETS.md and media source records. No user library, user footage, downloaded test collection, model cache or credentials are included in the app.
+
+The FFmpeg build explicitly enables Apple's system VideoToolbox framework for H.264 source exports; it does not bundle x264 or other optional third-party codec libraries.
 
 This is a local development preview, not a signed/notarized public release. Release engineering must review all component notices, supported OS versions and codec distribution obligations before public distribution.
 

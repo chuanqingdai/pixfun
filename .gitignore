@@ -7,7 +7,7 @@ data/mac-applications.sqlite3*
 __pycache__/
 *.pyc
 node_modules/
-.desktop-venv/
+.desktop-venv
 build-desktop/
 dist-desktop/
 build-native/

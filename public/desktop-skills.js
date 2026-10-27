@@ -143,6 +143,60 @@
     'travel-guide':['Recorded explanations with matching B-roll; a factual, topic-led guide.','Scenery alone used to invent advice or destination facts.']
   };
   skills.forEach(skill=>{[skill.applicability,skill.notFor]=scopes[skill.id];});
+  // Product-owned adapters over the reviewed, bundled HyperFrames renderer.
+  // No remote prompt packs or third-party installation commands are executed.
+  const motionSkills = [
+    {id:'motion-titles',title:'Motion Titles',coverLabel:'Give your story a title',coverSymbol:'textformat',
+      copy:'Give your travel film a clear opening, place label or closing line.',
+      applicability:'Travel photos or videos that need one opening title, place label or closing line.',
+      notFor:'Multi-chapter layouts, tracked text or AI-generated footage.',
+      value:'Set the scene, name a confirmed place or leave viewers with a closing thought. Add one readable title while keeping the moments and sound you have already chosen.',
+      structure:['Set the scene','Give the words room','Review the title in context'],
+      beats:['Choose an opening title, place label or closing line. Use your wording or a supported shot label.','Use a shot long enough for the title and check that the words leave the main subject visible.','Watch the entrance, reading time and exit. Keep existing cuts, timing and sound unless you ask to change them.'],
+      pacing:'Opening titles and place labels use the first shot lasting at least 2.5s; endings use the final 2.5–4.6s. Review actual reading time, not just overlay duration.',
+      avoid:'Use confirmed names and dates. Do not invent locations, add extra chapters or imply that the cover is an exact preview.',
+      capabilityNote:'One animated opening title, place label or ending per film. Placement is automatic. Multiple titles, tracked text and custom font or layout controls are not supported.',
+      highlights:[{title:'Introduce the story',body:'Give the opening or ending a clear purpose with a short line.'},{title:'Protect the picture',body:'Review contrast and overlap with faces, landmarks and existing captions.'},{title:'Keep your edit',body:'Add a graphic without changing the selected shots or sound.'}],
+      materialCases:[{title:'Photos only',body:'Add a title over a held photo. Do not invent camera movement or location sound.'},{title:'An existing film',body:'Keep its sequence, cuts and audio. Change only the requested title layer.'}],
+      example:'Add an opening motion title “Weekend by the sea” to this edit. Keep all shots and sound unchanged.'},
+    {id:'journey-route',title:'Journey Route',coverLabel:'Connect two places',coverSymbol:'point.topleft.down.to.point.bottomright.curvepath',
+      copy:'Help viewers follow your journey from one place to the next.',
+      applicability:'Travel photos or videos that need a visual connection between two confirmed places.',
+      notFor:'GPS tracks, accurate maps, inferred itineraries or multi-stop routes.',
+      value:'Give a change of place a clear visual cue across phone, camera and drone footage. Connect the two names you provide without inventing the journey between them.',
+      structure:['Confirm both places','Connect the journey','Check the direction'],
+      beats:['Provide a departure and destination. Missing names are requested, never guessed from scenery.','Show one animated connection over the first suitable shot. Treat it as a schematic, not a map or recorded flight path.','Check the names, reading order and travel direction in the preview. Keep the existing sequence and sound.'],
+      pacing:'Use the first shot lasting at least 2.5s, with one route shown for up to 4.6s. Check that both names can be read before the graphic leaves.',
+      avoid:'Use only the two places you supply. Do not infer an itinerary, transport mode, distance or travel time from the graphic or cover.',
+      capabilityNote:'One two-place route per film, with automatic opening placement. No geographic maps, GPS tracks, multi-stop routes or automatic itinerary detection.',
+      highlights:[{title:'Keep places accurate',body:'You supply both names; the scenery never fills in missing details.'},{title:'Make the connection clear',body:'Use one departure, one destination and an easy-to-follow direction.'},{title:'Keep the journey honest',body:'A schematic does not prove a flight, route, distance or travel time.'}],
+      materialCases:[{title:'Several destinations',body:'Choose one pair for this graphic. A multi-stop itinerary is not supported.'},{title:'No confirmed location',body:'Ask for both names before adding a route; do not guess from the footage.'}],
+      example:'Add a route from Tokyo to Kyoto to this edit. Keep the existing shots and sound.'},
+    {id:'highlight-counter',title:'Highlight Counter',coverLabel:'Make one number stand out',coverSymbol:'number',
+      copy:'Make the days, stops or milestones of your trip stand out.',
+      applicability:'Travel photos or videos that need one confirmed number and a short label.',
+      notFor:'Automatic counting, inferred travel statistics or live dashboards.',
+      value:'Give viewers one memorable takeaway, such as the days or stops in your trip. Turn a number you confirm into a short count-up while leaving the footage intact.',
+      structure:['Confirm the number','Name what it means','Let the final count land'],
+      beats:['Supply an integer from 1 to 9999. Clip count is not treated as a count of days, places or events.','Use a short label of up to 24 characters, such as days or stops. Keep the meaning and unit unchanged.','Review the count-up and final value on the first suitable shot. Check that the final number stays readable before the graphic leaves.'],
+      pacing:'Use the first shot lasting at least 2.5s, with one count-up shown for up to 4.6s. Check the final value’s hold time in the rendered preview.',
+      avoid:'Use the exact count and label you provide. Do not infer statistics from clips, inflate totals or treat the cover as proof of your trip.',
+      capabilityNote:'One count-up per film, with an integer from 1 to 9999 and a label of up to 24 characters. No automatic counting, decimals, live data or multiple counters.',
+      highlights:[{title:'One meaningful number',body:'Choose one takeaway instead of filling the frame with statistics.'},{title:'Keep the count true',body:'The number and its label come from you, not from a guess about the footage.'},{title:'Make it readable',body:'Check size, contrast and the final hold against the actual background.'}],
+      materialCases:[{title:'Many clips from one place',body:'Ask for the real count; ten clips do not mean ten stops.'},{title:'A short or busy shot',body:'Review the final number against the background. Do not extend the film just to fit a counter.'}],
+      example:'Add a counter showing 3 stops. Keep the existing timeline and original sound.'}
+  ];
+  for(const skill of motionSkills) Object.assign(skill, {
+    category:'motion',image:`skill-${skill.id}-travel-v3`,coverTone:'amber',source:`${skill.id}/SKILL.md`,version:'1.1',actionTitle:'Use skill',
+    materials:['Photos & video','New or existing edits'],
+    pacing:'One graphic, at least 2.5 seconds of readable time. Never extend an existing film just to fit an effect.',
+    sound:'Keep existing sound. No automatic music, voiceover or generated audio.',
+    avoid:'Do not infer private facts or execute external code. Graphic parameters are validated; isolation failure stops rendering.',
+    handling:['Existing edit: keep every shot and only change the graphic layer.','New film: use the selected material and review the graphic in context.'],
+    capabilityNote:'Connected to bundled HyperFrames motion rendering. One graphic per film; title placement is automatic. Requires the local runtime and macOS render isolation. No cloud fallback.',
+    ...skill
+  });
+  skills.push(...motionSkills);
   function buildBrief(skill,direction){return `${skill.title}\nBest for: ${skill.applicability}\nNot for: ${skill.notFor}${skill.source ? `\nFull specification: CreatorSkills/${skill.source} (v${skill.version}). This brief is a summary; consult the bundled specification.` : ''}${skill.capabilityNote ? `\nAvailability: ${skill.capabilityNote}\nHonor the requested outcome; create a supported edit preview when asked. Do not claim unimplemented packaging has been rendered.` : ''}\n\nStory framework:\n${skill.structure.map((beat,i)=>`${i+1}. ${beat}: ${skill.beats[i]}`).join('\n')}\nPacing: ${skill.pacing}\nSound: ${skill.sound}\nMaterial handling: ${skill.handling.join(' ')}\nGuardrails: ${skill.avoid}\n\nCreator direction: ${direction.trim()||'Use the strategy above with the selected footage.'}`;}
   if(typeof document==='undefined'){module.exports={skills,buildBrief};return;}
   if(!window.PixfunDesktop)return;

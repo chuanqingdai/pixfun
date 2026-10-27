@@ -26,6 +26,7 @@ parser.add_argument('--workspace', type=Path, help='Reuse an isolated packaged-a
 parser.add_argument('--cases', default='photos,mixed,videos')
 parser.add_argument('--timeout', type=float, default=1800, help='Per-task local inference deadline in seconds')
 parser.add_argument('--repeat', action='store_true', help='Repeat the request to measure analysis/render cache reuse')
+parser.add_argument('--require-story-engine', action='store_true', help='Require the real VisionFlow story compilation artifact')
 args = parser.parse_args()
 resources = args.app.resolve()/'Contents/Resources'
 workspace = args.workspace.resolve() if args.workspace else Path(tempfile.mkdtemp(prefix='pixfun-packaged-agent-'))
@@ -123,6 +124,16 @@ try:
             entry['pass'] = True
             print('PASS '+case, flush=True)
             continue
+        if args.require_story_engine:
+            execution = run['storyExecution']
+            assert execution['timelineVersion'] == run['version'] and not execution['stale']
+            story = json.loads(Path(execution['path']).read_text())
+            clips = [c for beat in story['beats'] for c in beat['clips']]
+            assert [c['instance'] for c in clips] == [s['id'] for s in run['timeline']]
+            assert [c['record_id'] for c in clips] == [s['mediaId'] for s in run['timeline']]
+            assert story['status'] == 'new_story_pending_review'
+            assert story['editorial_qc']['aesthetic_review'] == 'not_run'
+            entry['storyEngine'] = execution
         entry.update(check(run, ids))
         image_ids = {i['id'] for i in api('desktop/library')['items'] if i['kind']=='image'}
         assert all(s['end']-s['start'] <= 5 for s in run['timeline'] if s['mediaId'] in image_ids), 'Default still is too long'

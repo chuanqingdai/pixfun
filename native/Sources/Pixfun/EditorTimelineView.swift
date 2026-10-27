@@ -57,7 +57,7 @@ struct EditorTimelineView: View {
                         VStack(spacing: 0) {
                             Image(systemName: "arrowtriangle.down.fill").font(.system(size: 12))
                             Rectangle().frame(width: 1.5)
-                        }.foregroundStyle(Color.pixfunGold).frame(width: 14, height: laneHeight + 26)
+                        }.foregroundStyle(Color.pixfunGoldText).frame(width: 14, height: laneHeight + 26)
                             .offset(x: min(width, max(0, playhead * zoom)) - 7)
                             .allowsHitTesting(false).accessibilityLabel("Playhead \(timestamp(playhead))")
                     }
@@ -156,7 +156,7 @@ struct EditorTimelineView: View {
             Image(systemName: symbol)
             if !label.isEmpty { Text(label).lineLimit(1) }
             Spacer(minLength: 0)
-        }.font(.pixfun(11)).foregroundStyle(Color.pixfunGold).padding(.horizontal, 8)
+        }.font(.pixfun(11)).foregroundStyle(Color.pixfunGoldText).padding(.horizontal, 8)
             .frame(width: width, height: 28).background(Color.pixfunGold.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }

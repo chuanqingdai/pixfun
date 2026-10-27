@@ -1,5 +1,79 @@
 import Foundation
 
+struct StoryReplacement: Codable, Identifiable, Equatable {
+    var mediaId: String
+    var start: Double
+    var end: Double
+    var revision: String
+    var reason: String
+    var description: String
+    var id: String { "\(mediaId):\(start):\(end):\(revision)" }
+    var reasonKey: String {
+        switch reason {
+        case "same_source": return "Another moment from this source"
+        case "shared_role": return "Similar story role"
+        default: return "Related source description"
+        }
+    }
+}
+
+struct StoryReviewHint: Decodable, Identifiable, Equatable {
+    var shot: String
+    var kind: String
+    var id: String { "\(shot):\(kind)" }
+    var message: String? {
+        switch kind {
+        case "long_hold": return "Long clip — review whether the action or story needs the full duration."
+        case "repeated_source": return "This overlaps the previous clip’s source range. Check whether the repetition is intentional."
+        default: return nil
+        }
+    }
+}
+
+struct StoryAssistance: Decodable {
+    var recommendations: [StoryReplacement]
+    var issues: [StoryReviewHint]
+    var speech: StorySpeechGuide?
+    static func payload(runID: String, version: Int, shots: [AgentShot], action: String, shotID: String? = nil) throws -> [String: Any] {
+        var result: [String: Any] = ["id": runID, "version": version, "action": action,
+            "shots": try JSONSerialization.jsonObject(with: JSONEncoder().encode(shots))]
+        if let shotID { result["shotId"] = shotID }
+        return result
+    }
+    static func key(runID: String?, version: Int?, shots: [AgentShot]) -> String {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        return "\(runID ?? ""):\(version ?? 0):" + ((try? encoder.encode(shots).base64EncodedString()) ?? "")
+    }
+}
+
+struct StorySpeechBoundary: Codable, Identifiable, Equatable {
+    var time: Double
+    var edge: String
+    var text: String
+    var id: String { "\(edge):\(time)" }
+}
+
+struct StorySpeechGuide: Codable, Equatable {
+    var mediaId: String
+    var revision: String
+    var evidenceRevision: String
+    var kind: String
+    var boundaries: [StorySpeechBoundary]
+    /// Suggestions only. A raw drag or typed time is never changed here.
+    func nearby(_ shot: AgentShot, leading: Bool, sourceDuration: Double) -> StorySpeechBoundary? {
+        guard shot.mediaId == mediaId, !shot.locked, shot.start.isFinite, shot.end.isFinite, sourceDuration.isFinite, sourceDuration > 0 else { return nil }
+        let value = leading ? shot.start : shot.end
+        return boundaries.filter {
+            $0.edge == (leading ? "start" : "end") && $0.time.isFinite && $0.time >= 0 && $0.time <= sourceDuration
+                && abs($0.time - value) > 0.04 && abs($0.time - value) <= 1
+                && (leading ? shot.end - $0.time >= 0.25 : $0.time - shot.start >= 0.25)
+        }.sorted {
+            let a = abs($0.time-value), b = abs($1.time-value)
+            return a == b ? $0.time < $1.time : a < b
+        }.first
+    }
+}
+
 /// Content order and timing shared by the story list, player, and AI scope.
 enum StoryTimeline {
     struct Chapter: Identifiable, Equatable {
@@ -88,6 +162,16 @@ enum StoryTimeline {
         var next = shot
         next.mediaId = item.id; next.start = 0; next.end = min(limit, shot.end - shot.start)
         next.label = item.name; next.reason = ""
+        return next
+    }
+    static func replacing(_ shot: AgentShot, with item: MediaItem, recommendation: StoryReplacement) -> AgentShot? {
+        guard var next = replacing(shot, with: item), recommendation.mediaId == item.id,
+              recommendation.start.isFinite, recommendation.end.isFinite, recommendation.start >= 0,
+              abs((recommendation.end - recommendation.start) - (shot.end - shot.start)) <= 0.001,
+              recommendation.end - recommendation.start >= 0.25,
+              recommendation.end <= (item.kind == "image" ? 60 : item.metadata?.duration ?? 0),
+              item.kind != "image" || recommendation.start == 0 else { return nil }
+        next.start = recommendation.start; next.end = recommendation.end
         return next
     }
     static func description(for shot: AgentShot, item: MediaItem?) -> String? {
