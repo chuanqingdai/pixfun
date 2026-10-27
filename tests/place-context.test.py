@@ -14,7 +14,7 @@ class PlaceContextTests(unittest.TestCase):
             'nearbyName':'清华大学药学院','resolvedAt':1792100000}}
     def test_verified_area_not_nearest_building_enters_description(self):
         before = copy.deepcopy(self.item)
-        self.assertEqual(description_context(self.item), {'location':'清华大学'})
+        self.assertEqual(description_context(self.item), {'location':'北京 清华大学'})
         self.assertEqual(self.item, before)
         self.assertEqual(validate_place(self.item,self.item['resolvedPlace'])['nearbyName'],'清华大学药学院')
     def test_explicit_user_and_original_names_take_priority(self):
@@ -33,6 +33,19 @@ class PlaceContextTests(unittest.TestCase):
     def test_address_fallback_without_area(self):
         self.item['resolvedPlace']['area'] = None
         self.assertEqual(description_context(self.item)['location'], self.item['resolvedPlace']['label'])
+
+    def test_city_and_preferred_name_keep_canonical_address_searchable(self):
+        place = self.item['resolvedPlace']
+        place.update(area='百里山水画廊', label='中国 · 北京市 · 延庆区 · 百里山水画廊 · 千小路',
+                     city='北京市', shortName='百里画廊', shortNameSource='user-alias', displayName='北京 百里画廊')
+        self.assertEqual(description_context(self.item)['location'], '北京 百里画廊')
+        checked = validate_place(self.item, place)
+        self.assertIn('百里山水画廊', checked['label'])
+        self.assertEqual(checked['shortNameSource'], 'user-alias')
+        with self.assertRaises(ValueError):
+            validate_place(self.item, {**place, 'displayName':'青海 百里画廊'})
+        with self.assertRaises(ValueError):
+            validate_place(self.item, {**place, 'shortNameSource':'guess'})
 
     def boundary_place(self, nearby=False):
         self.item['resolvedPlace'].update(version=3, provider='apple-osm',

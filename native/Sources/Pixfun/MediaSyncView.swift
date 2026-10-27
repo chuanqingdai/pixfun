@@ -100,7 +100,7 @@ struct MediaSyncView: View {
                         Label(error, systemImage: "exclamationmark.circle").font(.pixfun(13))
                         Spacer()
                         Button("Dismiss") { model.error = nil }.buttonStyle(PixfunButtonStyle(kind: .quiet))
-                    }.foregroundStyle(Color.pixfunGold)
+                    }.foregroundStyle(Color.pixfunDanger)
                 }
                 if let snapshot = model.snapshot {
                     if snapshot.devices.isEmpty {
@@ -121,7 +121,7 @@ struct MediaSyncView: View {
                     if model.error == nil { ProgressView("Loading Media Sync…") }
                     else { Button("Retry") { Task { model.error = nil; await model.refresh() } } }
                 }
-            }.frame(maxWidth: 800, alignment: .leading).padding(PixfunLayout.pageInset)
+            }.frame(maxWidth: 920, alignment: .leading).padding(PixfunLayout.pageInset)
                 .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(Color.pixfunBackground)
@@ -148,7 +148,7 @@ struct MediaSyncView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: device.kind == "phone" ? "iphone" : device.kind == "camera" ? "sdcard" : "externaldrive")
-                    .font(.system(size: 20)).foregroundStyle(Color.pixfunGold).frame(width: 28, height: 32)
+                    .font(.system(size: 20)).foregroundStyle(Color.pixfunMuted).frame(width: 28, height: 32)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(device.name).font(.pixfun(15, semibold: true))
                         .help(device.sourcePath ?? device.name)
@@ -157,11 +157,11 @@ struct MediaSyncView: View {
                 }
                 Spacer()
                 Text(device.cardTitle(snapshot.working)).font(.pixfun(12, semibold: true))
-                    .foregroundStyle(device.needsAttention || device.busy || device.destinationNeedsAttention(snapshot.working) ? Color.pixfunGold : .pixfunMuted)
+                    .foregroundStyle(device.needsAttention || device.destinationNeedsAttention(snapshot.working) ? Color.pixfunDanger : .pixfunMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "arrow.turn.down.right").foregroundStyle(Color.pixfunGold)
+                Image(systemName: "arrow.turn.down.right").foregroundStyle(Color.pixfunMuted)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Save new imports to · " + (snapshot.working?.name ?? "Not configured"))
                         .font(.pixfun(12, semibold: true)).foregroundStyle(Color.pixfunMuted)
@@ -189,7 +189,7 @@ struct MediaSyncView: View {
                 Text(device.summary).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
             }
             if !device.busy && !device.checking && (device.status != "Completed" || device.completed == 0 || device.destinationNeedsAttention(snapshot.working)) {
-                Text(device.cardMessage(snapshot.working)).font(.pixfun(12)).foregroundStyle(device.needsAttention || device.destinationNeedsAttention(snapshot.working) ? Color.pixfunGold : .pixfunMuted).fixedSize(horizontal: false, vertical: true)
+                Text(device.cardMessage(snapshot.working)).font(.pixfun(12)).foregroundStyle(device.needsAttention || device.destinationNeedsAttention(snapshot.working) ? Color.pixfunDanger : .pixfunMuted).fixedSize(horizontal: false, vertical: true)
             }
             if device.total > 0 && device.status != "Completed" {
                 DisclosureGroup("Details") {
@@ -246,7 +246,7 @@ struct MediaSyncView: View {
                     Toggle("Receive from paired phones over Wi-Fi", isOn: Binding(get: { wifi.enabled }, set: { enabled in
                         Task { await model.perform(["action": enabled ? "phoneEnable" : "phoneDisable"]) }
                     })).toggleStyle(.switch).font(.pixfun(13)).disabled(model.saving)
-                    if let error = wifi.error { Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunGold) }
+                    if let error = wifi.error { Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunDanger) }
                 }
             }
             DisclosureGroup(isExpanded: $storageExpanded) {
@@ -279,7 +279,7 @@ struct MediaSyncView: View {
                             .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                     } else if let message = snapshot.archiveError, archive.enabled {
                         Text(message + " Working copies are still available in Media.")
-                            .font(.pixfun(12)).foregroundStyle(Color.pixfunGold).fixedSize(horizontal: false, vertical: true).padding(.top, 14)
+                            .font(.pixfun(12)).foregroundStyle(Color.pixfunDanger).fixedSize(horizontal: false, vertical: true).padding(.top, 14)
                     }
                     HStack {
                         Text(LocalizedStringKey(snapshot.archiving ? "Archiving in the background…" : "\(snapshot.archivePending) files awaiting archive" ))
@@ -300,12 +300,12 @@ struct MediaSyncView: View {
             }
             if let working = snapshot.working {
                 Text("Save to · " + storageDetail(working)).font(.pixfun(12))
-                    .foregroundStyle(working.connected ? Color.pixfunMuted : .pixfunGold)
+                    .foregroundStyle(working.connected ? Color.pixfunMuted : .pixfunDanger)
             }
             if !storageExpanded, let backup = snapshot.storage.first(where: { $0.id == "archive" }), backup.path != nil, backup.enabled, snapshot.archivePending > 0 {
                 HStack {
                     Text(LocalizedStringKey(snapshot.archiveWaiting == true ? "Waiting for drives. Backup resumes when connected." : snapshot.archiveError != nil ? "Backup needs attention. Imported media is available." : snapshot.archiving ? "Backing up in the background…" : "\(snapshot.archivePending) files awaiting backup. Imported media is available."))
-                        .font(.pixfun(12)).foregroundStyle(snapshot.archiveError != nil ? Color.pixfunGold : .pixfunMuted)
+                        .font(.pixfun(12)).foregroundStyle(snapshot.archiveError != nil ? Color.pixfunDanger : .pixfunMuted)
                     Spacer()
                     Button("Details") { storageExpanded = true }.buttonStyle(PixfunButtonStyle(kind: .quiet))
                 }
@@ -342,6 +342,7 @@ struct SyncSettingsView: View {
     @State private var workingPath: String?
     @State private var optionsExpanded = false
     @State private var choosingSource = false
+    @State private var formWidth: CGFloat = 520
     @State private var initialPhoneIDs: Set<String> = []
     private var sources: [SyncDiscoveredSource] { model.snapshot?.available ?? [] }
     private var resolvedName: String {
@@ -360,16 +361,16 @@ struct SyncSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(LocalizedStringKey(device != nil ? "Sync Settings" : model.snapshot?.devices.isEmpty == true ? "Create your first sync" : "Create a new sync"))
-                    .font(.system(size: embedded ? 15 : 20, weight: .semibold))
+                    .font(.pixfun(20, semibold: true))
                 if embedded {
                     Text("Choose a source and save location. Pixfun remembers them for future imports.")
-                        .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
+                        .font(.pixfun(14)).foregroundStyle(Color.pixfunMuted)
                 }
             }
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
                 if device == nil {
                     sourceSection
                 } else if let device {
@@ -382,12 +383,15 @@ struct SyncSettingsView: View {
                 if kind == "phone" {
                     SyncPhoneSetupView(model: model)
                 } else {
+                    Divider().overlay(Color.pixfunLine).padding(.horizontal, 16)
                     destinationSection
+                    Divider().overlay(Color.pixfunLine).padding(.horizontal, 16)
                     importOptionsSection
                 }
-            }
+            }.background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
+                .environment(\.syncFormWidth, formWidth)
             if kind != "phone" {
-            if let error = model.error { Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunGold).fixedSize(horizontal: false, vertical: true) }
+            if let error = model.error { Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunDanger).fixedSize(horizontal: false, vertical: true) }
             else if let validation, path != nil || device != nil { Text(LocalizedStringKey(validation)).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 if let device {
@@ -406,7 +410,7 @@ struct SyncSettingsView: View {
                         Text(LocalizedStringKey(model.saving ? "Saving…" : device == nil ? "Create Sync & Import" : "Save Changes"))
                     }
                 }
-                    .buttonStyle(.borderedProminent).controlSize(.regular).keyboardShortcut(.defaultAction)
+                    .buttonStyle(PixfunButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
                     .disabled(validation != nil)
                     .help(validation ?? "Save this sync and import new media. Originals stay untouched.")
                     .accessibilityHint(validation ?? "Saves this sync configuration.")
@@ -414,9 +418,12 @@ struct SyncSettingsView: View {
             } else if !embedded || onClose != nil {
                 HStack { Spacer(); Button("Done") { if let onClose { onClose() } else { dismiss() } } }
             }
-        }.padding(embedded ? 0 : 24).frame(width: embedded ? nil : 520)
+        }.background(GeometryReader { proxy in
+            Color.clear.onAppear { formWidth = proxy.size.width }
+                .onChange(of: proxy.size.width) { formWidth = $0 }
+        }).padding(embedded ? 0 : 24).frame(width: embedded ? nil : 520)
             .frame(maxWidth: embedded ? .infinity : nil, alignment: .leading)
-            .buttonStyle(.bordered)
+            .buttonStyle(PixfunButtonStyle())
             .disabled(model.saving).interactiveDismissDisabled(model.saving)
             .onAppear {
                 model.error = nil
@@ -439,102 +446,113 @@ struct SyncSettingsView: View {
             }
     }
     private var sourceSection: some View {
-                  VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .center) {
-                            Text("Media source").font(.pixfun(13, semibold: true))
-                            Spacer(minLength: 16)
-                            Button { Task { await model.discoverSources() } } label: {
-                                Label(LocalizedStringKey(model.discovering ? "Checking…" : "Refresh"), systemImage: "arrow.clockwise")
-                            }.buttonStyle(.bordered).controlSize(.small).disabled(model.discovering || model.saving)
-                                .accessibilityLabel("Refresh connected devices")
-                        }
-                        if path == nil && kind != "phone" {
-                            Text(LocalizedStringKey(model.discovering ? "Looking for connected cards and drives…" : sources.isEmpty ? "No connected cards or drives found. Connect one and refresh, or choose a local folder." : "Choose a connected card or drive below. Its name is filled in automatically."))
-                                .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    Button { choosingSource.toggle() } label: {
-                        SyncSelectionLabel(title: kind == "phone" ? "Import from phone" : path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Select a device or folder",
-                                           symbol: kind == "phone" ? "iphone" : kind == "camera" ? "sdcard" : "externaldrive",
-                                           accessory: choosingSource ? "chevron.up" : "chevron.down", prominent: true)
-                    }.buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityLabel("Select connected device or local folder")
-                        .accessibilityValue(kind == "phone" ? "Import from phone" : path ?? "No source selected")
-                        .accessibilityHint("Opens source choices. Select a connected device, a folder, or an available phone connection.")
-                        .help(path ?? "Choose where to import photos and videos from")
-                        .popover(isPresented: $choosingSource, arrowEdge: .bottom) { sourceChoices }
-                  }.syncFormGroup()
+        SyncFormRow {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Media source").font(.pixfun(14, semibold: true))
+                if path == nil && kind != "phone" {
+                    Text(LocalizedStringKey(model.discovering ? "Looking for connected cards and drives…" : sources.isEmpty ? "No connected cards or drives found. Connect one and refresh, or choose a local folder." : "Choose a connected card or drive below. Its name is filled in automatically."))
+                        .font(.pixfun(14)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
+                }
+                if let path { Text(path).font(.pixfun(12)).foregroundStyle(Color.pixfunSubtle).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
+            }
+        } control: {
+            HStack(spacing: 8) {
+                Button { choosingSource.toggle() } label: {
+                    HStack(spacing: 8) {
+                        Text(LocalizedStringKey(kind == "phone" ? "Import from phone" : path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Select a device or folder"))
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        Image(systemName: choosingSource ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .medium))
+                    }.font(.pixfun(14)).foregroundStyle(path == nil && kind != "phone" ? Color.pixfunPlaceholder : .pixfunInk)
+                        .padding(.horizontal, 12).frame(height: 40)
+                        .background(Color.pixfunInput, in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.pixfunControlBorder))
+                        .contentShape(RoundedRectangle(cornerRadius: 6))
+                }.buttonStyle(.plain)
+                    .accessibilityLabel("Select connected device or local folder")
+                    .accessibilityValue(kind == "phone" ? "Import from phone" : path ?? "No source selected")
+                    .help(path ?? "Choose where to import photos and videos from")
+                    .popover(isPresented: $choosingSource, arrowEdge: .bottom) { sourceChoices }
+                Button { Task { await model.discoverSources() } } label: {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 16))
+                        .frame(width: 8)
+                }.buttonStyle(PixfunButtonStyle()).disabled(model.discovering || model.saving)
+                    .accessibilityLabel("Refresh connected devices").help(model.discovering ? "Checking…" : "Refresh")
+            }
+        }
     }
 
     private var destinationSection: some View {
-                VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Save location").font(.pixfun(13, semibold: true))
-                    Text("Save verified copies to your Mac or external drive. Shared by all sources; originals stay on your devices.")
-                        .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
-                    if workingPath != nil && model.snapshot?.working?.path != nil {
-                        Text("This updates the save location for future imports from all sources. Existing files stay in place.")
-                            .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
+        SyncFormRow {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Save location").font(.pixfun(14, semibold: true))
+                Text("Save verified copies to your Mac or external drive. Shared by all sources; originals stay on your devices.")
+                    .font(.pixfun(14)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
+                if let destination {
+                    Label(URL(fileURLWithPath: destination).lastPathComponent, systemImage: "folder")
+                        .font(.pixfun(14)).padding(.top, 8)
+                    Text(destination).font(.pixfun(12)).foregroundStyle(Color.pixfunSubtle)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    if !destinationAvailable {
+                        Label("Disconnected — reconnect this storage or choose another folder.", systemImage: "exclamationmark.circle")
+                            .font(.pixfun(12)).foregroundStyle(Color.pixfunDanger).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                     }
                 }
-                SyncSaveLocationCard(destination: destination, available: destinationAvailable,
-                                     choosingDisabled: model.snapshot?.storageBusy == true) {
-                    guard let url = MediaSyncStore.chooseFolder(message: "Choose where Pixfun saves verified copies. Shared by all sources; originals stay unchanged.") else { return }
-                    workingPath = url.path
+                if workingPath != nil && model.snapshot?.working?.path != nil {
+                    Text("This updates the save location for future imports from all sources. Existing files stay in place.")
+                        .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
                 }
-                }.syncFormGroup()
+            }
+        } control: {
+            Button(LocalizedStringKey(destination == nil ? "Choose Save Folder…" : "Change Folder…")) {
+                guard let url = MediaSyncStore.chooseFolder(message: "Choose where Pixfun saves verified copies. Shared by all sources; originals stay unchanged.") else { return }
+                workingPath = url.path
+            }.buttonStyle(PixfunButtonStyle()).disabled(model.snapshot?.storageBusy == true)
+                .help("Choose where Pixfun saves new imports. Existing files stay in place.")
+        }
     }
 
     private var importOptionsSection: some View {
-                VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Import new media when connected").font(.system(size: 13, weight: .medium))
-                        Text("Keep Pixfun running and your Mac awake. Completed files are skipped; originals stay on your device.")
-                            .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                    Toggle("Import new media when connected", isOn: $automatic)
-                        .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                        .accessibilityIdentifier("sync.automatic")
+        VStack(alignment: .leading, spacing: 0) {
+            SyncFormRow(isToggle: true) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Import new media when connected").font(.pixfun(14, semibold: true))
+                    Text("Keep Pixfun running and your Mac awake. Completed files are skipped; originals stay on your device.")
+                        .font(.pixfun(14)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
                 }
-                Divider()
-                DisclosureGroup("Advanced options", isExpanded: $optionsExpanded) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("RAW import is not supported.")
-                            .font(.pixfun(12)).foregroundStyle(Color.pixfunSubtle)
-                        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 14) {
-                            if device != nil || path != nil {
-                                GridRow {
-                                    Text("Display name").foregroundStyle(Color.pixfunMuted).frame(width: 88, alignment: .leading)
-                                    TextField("Display name", text: $name).textFieldStyle(.roundedBorder)
-                                        .controlSize(.large).frame(width: 240)
-                                        .accessibilityLabel("Optional display name")
-                                }
-                            }
-                            GridRow {
-                                Text("Source type").foregroundStyle(Color.pixfunMuted).frame(width: 88, alignment: .leading)
-                                Picker("Source type", selection: $kind) {
-                                    Text("Card / camera").tag("camera")
-                                    Text("Drive / folder").tag("external")
-                                }.labelsHidden().pickerStyle(.menu)
-                                    .frame(width: 240).accessibilityLabel("Source type")
-                                    .accessibilityValue(kind == "camera" ? "Card / camera" : "Drive / folder")
-                            }
-                            GridRow {
-                                Text("Media types").foregroundStyle(Color.pixfunMuted).frame(width: 88, alignment: .leading)
-                                HStack(spacing: 24) {
-                                    Toggle("Photos", isOn: $photos)
-                                    Toggle("Videos", isOn: $videos)
-                                }.toggleStyle(.checkbox).frame(minHeight: 30, alignment: .leading)
-                                    .accessibilityElement(children: .contain).accessibilityLabel("Media types to import")
-                            }
-                        }.font(.pixfun(12)).frame(maxWidth: .infinity, alignment: .leading)
+            } control: {
+                Toggle("Import new media when connected", isOn: $automatic)
+                    .labelsHidden().toggleStyle(.switch).controlSize(.small).accessibilityIdentifier("sync.automatic")
+            }
+            Divider().overlay(Color.pixfunLine).padding(.horizontal, 16)
+            DisclosureGroup("Advanced options", isExpanded: $optionsExpanded) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if device != nil || path != nil {
+                        SyncFormRow {
+                            Text("Display name").font(.pixfun(14, semibold: true))
+                        } control: {
+                            TextField("Display name", text: $name, prompt: PixfunTypography.placeholder("Display name"))
+                                .modifier(PixfunSettingsField()).accessibilityLabel("Optional display name")
+                        }
                     }
-                }.font(.system(size: 13))
-                }.syncFormGroup()
+                    SyncFormRow {
+                        Text("Source type").font(.pixfun(14, semibold: true))
+                    } control: {
+                        PixfunSettingsMenu(title: "Source type", selection: $kind, options: [("Card / camera", "camera"), ("Drive / folder", "external")])
+                    }
+                    SyncFormRow {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Media types").font(.pixfun(14, semibold: true))
+                            Text("RAW import is not supported.").font(.pixfun(12)).foregroundStyle(Color.pixfunSubtle)
+                        }
+                    } control: {
+                        HStack(spacing: 24) { Toggle("Photos", isOn: $photos); Toggle("Videos", isOn: $videos) }
+                            .toggleStyle(.checkbox).font(.pixfun(14)).frame(minHeight: 40)
+                            .accessibilityElement(children: .contain).accessibilityLabel("Media types to import")
+                    }
+                }.padding(.top, 12)
+            }.font(.pixfun(14)).padding(16)
+        }
     }
 
     private var sourceChoices: some View {
@@ -575,7 +593,7 @@ struct SyncSettingsView: View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: symbol).font(.system(size: 19, weight: .regular)).frame(width: 28)
-                    .foregroundStyle(selected ? Color.pixfunGold : .pixfunMuted).accessibilityHidden(true)
+                    .foregroundStyle(selected ? Color.pixfunGoldText : .pixfunMuted).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(LocalizedStringKey(title)).font(.pixfun(13, semibold: true)).foregroundStyle(Color.pixfunInk)
                         .lineLimit(1).truncationMode(.middle)
@@ -585,7 +603,7 @@ struct SyncSettingsView: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.pixfunGold)
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.pixfunGoldText)
                     .frame(width: 18).opacity(selected ? 1 : 0).accessibilityHidden(true)
             }.padding(.horizontal, 12).padding(.vertical, detail == nil ? 8 : 12)
                 .frame(maxWidth: .infinity, minHeight: detail == nil ? 44 : 68, alignment: .leading)
@@ -668,7 +686,7 @@ struct SyncSaveLocationCard: View {
     private var location: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "folder").font(.system(size: 22, weight: .light))
-                .foregroundStyle(Color.pixfunGold).accessibilityHidden(true)
+                .foregroundStyle(Color.pixfunGoldText).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 5) {
                 Text(LocalizedStringKey(destination.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No save folder selected"))
                     .font(.pixfun(14, semibold: true)).lineLimit(1).truncationMode(.middle)
@@ -678,7 +696,7 @@ struct SyncSaveLocationCard: View {
                         .lineLimit(2).truncationMode(.middle).textSelection(.enabled).help(destination)
                     if !available {
                         Text("Disconnected — reconnect this storage or choose another folder.")
-                            .font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                            .font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                     }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
@@ -697,11 +715,11 @@ private struct SyncFlowOverview: View {
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .syncFlowIcon, spacing: 12) {
-                sourceGroup.frame(minWidth: 190, maxWidth: .infinity)
+                sourceGroup.frame(minWidth: 220, maxWidth: .infinity)
                 flowArrow("arrow.right")
-                process.frame(minWidth: 190, maxWidth: .infinity)
+                process.frame(minWidth: 220, maxWidth: .infinity)
                 flowArrow("arrow.right")
-                destinations.frame(minWidth: 190, maxWidth: .infinity)
+                destinations.frame(minWidth: 220, maxWidth: .infinity)
             }
             VStack(spacing: 16) {
                 sourceGroup
@@ -710,51 +728,42 @@ private struct SyncFlowOverview: View {
                 flowArrow("arrow.down")
                 destinations
             }.frame(maxWidth: .infinity)
-        }.padding(.horizontal, 20).padding(.vertical, 16)
+        }.padding(16)
             .frame(maxWidth: .infinity)
-            .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 16))
+            .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Import from your devices. Scan a QR code for a one-time phone import, or connect a camera or drone memory card. Auto-sync new files from connected cards and folders you set up. Save copies to your Mac or an external drive. Originals stay untouched.")
     }
 
     private var sourceGroup: some View {
         stage("Import from your devices", detail: "Phone via QR\nCamera & drone via card") {
-            HStack(spacing: 18) {
-                Image(systemName: "iphone").frame(width: 28)
-                Image(systemName: "camera").frame(width: 32)
-                SyncDroneIcon().frame(width: 30, height: 30)
-            }
+            Image(systemName: "sdcard")
         }
     }
 
     private var process: some View {
         stage("Auto-sync new files", detail: "From connected cards\nand folders you set up") {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 28, weight: .light))
-                .frame(width: 52, height: 52)
-                .background(Color.pixfunBrandSoft, in: Circle())
+                .font(.system(size: 20, weight: .regular))
         }
     }
 
     private var destinations: some View {
         stage("Save to your storage", detail: "Your Mac or external drive\nOriginals stay untouched") {
-            HStack(spacing: 22) {
-                Image(systemName: "laptopcomputer")
-                Image(systemName: "externaldrive")
-            }
+            Image(systemName: "externaldrive")
         }
     }
 
     private func stage<Icon: View>(_ title: String, detail: String, @ViewBuilder icon: () -> Icon) -> some View {
-        VStack(spacing: 8) {
-            icon().font(.system(size: 27, weight: .light))
-                .foregroundStyle(Color.pixfunGold).frame(height: 52)
-            VStack(spacing: 6) {
-                Text(LocalizedStringKey(title)).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.pixfunInk)
-                Text(LocalizedStringKey(detail)).font(.system(size: 12)).lineSpacing(2).foregroundStyle(Color.pixfunMuted)
+        HStack(alignment: .top, spacing: 12) {
+            icon().font(.system(size: 20, weight: .regular))
+                .foregroundStyle(Color.pixfunGoldText).frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(LocalizedStringKey(title)).font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunInk)
+                Text(LocalizedStringKey(detail)).font(.pixfun(12)).lineSpacing(2).foregroundStyle(Color.pixfunMuted)
             }.fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity).multilineTextAlignment(.center)
-            .alignmentGuide(.syncFlowIcon) { $0[VerticalAlignment.top] + 26 }
+        }.frame(maxWidth: .infinity, alignment: .leading).multilineTextAlignment(.leading)
+            .alignmentGuide(.syncFlowIcon) { $0[VerticalAlignment.top] + 12 }
     }
 
     private func flowArrow(_ symbol: String) -> some View {
@@ -803,11 +812,41 @@ struct SyncDroneIcon: View {
 private extension View {
     func syncFormGroup() -> some View {
         self.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 10))
+            .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
     }
     func syncCard() -> some View {
         self.padding(20).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.pixfunLine))
+    }
+}
+
+private struct SyncFormWidthKey: EnvironmentKey { static let defaultValue: CGFloat = 520 }
+private extension EnvironmentValues {
+    var syncFormWidth: CGFloat {
+        get { self[SyncFormWidthKey.self] }
+        set { self[SyncFormWidthKey.self] = newValue }
+    }
+}
+
+private struct SyncFormRow<Copy: View, Control: View>: View {
+    var isToggle = false
+    @ViewBuilder let copy: () -> Copy
+    @ViewBuilder let control: () -> Control
+    @Environment(\.syncFormWidth) private var width
+    var body: some View {
+        Group {
+            if width < 560 {
+                VStack(alignment: .leading, spacing: 12) {
+                    copy().frame(maxWidth: .infinity, alignment: .leading)
+                    control().frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .top, spacing: 24) {
+                    copy().frame(maxWidth: .infinity, alignment: .leading)
+                    control().frame(width: isToggle ? 48 : 240, alignment: .trailing)
+                }
+            }
+        }.padding(16).frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
     }
 }

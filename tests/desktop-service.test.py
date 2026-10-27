@@ -17,6 +17,93 @@ NATIVE='b'*64
 
 
 class DesktopServiceTests(unittest.TestCase):
+    def test_speech_trim_native_source_bound_and_readonly(self):
+        route = '/api/desktop/agent/editor-assist'
+        source = Path(self.temp.name)/'speech.mp4'
+        source.write_bytes((ROOT/'qa/media-library/captioned-test.mp4').read_bytes())
+        stat = source.stat()
+        sidecar = source.with_suffix('.srt')
+        sidecar.write_text('1\n00:00:01,000 --> 00:00:03,000\nA complete sentence.\n', encoding='utf-8')
+        record = dict(id='speech-fixture', file=dict(name=source.name,size=stat.st_size,lastModified=int(stat.st_mtime*1000)),
+            kind='video', status='ready', metadata=dict(duration=7,hasAudio=True), result={'analysis':{'subtitleState':'sidecar'}})
+        shots = [dict(id='speech-shot',mediaId=record['id'],start=1.4,end=2.6,label='Speech',reason='',locked=False)]
+        run = dict(id='a'*32,projectId='b'*32,requestId='c'*32,version=1,status='completed',mediaIds=[record['id']],timeline=shots)
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            db.execute('INSERT INTO media(id,source,record) VALUES(?,?,?)',(record['id'],str(source),json.dumps(record)))
+            db.execute('INSERT INTO agent_runs VALUES(?,?,?,?,?)',(run['id'],run['projectId'],run['requestId'],json.dumps(run),time.time()))
+        payload = dict(id=run['id'],version=1,shots=shots,shotId='speech-shot',action='trim')
+        with self.assertRaises(urllib.error.HTTPError) as denied: self.api(route,payload)
+        self.assertEqual(denied.exception.code,401)
+        guide = self.json(route,payload,native=True)['speech']
+        self.assertEqual([b['time'] for b in guide['boundaries']], [1,3])
+        candidate = {**guide,**guide['boundaries'][0]}
+        self.assertTrue(self.json(route,{**payload,'action':'validate-trim','candidate':candidate},native=True)['ok'])
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            self.assertEqual(json.loads(db.execute('SELECT record FROM agent_runs WHERE id=?',(run['id'],)).fetchone()[0]),run)
+        sidecar.write_text('1\n00:00:01,200 --> 00:00:03,000\nA changed sentence.\n', encoding='utf-8')
+        with self.assertRaises(urllib.error.HTTPError) as changed:
+            self.api(route,{**payload,'action':'validate-trim','candidate':candidate},native=True)
+        self.assertEqual(changed.exception.code,400)
+
+    def test_editor_assistance_native_readonly_and_exact_replacement(self):
+        route = '/api/desktop/agent/editor-assist'
+        with self.assertRaises(urllib.error.HTTPError) as denied: self.api(route, {'action':'review'})
+        self.assertEqual(denied.exception.code, 401)
+        with self.assertRaises(urllib.error.HTTPError) as invalid: self.api(route, {'action':'unknown'}, native=True)
+        self.assertEqual(invalid.exception.code, 400)
+        source = ROOT/'public/images/pixfun-lockup-v2.png'
+        copy = Path(self.temp.name)/'alternate.png'; copy.write_bytes(source.read_bytes())
+        shots = [dict(id='one', mediaId='editor-a', start=0, end=25, label='River landscape', reason='Establish the river', locked=False)]
+        run = dict(id='e'*32, projectId='d'*32, requestId='c'*32, version=1, status='completed', mediaIds=['editor-a','editor-b'], timeline=shots)
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            for mid, path in [('editor-a',source), ('editor-b',copy)]:
+                record = dict(id=mid, file={'name':path.name}, kind='image', status='ready', description='River landscape')
+                db.execute('INSERT INTO media(id,source,record) VALUES(?,?,?)', (mid,str(path),json.dumps(record)))
+            db.execute('INSERT INTO agent_runs VALUES(?,?,?,?,?)',(run['id'],run['projectId'],run['requestId'],json.dumps(run),time.time()))
+        payload = dict(id=run['id'], version=1, shots=shots, action='replace', shotId='one')
+        response = self.json(route, payload, native=True)
+        self.assertEqual(response['issues'], [{'shot':'one','kind':'long_hold'}])
+        candidate = response['recommendations'][0]
+        self.assertEqual((candidate['mediaId'],candidate['start'],candidate['end']), ('editor-b',0,25))
+        self.assertTrue(self.json(route, {**payload,'action':'validate','candidate':candidate}, native=True)['ok'])
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            self.assertEqual(json.loads(db.execute('SELECT record FROM agent_runs WHERE id=?',(run['id'],)).fetchone()[0]), run)
+        copy.write_bytes(b'changed')
+        with self.assertRaises(urllib.error.HTTPError) as changed:
+            self.api(route, {**payload,'action':'validate','candidate':candidate}, native=True)
+        self.assertEqual(changed.exception.code, 400)
+
+    def test_export_requires_native_auth_and_valid_saved_timeline(self):
+        route = '/api/desktop/agent/export'
+        with self.assertRaises(urllib.error.HTTPError) as denied: self.api(route, {'action':'status','exportId':'unknown'})
+        self.assertEqual(denied.exception.code,401)
+        with self.assertRaises(urllib.error.HTTPError) as missing: self.api(route, {'action':'status','exportId':'unknown'},native=True)
+        self.assertEqual(missing.exception.code,400)
+        with self.assertRaises(urllib.error.HTTPError) as invalid: self.api(route, {'action':'arbitrary'},native=True)
+        self.assertEqual(invalid.exception.code,400)
+
+    def test_map_metadata_is_native_read_only_and_uses_original_photo(self):
+        from PIL import Image
+        source = Path(self.temp.name) / 'map-source.jpg'
+        exif = Image.Exif()
+        exif[34853] = {1:'N', 2:(48., 51., 0.), 3:'E', 4:(2., 19., 12.), 18:'WGS84', 31:8.}
+        Image.new('RGB', (16, 16)).save(source, exif=exif)
+        record = {'id':'map-fixture', 'file':{'name':source.name}, 'kind':'image', 'status':'ready',
+                  'metadata':{'width':16}, 'description':'Keep existing description'}
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            db.execute('INSERT INTO media(id,source,record) VALUES(?,?,?)', ('map-fixture', str(source), json.dumps(record)))
+        before = source.read_bytes()
+        route = '/api/desktop/analysis/map-metadata'
+        with self.assertRaises(urllib.error.HTTPError) as denied: self.api(route, {'id':'map-fixture'})
+        self.assertEqual(denied.exception.code, 401)
+        result = self.json(route, {'id':'map-fixture'}, native=True)
+        self.assertEqual(result['metadata']['location']['horizontalAccuracy'], 8.)
+        self.assertAlmostEqual(result['metadata']['location']['latitude'], 48.85)
+        self.assertEqual(source.read_bytes(), before)
+        with sqlite3.connect(Path(self.temp.name)/'library.sqlite3') as db:
+            after = json.loads(db.execute('SELECT record FROM media WHERE id=?', ('map-fixture',)).fetchone()[0])
+        self.assertEqual(after, record)
+
     def test_resolved_place_requires_native_auth_and_matching_gps(self):
         route='/api/desktop/analysis/place'
         with self.assertRaises(urllib.error.HTTPError) as denied: self.api(route,{})
@@ -39,6 +126,10 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(after['metadata']['location'],record['metadata']['location'])
         self.assertEqual(after['file'],record['file'])
         self.assertEqual(after.get('context'),record.get('context'))
+        place.update(city='北京市',displayName='北京 清华大学')
+        self.assertTrue(self.json(route,{'id':key,'place':place},native=True)['ok'])
+        concise=next(i for i in self.json('/api/desktop/library')['items'] if i['id']==key)
+        self.assertEqual(concise['resolvedPlace'],place)
         enriched={**place,'version':3,'provider':'apple-osm','displayName':'北京 清华大学',
                   'boundaryID':'area/3607469216','areaRelation':'inside','placeKind':'campus'}
         self.assertTrue(self.json(route,{'id':key,'place':enriched},native=True)['ok'])
@@ -46,6 +137,12 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(enriched_after['resolvedPlace'],enriched)
         self.assertEqual(enriched_after['file'],record['file'])
         self.assertEqual(enriched_after['metadata']['location'],record['metadata']['location'])
+        preferred={**enriched,'shortName':'校园','shortNameSource':'user-alias','displayName':'北京 校园'}
+        self.assertTrue(self.json(route,{'id':key,'place':preferred},native=True)['ok'])
+        preferred_after=next(i for i in self.json('/api/desktop/library')['items'] if i['id']==key)
+        self.assertEqual(preferred_after['resolvedPlace'],preferred)
+        self.assertEqual(preferred_after['metadata']['location'],record['metadata']['location'])
+        self.assertEqual(preferred_after['file'],record['file'])
 
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='pixfun-service-test-')
@@ -287,7 +384,10 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(record['status'],'ready',record.get('error'))
         self.assertTrue(record['metadata']['width'])
         self.assertTrue(record['result']['analysis']['segments'])
-        self.assertTrue(record['result']['analysis']['subtitleCues'])
+        # Registration performs bounded media probing only. Speech runs in the
+        # explicit content-analysis stage and must not block library readiness.
+        self.assertEqual(record['result']['analysis']['subtitleCues'],[])
+        self.assertEqual(record['result']['analysis']['subtitleState'],'pending')
         self.assertEqual(list((Path(self.temp.name)/'uploads').iterdir()),[],'Original footage must not be copied')
         with self.api(added['url'],headers={'Range':'bytes=0-99'}) as response:
             self.assertEqual(response.status,206)
@@ -385,7 +485,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.stop();self.start()
         self.assertEqual(self.json('/api/desktop/projects')['projects'][0]['skill'],skill)
         self.assertEqual(self.json('/api/desktop/settings')['settings']['projectDraft'],draft)
-        cleared=self.json('/api/desktop/projects',{'id':project['id'],'prompt':'Continue without a skill','skill':None})['project']
+        cleared=self.json('/api/desktop/projects',{'id':project['id'],'prompt':'Continue without a skill'})['project']
         self.assertIsNone(cleared['skill']);self.assertEqual(cleared['messages'][0]['skill'],skill)
         for bad in ({'id':'x'}, {'id':'x','title':'x','strategy':'x'*4001}, {'id':'x','title':[],'strategy':'x'}):
             with self.assertRaises(urllib.error.HTTPError):self.json('/api/desktop/projects',{'prompt':'Test','skill':bad})

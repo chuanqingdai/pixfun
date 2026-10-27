@@ -163,7 +163,7 @@ struct EditorWorkspaceView: View {
                 }.buttonStyle(PixfunButtonStyle(kind: .quiet))
             } else if stalePreview {
                 HStack {
-                    Text("Previous render · rebuild after saving").font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                    Text("Previous render · rebuild after saving").font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                     if draft?.dirty != true, let run, run.status == "review" {
                         Button("Update preview") { store.agentAction("approve", run: run) }.disabled(busy || conflict)
                     }

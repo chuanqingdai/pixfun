@@ -3,6 +3,7 @@
 const fs = require('node:fs'), path = require('node:path'), {spawnSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const skillsPreview = process.argv.includes('--skills');
+const speechPreview = process.argv.includes('--speech');
 const transitionsPreview = process.argv.includes('--transitions');
 const conversationPreview = process.argv.includes('--conversation');
 const mediaPreview = process.argv.includes('--media');
@@ -12,7 +13,7 @@ const sidebarPreview = process.argv.includes('--sidebar');
 const editorPreview = process.argv.includes('--editor');
 const uxPreview = process.argv.includes('--ux');
 const snapshot = skillsPreview && process.argv.includes('--snapshot');
-const name = sidebarPreview ? 'SidebarLayout' : graphicsPreview ? 'GraphicsLayout' : syncPreview ? 'MediaSyncLayout' : uxPreview ? 'UXCoreLayout' : editorPreview ? 'EditorP0Layout' : mediaPreview ? 'MediaLayout' : conversationPreview ? 'ConversationLayout' : transitionsPreview ? 'StoryTransitionLayout' : snapshot ? 'SkillsLayout' : skillsPreview ? 'SkillsSmoke' : 'StoryPopoverSmoke';
+const name = speechPreview ? 'StorySpeechSmoke' : sidebarPreview ? 'SidebarLayout' : graphicsPreview ? 'GraphicsLayout' : syncPreview ? 'MediaSyncLayout' : uxPreview ? 'UXCoreLayout' : editorPreview ? 'EditorP0Layout' : mediaPreview ? 'MediaLayout' : conversationPreview ? 'ConversationLayout' : transitionsPreview ? 'StoryTransitionLayout' : snapshot ? 'SkillsLayout' : skillsPreview ? 'SkillsSmoke' : 'StoryPopoverSmoke';
 const app = path.join(root, `build-native/${name}.app`);
 const contents = path.join(app, 'Contents');
 fs.mkdirSync(path.join(contents, 'MacOS'), {recursive: true});
@@ -21,7 +22,7 @@ const source = 'native/Sources/Pixfun';
 const result = spawnSync('swiftc', ['-parse-as-library', '-D', 'PIXFUN_LAYOUT_TEST', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macosx13.0`, '-module-cache-path', path.join(root, 'build-native/cache/clang'),
   ...(snapshot ? ['-D','PIXFUN_SKILLS_SNAPSHOT'] : []),
   ...fs.readdirSync(path.join(root, source)).filter(f => f.endsWith('.swift')).map(f => `${source}/${f}`),
-  `native/Tests/${sidebarPreview ? 'SidebarSmokeApp' : graphicsPreview ? 'GraphicsSmokeApp' : syncPreview ? 'MediaSyncSmokeApp' : uxPreview ? 'UXCoreSmokeApp' : editorPreview ? 'EditorP0SmokeApp' : mediaPreview ? 'MediaSmokeApp' : conversationPreview ? 'ConversationSmokeApp' : transitionsPreview ? 'StoryTransitionSmokeApp' : skillsPreview ? 'SkillsSmokeApp' : 'StoryPopoverSmokeApp'}.swift`, '-o', path.join(contents, 'MacOS', name)], {cwd: root, stdio: 'inherit'});
+  `native/Tests/${speechPreview ? 'StorySpeechSmokeApp' : sidebarPreview ? 'SidebarSmokeApp' : graphicsPreview ? 'GraphicsSmokeApp' : syncPreview ? 'MediaSyncSmokeApp' : uxPreview ? 'UXCoreSmokeApp' : editorPreview ? 'EditorP0SmokeApp' : mediaPreview ? 'MediaSmokeApp' : conversationPreview ? 'ConversationSmokeApp' : transitionsPreview ? 'StoryTransitionSmokeApp' : skillsPreview ? 'SkillsSmokeApp' : 'StoryPopoverSmokeApp'}.swift`, '-o', path.join(contents, 'MacOS', name)], {cwd: root, stdio: 'inherit'});
 if (result.status !== 0) process.exit(result.status || 1);
 fs.writeFileSync(path.join(contents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>${name}</string><key>CFBundleIdentifier</key><string>com.pixfun.${name.toLowerCase()}</string><key>CFBundleName</key><string>${name}</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>`);
 if (skillsPreview) {

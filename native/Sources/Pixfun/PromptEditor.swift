@@ -4,6 +4,7 @@ import AppKit
 // A plain native text view, with explicit insets and overlay scrolling. SwiftUI's
 // TextEditor can reserve a legacy scroller gutter even for an empty document.
 struct PromptEditor: NSViewRepresentable {
+    @Environment(\.locale) private var locale
     @Binding var text: String
     @Binding var height: CGFloat
     @Binding var requestFocus: Bool
@@ -12,6 +13,11 @@ struct PromptEditor: NSViewRepresentable {
     var placeholder = "Describe your story, length, and style…"
     var onSubmit: (() -> Void)? = nil
     var onFocusChange: ((Bool) -> Void)? = nil
+    private var localizedPlaceholder: String {
+        let language = locale.language.languageCode?.identifier == "en" ? "en" : "zh-Hans"
+        let bundle = Bundle.main.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
+        return bundle.localizedString(forKey: placeholder, value: placeholder, table: nil)
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> PromptScrollView {
@@ -23,9 +29,9 @@ struct PromptEditor: NSViewRepresentable {
         editor.isAutomaticQuoteSubstitutionEnabled = false
         editor.isAutomaticDashSubstitutionEnabled = false
         editor.isAutomaticSpellingCorrectionEnabled = false
-        editor.font = NSFont(name: "DMSans-Regular", size: 16) ?? .systemFont(ofSize: 16)
+        editor.font = .systemFont(ofSize: 14)
         editor.textColor = NSColor(Color.pixfunInk)
-        editor.insertionPointColor = NSColor(Color.pixfunGold)
+        editor.insertionPointColor = NSColor(Color.pixfunGoldText)
         editor.drawsBackground = false
         editor.focusRingType = .none
         editor.textContainerInset = NSSize(width: 0, height: 8)
@@ -45,7 +51,7 @@ struct PromptEditor: NSViewRepresentable {
         editor.autoresizingMask = [.width]
         editor.setAccessibilityLabel("Video requirements")
         editor.delegate = context.coordinator
-        editor.placeholder = placeholder
+        editor.placeholder = localizedPlaceholder
         editor.string = text
         scroll.documentView = editor
         scroll.hasVerticalScroller = true
@@ -69,7 +75,10 @@ struct PromptEditor: NSViewRepresentable {
     func updateNSView(_ scroll: PromptScrollView, context: Context) {
         guard let editor = scroll.documentView as? PromptTextView else { return }
         context.coordinator.parent = self
-        editor.placeholder = placeholder
+        editor.textColor = NSColor(Color.pixfunInk)
+        editor.insertionPointColor = NSColor(Color.pixfunGoldText)
+        editor.needsDisplay = true
+        editor.placeholder = localizedPlaceholder
         scroll.synchronizeEditorLayout()
         // Do not replace text while the user is composing with a Chinese/Japanese IME.
         if editor.string != text && !editor.hasMarkedText() {
@@ -175,7 +184,7 @@ final class PromptTextView: NSTextView {
         let rect = NSRect(x: origin.x, y: origin.y, width: max(0, bounds.width - origin.x * 2), height: bounds.height - origin.y)
         (placeholder as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: [
             .font: font ?? NSFont.systemFont(ofSize: 16),
-            .foregroundColor: NSColor(Color.pixfunSubtle)
+            .foregroundColor: NSColor(Color.pixfunPlaceholder)
         ])
     }
 }

@@ -1,7 +1,7 @@
 {
   "name": "pixfun-desktop",
   "productName": "Pixfun",
-  "version": "0.1.4",
+  "version": "0.3.0",
   "description": "Local travel footage workspace for macOS",
   "author": "Pixfun",
   "private": true,

@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from analysis_resources import AnalysisResources, prepared_windows, memory_snapshot
 from agent_models import AgentCancelled, ModelGateway, LocalWorkerError, retryable_analysis_error, worker_response_error
 
-HEALTHY = {'total':16*1024**3, 'available':6*1024**3, 'pressure':1}
+HEALTHY = {'total':32*1024**3, 'available':12*1024**3, 'pressure':1}
 
 
 class ResourcesTests(unittest.TestCase):
@@ -84,6 +84,12 @@ class ResourcesTests(unittest.TestCase):
                 self.assertFalse(entered.wait(.1))
             future.result(timeout=2)
 
+    def test_sixteen_gib_machine_keeps_preprocessing_serial(self):
+        self.sample = {**HEALTHY, 'total':16*1024**3, 'available':8*1024**3}
+        self.resources.status(); self.now += 30
+        self.assertEqual(self.resources.status()['preprocessingLimit'], 1)
+        self.assertTrue(self.resources.status()['serial'])
+
     def test_cancel_waiting_preprocess_and_disallow_inference_inside_it(self):
         with self.resources.lease('model', threading.Event()):
             future = self.resources.submit(self.cancel, lambda:None)
@@ -125,19 +131,31 @@ class RoutingTests(unittest.TestCase):
             worker=Path(folder)/'worker.py'
             worker.write_text('import sys\nprint(\'{"ok":true,"value":{}}\',flush=True)\nsys.exit(7)\n')
             model=ModelGateway(folder);model.python=sys.executable;model.worker=str(worker)
-            model.capabilities=lambda:{'engineVersion':'0.7.0'}
+            model.capabilities=lambda:{'engineVersion':'0.9.1'}
             try:
                 with self.assertRaisesRegex(LocalWorkerError, 'inspect, exit 7') as result:
                     model.prepare_local({'operation':'inspect'},threading.Event())
                 self.assertTrue(retryable_analysis_error(result.exception))
             finally:model.resources.shutdown()
+
+    def test_preprocessor_sigkill_retries_once_and_degrades_to_serial(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker=Path(folder)/'attempted'
+            worker=Path(folder)/'worker.py'
+            worker.write_text(f'import json,os,signal,sys\nfrom pathlib import Path\np=Path({str(marker)!r})\njson.loads(sys.stdin.readline())\nif not p.exists(): p.write_text("1"); os.kill(os.getpid(),signal.SIGKILL)\nprint(json.dumps({{"ok":True,"value":{{"retried":True}}}}))\n')
+            model=ModelGateway(folder);model.python=sys.executable;model.worker=str(worker)
+            model.capabilities=lambda:{'engineVersion':'0.9.1'}
+            try:
+                self.assertEqual(model.prepare_local({'operation':'inspect'},threading.Event()), {'retried':True})
+                self.assertTrue(model.resources.status()['serial'])
+            finally:model.resources.shutdown()
     def test_installed_cpu_worker_on_repository_fixture_without_model_process(self):
         import os
         with tempfile.TemporaryDirectory() as folder:
             model = ModelGateway(folder)
-            if not Path(model.python).is_file() or model.capabilities()['engineVersion'] != '0.7.0':
+            if not Path(model.python).is_file() or model.capabilities()['engineVersion'] != '0.9.1':
                 model.resources.shutdown()
-                self.skipTest('Installed VisionFlow 0.7 runtime unavailable')
+                self.skipTest('Installed VisionFlow 0.9.1 runtime unavailable')
             try:
                 with patch.dict(os.environ, {'PATH':str(ROOT/'build-desktop/media/bin')+os.pathsep+os.environ.get('PATH','')}):
                     sample = model.local({'operation':'catalog', 'action':'sample',
@@ -191,7 +209,7 @@ class RoutingTests(unittest.TestCase):
             worker = Path(folder)/'worker.py'
             worker.write_text('import json,sys,os\nj=json.loads(sys.stdin.readline())\nprint(json.dumps({"ok":True,"value":{"helper":"--preprocess-only" in sys.argv,"secret":os.environ.get("TEST_PRIVATE_KEY")}}))\n')
             model = ModelGateway(folder); model.python = sys.executable; model.worker = str(worker)
-            model.capabilities = lambda:{'engineVersion':'0.7.0'}
+            model.capabilities = lambda:{'engineVersion':'0.9.1'}
             model.process = sentinel = object()
             try:
                 with patch.dict('os.environ', {'TEST_PRIVATE_KEY':'must-not-leak'}):

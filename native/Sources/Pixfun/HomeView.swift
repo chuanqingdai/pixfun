@@ -5,10 +5,10 @@ struct HomeView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 32) {
-                Text("What will you create?").font(.pixfun(40, semibold: true)).tracking(-1.2)
+                Text("What will you create?").font(.pixfun(28, semibold: true))
                     .frame(maxWidth: .infinity).padding(.bottom, 14)
                 BriefComposer()
-            }.padding(.horizontal, 36).padding(.top, 88).padding(.bottom, 36)
+            }.padding(.horizontal, 24).padding(.top, 88).padding(.bottom, 36)
                 .frame(maxWidth: 880).frame(maxWidth: .infinity)
         }.navigationTitle("Home")
     }
@@ -38,7 +38,7 @@ struct BriefComposer: View {
                             Image(systemName: "wand.and.stars")
                             Text(skill.title)
                             Button { store.composerDraft.skill = nil } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).accessibilityLabel("Remove skill")
-                        }.font(.callout).foregroundStyle(Color.pixfunGold)
+                        }.font(.callout).foregroundStyle(Color.pixfunGoldText)
                     }
                     PromptEditor(text: $store.composerDraft.prompt, height: $editorHeight, requestFocus: $writing,
                                  placeholder: "Add videos, then ask me to analyze or edit…").frame(height: editorHeight)
@@ -55,8 +55,8 @@ struct BriefComposer: View {
                             .disabled(!store.canSubmitAgent)
                             .keyboardShortcut(.return, modifiers: .command)
                     }.buttonStyle(PixfunButtonStyle(kind: .quiet)).padding(.horizontal, -10).disabled(store.importing)
-                }.padding(22).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 20))
-                    .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.pixfunLine))
+                }.padding(24).background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.pixfunLine))
 
             ComposerNotice()
             VStack(alignment: .leading, spacing: 2) {
@@ -66,17 +66,17 @@ struct BriefComposer: View {
                             pendingExample = example
                             confirmReplacement = true
                         } else {
-                            store.composerDraft.prompt = example.applying(to: store.composerDraft.prompt)
+                            store.composerDraft.prompt = store.language.text(example.applying(to: store.composerDraft.prompt))
                             writing = true
                         }
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: example.symbol)
                                 .font(.system(size: 13, weight: .regular))
-                                .foregroundStyle(Color.pixfunGold)
+                                .foregroundStyle(Color.pixfunGoldText)
                                 .frame(width: 18)
                                 .accessibilityHidden(true)
-                            Text(example.outcome).font(.pixfun(13))
+                            Text(LocalizedStringKey(example.outcome)).font(.pixfun(13))
                                 .lineLimit(1).minimumScaleFactor(0.9)
                             Spacer(minLength: 8)
                             Image(systemName: "arrow.up.left")
@@ -93,7 +93,7 @@ struct BriefComposer: View {
             .alert("Replace your draft?", isPresented: $confirmReplacement) {
                 Button("Cancel", role: .cancel) { pendingExample = nil }
                 Button("Use example") {
-                    if let example = pendingExample { store.composerDraft.prompt = example.prompt; writing = true }
+                    if let example = pendingExample { store.composerDraft.prompt = store.language.text(example.prompt); writing = true }
                     pendingExample = nil
                 }
             } message: { Text("This example will replace your text. Your attached files will stay.") }
@@ -107,7 +107,7 @@ struct ComposerToolLabel: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol).font(.system(size: 14, weight: .regular)).frame(width: 16, height: 16)
-            Text(title).lineLimit(1)
+            Text(LocalizedStringKey(title)).lineLimit(1)
         }.fixedSize(horizontal: true, vertical: false)
     }
 }

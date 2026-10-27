@@ -3,14 +3,14 @@ import json
 import re
 
 from agent_models import AgentCancelled
-from product_language import ENGLISH_DEFAULT, explicitly_chinese
+from product_language import language_instruction, explicitly_chinese
 
 REPORT_PROMPT = '''ANALYSIS_REPORT: Summarize the completed material analysis for the user.
 Return JSON only: {"overview":"overall findings and how these materials could be used together",
 "materials":[{"mediaId":"exact source ID","content":"concise description of this entire material",
 "suggestion":"specific editing/use advice grounded in the supplied findings"}]}.
 The only top-level keys are overview and materials; do not wrap them in ANALYSIS_REPORT.
-Write in English by default, unless the user explicitly requests another output language.
+Follow the product output language; default to Simplified Chinese when unspecified.
 The language of the request or cached evidence alone must not change the output language.
 Include every supplied mediaId exactly once. Keep the overview to
 2–3 sentences and each content/suggestion to 1–2 sentences. Answer the request, not just task status.
@@ -21,8 +21,8 @@ Do not claim that a video was generated or emphasize that one was not generated.
 INPUT: '''
 
 
-def source_report(run, records, summaries):
-    chinese = explicitly_chinese(run.get('prompt', ''))
+def source_report(run, records, summaries, language='zh-Hans'):
+    chinese = language == 'zh-Hans' or explicitly_chinese(run.get('prompt', ''))
     materials = []
     for media_id, record in records.items():
         findings = [a for a in run['artifacts'] if a.get('mediaId') == media_id and a['type'] in ('analysis', 'subtitle')]
@@ -40,13 +40,14 @@ def source_report(run, records, summaries):
 
 def summarize_report(run, records, summaries, models, cancel, mode):
     if cancel.is_set(): raise AgentCancelled()
-    fallback = source_report(run, records, summaries)
+    language = getattr(models, 'output_language', 'zh-Hans')
+    fallback = source_report(run, records, summaries, language)
     speech = [{'mediaId': a.get('mediaId'), 'text': a['text']} for a in run['artifacts'] if a['type'] == 'subtitle']
     evidence = json.dumps({'request': run['prompt'], 'materials': fallback['materials'], 'speechEvidence': speech}, ensure_ascii=False)
     # Preserve all file findings if a joint summary would exceed the local context budget.
     if len(evidence) > 24000: return fallback
     try:
-        answer = models.ask(ENGLISH_DEFAULT + REPORT_PROMPT + evidence, cancel, mode, max_tokens=3000)
+        answer = models.ask(language_instruction(language) + REPORT_PROMPT + evidence, cancel, mode, max_tokens=3000)
         if cancel.is_set(): raise AgentCancelled()
         # Some local models echo the task marker as a single wrapper. Unwrap
         # only that known shape, then apply the same complete validation.

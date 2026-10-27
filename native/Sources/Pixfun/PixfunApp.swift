@@ -20,12 +20,12 @@ struct PixfunApp: App {
             WorkspaceView().environmentObject(store)
                 .environment(\.locale, store.language.locale)
                 .frame(minWidth: 960, minHeight: 650)
-                .preferredColorScheme(.dark).tint(.pixfunGold)
+                .tint(.pixfunGoldText)
                 .font(.pixfun()).foregroundStyle(Color.pixfunInk)
                 .buttonStyle(PixfunButtonStyle())
                 .scrollIndicators(.never)
                 .background(PixfunWindowAppearance())
-                .task { delegate.store = store; await store.start() }
+                .task { store.applyAppearance(); delegate.store = store; await store.start() }
         }
         .defaultSize(width: 1280, height: 820)
         .windowStyle(.hiddenTitleBar)
@@ -41,7 +41,9 @@ struct PixfunApp: App {
             }
             CommandMenu("Workspace") {
                 ForEach(Array(WorkspacePage.primaryPages.enumerated()), id: \.element.id) { index, page in
+                  if page != .mediaMap || store.hasMediaMap {
                     Button(page.navigationTitle) { store.navigate(page) }.keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
+                  }
                 }
             }
         }
@@ -60,13 +62,19 @@ struct WorkspaceView: View {
                     // height and push persistent navigation off screen.
                     HSplitView {
                     PixfunSidebar()
-                        .frame(minWidth: 200, idealWidth: 216, maxWidth: 240)
+                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 280)
                         .frame(height: viewport.size.height)
                     Group {
                         switch store.page ?? .media {
                         case .media:
                             if let item = store.detail { MediaDetailView(initialItem: item).id(item.id) }
                             else { MediaView() }
+                        case .mediaMap:
+                            ZStack {
+                                MediaMapView().opacity(store.detail == nil ? 1 : 0)
+                                    .allowsHitTesting(store.detail == nil).accessibilityHidden(store.detail != nil)
+                                if let item = store.detail { MediaDetailView(initialItem: item).id(item.id) }
+                            }
                         case .mediaSync: MediaSyncView(service: store.service, showMedia: { store.openSyncedMedia($0, name: $1) })
                         case .home, .skills, .project: CreationWorkspaceView()
                         }
@@ -107,20 +115,17 @@ struct PixfunSidebar: View {
                 .padding(.horizontal, PixfunSidebarMetrics.contentInset)
                 .padding(.top, 18).padding(.bottom, 20)
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
-                    navigationGroup("Media", pages: WorkspacePage.mediaPages)
+                VStack(alignment: .leading, spacing: 24) {
+                    navigationGroup("Media", pages: store.sidebarMediaPages)
                     navigationGroup("Create", pages: WorkspacePage.creationPages, beta: true)
                 }
             }
             Spacer()
             Divider().padding(.bottom, 8)
             Button { store.settingsPresented = true } label: {
-                Label("Settings", systemImage: "gearshape").font(.pixfun(13))
+                Label("Settings", systemImage: "gearshape").font(.pixfun(14))
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(PixfunButtonStyle(kind: .quiet)).help("Settings…")
-            Label("On this Mac", systemImage: "internaldrive")
-                .font(.pixfun(12)).foregroundStyle(Color.pixfunSubtle)
-                .padding(PixfunSidebarMetrics.contentInset)
         }.padding(.horizontal, 12).padding(.bottom, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.pixfunSidebar)
@@ -162,9 +167,9 @@ struct CreationWorkspaceView: View {
 struct PageHeading: View {
     var title: String; var subtitle: String?
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(LocalizedStringKey(title)).font(.pixfun(22, semibold: true))
-            if let subtitle { Text(LocalizedStringKey(subtitle)).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted) }
+        VStack(alignment: .leading, spacing: 12) {
+            Text(LocalizedStringKey(title)).font(.pixfun(28, semibold: true))
+            if let subtitle { Text(LocalizedStringKey(subtitle)).font(.pixfun(14)).lineSpacing(4).foregroundStyle(Color.pixfunMuted) }
         }
     }
 }
@@ -173,7 +178,7 @@ struct EmptyWorkspace: View {
     var symbol: String; var title: String; var detail: String
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: symbol).font(.system(size: 36, weight: .light)).foregroundStyle(Color.pixfunGold)
+            Image(systemName: symbol).font(.system(size: 36, weight: .light)).foregroundStyle(Color.pixfunGoldText)
             Text(LocalizedStringKey(title)).font(.title3.weight(.semibold))
             Text(LocalizedStringKey(detail)).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
         }.frame(maxWidth: .infinity, maxHeight: .infinity).padding(32)

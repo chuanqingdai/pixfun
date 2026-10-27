@@ -12,7 +12,8 @@ from pathlib import Path
 VERSION = 2
 ROUTING = '''Packaging is supported: gentle full-photo motion, animated short titles,
 Editorial Postcard (light) and City Notes (dark) single-panel layouts, and a short graphic reveal.
-Return packagingRequest {"style":"keep|none|editorial-postcard|city-notes", "text":"keep|auto|none", "motion":"keep|gentle|none"}.
+Return packagingRequest {"style":"keep|none|editorial-postcard|city-notes|hyperframes-title", "text":"keep|auto|none", "motion":"keep|gentle|none"}.
+HyperFrames / dynamic opening title uses hyperframes-title: a transparent animated title over existing footage, no extra intro or invented location/date.
 Travel Short defaults to Editorial Postcard. Other photo edits default to gentle full-photo motion without text.
 No effects means style=none,text=none,motion=none; no text means text=none.
 Never flag these implemented features as unsupported. Multi-image collages, 3D, tracked text,
@@ -22,13 +23,18 @@ cross-dissolves and dialogue captions remain unsupported. A generic request for 
 def resolve(value, previous, short=False, prompt=''):
     value = value if isinstance(value, dict) else {}
     result = {**{'style':'editorial-postcard' if short else 'none', 'text':'auto' if short else 'none', 'motion':'gentle'}, **(previous or {})}
-    for key, allowed in (('style', ('none','editorial-postcard','city-notes')), ('text', ('auto','none')), ('motion', ('gentle','none'))):
+    for key, allowed in (('style', ('none','editorial-postcard','city-notes','hyperframes-title')), ('text', ('auto','none')), ('motion', ('gentle','none'))):
         if value.get(key) in allowed: result[key] = value[key]
+    if re.search(r'(?:add|use|apply).*hyperframes|(?:加|用|制作).*动态片名', prompt, re.I):
+        result.update(style='hyperframes-title', text='auto')
     # Explicit negatives override both model interpretation and skill defaults.
     if re.search(r'no (?:effects|animation)|without (?:effects|animation)|不要(?:特效|动效)|不加(?:特效|动效)', prompt, re.I):
         result.update(style='none', text='none', motion='none')
     if re.search(r'keep (?:the )?photos static|static photos|不要运镜|不要推近|图片保持静态', prompt, re.I): result['motion']='none'
     if re.search(r'no (?:text|titles|captions)|without (?:text|titles)|不要(?:文字|字幕)|不加(?:文字|字幕)|无字', prompt, re.I): result['text'] = 'none'
+    if re.search(r'(?:remove|without|don.t use).*?(?:hyperframes|motion title)|(?:不要|不加|删除|去掉).*?动态片名',prompt,re.I):
+        result.update(style='none', text='none')
+    if result['style'] == 'hyperframes-title' and result['text'] == 'none': result['style'] = 'none'
     if result['text'] == 'auto' and result['style'] == 'none': result['style'] = 'editorial-postcard'
     return {key:result[key] for key in ('style','text','motion')}
 
@@ -39,7 +45,7 @@ def title_text(label):
 
 def component(shot, index, count, record, settings, width, height):
     duration = round((shot['end'] - shot['start']) * 30) / 30
-    styled = settings['style'] != 'none'
+    styled = settings['style'] not in ('none', 'hyperframes-title')
     motion = record['kind'] == 'image' and settings['motion'] == 'gentle'
     # Last shot is a clean visual pause; a single-photo film has a clean tail.
     title = styled and settings['text'] == 'auto' and duration >= 2.5 and (count == 1 or index < count - 1)
@@ -48,7 +54,7 @@ def component(shot, index, count, record, settings, width, height):
     # Entire source fits in this fixed viewport; no subject detection/cropping needed.
     rect = [round(width*.06), round(height*.10), round(width*.88/2)*2, round(height*(.57 if title else .78)/2)*2] if styled else [0,0,width,height]
     return {'id':shot['id']+'-design', 'shotId':shot['id'], 'assetRefs':[shot['mediaId']],
-            'durationFrames':round(duration*30), 'style':settings['style'], 'viewport':rect,
+            'durationFrames':round(duration*30), 'style':settings['style'] if styled else 'none', 'viewport':rect,
             'motion':motion, 'reveal':styled and index>0 and settings['motion'] != 'none',
             'text':title_text(shot.get('label')) if title else '',
             'animateTitle':settings['motion'] != 'none',

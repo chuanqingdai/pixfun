@@ -4,6 +4,8 @@ This is the default Mac client, implemented in **SwiftUI + AppKit + AVKit**. It 
 
 ## Media 0.2.0
 
+- Trip location corrections expand inside the current Agent message, sharing its scroll area. Select affected media and a reference, then apply; errors retain the selection, and successful corrections return to trip confirmation without starting story planning.
+- Includes the restored Motion Titles, Journey Route and Highlight Counter skills, with graphic options in the existing Agent/editor controls. See [motion graphics](HYPERFRAMES.md) for runtime requirements and validation.
 - Import original photos/videos in place, or configure verified-copy sync from cards, folders and paired phones. Keep original filenames and source references. The empty library emphasizes manual import and also offers sync.
 - Browse by type, favorite, import date, source folder/device, place, scene, primary subject and activity. Search saved descriptions, shot evidence, transcripts and on-screen text; optional local visual indexing adds seekable scene matches.
 - Read an overall video description followed by distinct moments when present. Shot navigation stays below the player; secondary analysis, measurements and provenance are collapsed. Editorial estimates and sampled technical measurements retain separate labels.
@@ -13,6 +15,11 @@ This is the default Mac client, implemented in **SwiftUI + AppKit + AVKit**. It 
 - Optional Apple coordinate lookup provides address context. A separate, default-off OpenStreetMap boundary toggle can group mapped campuses, parks and scenic areas. Lake proximity remains qualified as “nearby”; missing or ambiguous boundaries preserve the address. User-saved place names take priority.
 
 Boundary lookup sends coordinates only, caches results locally, and displays OpenStreetMap attribution. The community Overpass endpoint is for a limited pilot, capped at 100 requests/day with service-error cooldown. Production must configure an operated/contracted HTTPS endpoint using `PixfunBoundaryEndpoint` in the signed app's Info.plist. Public-service availability and boundary coverage are not guaranteed.
+
+- Place chips use city plus named area, including legacy Apple results; the full address, canonical map name and original GPS remain available and searchable.
+- A separately consented Nominatim fallback can discover candidates and verify Polygon/MultiPolygon containment, including holes. Nearest POIs and bounding rectangles are not containment evidence. Cached polygons can serve other coordinates inside the same mapped area without repeated requests.
+- The fallback is serial, capped at 30 HTTP requests/day with at least 1.1 seconds between requests and error backoff. Configure a stable self-hosted/contracted base URL with `PixfunPlaceFallbackEndpoint` for production. HTTP 403/406 blocks the Overpass endpoint across restarts rather than rotating identities or mirrors.
+- Explicit local place-name preferences are scoped by city and canonical area in `placeDisplayAliases.v1`; they change the concise caption, not source coordinates, canonical names or files. No campus/scenic-name whitelist or filename-based assignment is built into lookup.
 
 Media verification (synthetic fixtures, no personal library changes):
 
@@ -38,6 +45,16 @@ Use the existing desktop Python environment with the dependencies in `desktop/ph
 - `LocalService.swift`: launches and authenticates to the bundled Python/FFmpeg analysis engine on a random **loopback-only** port. The engine is not rewritten in Swift. It stops when the app exits; a parent watchdog also stops it after a crash. No public API key is needed.
 
 The Agent workspace now connects the installed local VisionFlow/MLX runtime for intent routing, sampled visual understanding, speech transcription, semantic search and grounded rough-cut planning. Local optical-flow/quality/OCR evidence informs planning. Users review a timeline before FFmpeg builds a preview, edit source ranges/order/locks, and export the result with a native save panel. See [Agent architecture, API contracts and limitations](AGENT-ARCHITECTURE.md). Large-model runtimes/weights are **not bundled**: they must already be installed or explicitly configured. Cloud use is optional and asks task-specific permission; real cloud integration remains unverified until a provider, models and credentials are supplied. Generated music, voiceover and publishing are not implemented. No transcript is presented as a visual description. Audio can be attached in Home but is intentionally excluded from Media categories.
+
+## Pixfun design system and appearance
+
+The client uses semantic light/dark colors, system Chinese/Latin typography, 40-point standard controls, 40-point navigation rows, 28-point page headings and 16:9 media cards. Gold button fills retain dark labels in both appearances; gold text, selected navigation, input borders and focus colors have independent light values. Player footage is not recolored.
+
+Settings → General → Appearance offers **Follow system / Light / Dark**, defaulting to Follow system. The preference is stored locally as `appAppearance`; system mode clears the application appearance override. AppKit is the sole appearance authority so dismissing a preview cannot leave the main window in a different theme. Selecting an appearance previews it across the app. **Save** persists it; **Cancel** restores the previously saved appearance. Appearance-only changes do not validate or write cloud credentials.
+
+Settings use one surface per group, 16-point row padding, a 24-point column gap, 14-point labels/descriptions, 240-point field columns, and content-driven row heights. Containers below 560 points stack labels above controls. Location permissions and model configuration retain their existing behavior; the footer keeps Cancel/Save and errors visible while the form scrolls.
+
+`native/Tests/ThemeTests.swift` resolves the actual dynamic AppKit palette in Aqua and Dark Aqua and checks text, button, input-boundary and selection contrast. `scripts/test-native.cjs` includes this check along with existing native regressions. Appearance persistence and draft isolation are covered by the native model tests.
 
 ## Build and run
 
@@ -66,9 +83,9 @@ npm run desktop:legacy
 
 - The conversation composer has one trailing action: Stop while a task runs, Send/Continue when idle. Pending actions display their spinner inside that same button; Stop and Send never appear together. Stopping keeps the unsent draft and attachments, and Send retains its validation and keyboard shortcut.
 
-- Model settings use 46-point, full-width controls with persistent labels, plain text-field styling and masked API-key entry. The form scrolls within a screen-height-aware sheet; Cancel/Save and save errors stay in its fixed footer. Local tool diagnostics are collapsed by default. Draft settings still commit only after a successful save, with task-specific cloud consent unchanged.
+- Model settings use the shared design-system rows and 40-point fields with persistent labels, plain text-field styling and masked API-key entry. The form scrolls within a screen-height-aware sheet; Cancel/Save and save errors stay in its fixed footer. Local tool diagnostics are collapsed by default. Draft settings still commit only after a successful save, with task-specific cloud consent unchanged.
 
-- Agent turns show only the current plain-English step and an indeterminate spinner while running. Repeated task summaries, window counters, progress totals and work-log lists are not rendered. The underlying events remain stored for diagnostics. Finished turns show their results; clarification, permission questions, retry/stop controls and actionable errors remain available.
+- Agent turns show the current step and a collapsible per-material list with filenames, completed count, and analyzing/waiting/failed/paused states. A partial finding does not mark a whole material complete. Completed states survive failure and restart; filenames open the existing Media detail view. Older tasks use their saved analysis counters. Clarification, retry/stop controls and results remain in the conversation.
 
 - Reimporting an already indexed original returns the existing item without an alert, duplicate attachment or repeated analysis. Ready/busy/error states and cached analysis are preserved; real import failures are still reported. Media covers and composer thumbnails show their own processing indicator, which clears when the corresponding work completes.
 

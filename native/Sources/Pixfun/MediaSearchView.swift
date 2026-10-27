@@ -11,7 +11,7 @@ struct MediaCatalogControls: View {
                 Button("Stop") { store.stopCatalog() }.buttonStyle(.plain)
             } else {
                 Button("Build visual index…") { confirmIndex = true }.buttonStyle(.plain)
-                    .foregroundStyle(Color.pixfunGold)
+                    .foregroundStyle(Color.pixfunGoldText)
             }
         }.font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
             .task(id: store.ready) { await store.refreshCatalogStatus() }
@@ -34,8 +34,8 @@ struct MediaSearchControls: View {
                 Button { focused = true } label: {
                     Image(systemName: "magnifyingglass").frame(width: 24, height: 30)
                 }.buttonStyle(.plain).accessibilityLabel("Focus Media search").keyboardShortcut("f", modifiers: .command)
-                TextField(LocalizedStringKey(compact ? "Search…" : "Search filenames, scenes, tags or dialogue…"), text: $store.query)
-                    .textFieldStyle(.plain).font(.pixfun(13)).focused($focused)
+                TextField(LocalizedStringKey(compact ? "Search…" : "Search filenames, scenes, tags or dialogue…"), text: $store.query, prompt: PixfunTypography.placeholder(LocalizedStringKey(compact ? "Search…" : "Search filenames, scenes, tags or dialogue…")))
+                    .textFieldStyle(.plain).font(.pixfun(14)).foregroundStyle(Color.pixfunInk).focused($focused)
                     .accessibilityLabel("Search Media").accessibilityHint(store.searchScope.explanation)
                     .onExitCommand { store.query = "" }
                     .onSubmit { store.searchVisualMedia() }
@@ -67,10 +67,10 @@ struct MediaSearchControls: View {
                                 .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                         }.padding(20).frame(width: 370)
                     }
-            }.foregroundStyle(Color.pixfunMuted).padding(.horizontal, 8).frame(height: 30)
-                .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : .pixfunLine, lineWidth: focused ? 2 : 1))
-        }.frame(height: 30)
+            }.foregroundStyle(Color.pixfunMuted).padding(.horizontal, 12).frame(height: PixfunLayout.toolbarControlHeight)
+                .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(focused ? Color.pixfunFocus : .pixfunControlBorder, lineWidth: focused ? 2 : 1))
+        }.frame(height: PixfunLayout.toolbarControlHeight)
             .task(id: store.ready) { await store.refreshCatalogStatus() }
     }
 }

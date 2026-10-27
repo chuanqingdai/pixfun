@@ -45,7 +45,7 @@ struct SyncPhoneSetupView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Label(transfer.phase == "complete" ? "Transfer complete" : transfer.phase == "uploading" ? "Receiving your files" : "Phone connected",
                               systemImage: transfer.phase == "complete" ? "checkmark.circle" : "iphone")
-                            .font(.pixfun(16, semibold: true)).foregroundStyle(Color.pixfunGold)
+                            .font(.pixfun(16, semibold: true)).foregroundStyle(Color.pixfunGoldText)
                         if transfer.phase == "connected" {
                             Text("On your phone, tap Choose photos & videos, then Start transfer.")
                                 .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
@@ -81,7 +81,7 @@ struct SyncPhoneSetupView: View {
                 }
             }
             if let error = model.error ?? transfer?.error {
-                Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunGold).fixedSize(horizontal: false, vertical: true)
+                Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 10) {
                 if transfer?.phase != "uploading", transfer?.phase != "connected" {
@@ -109,7 +109,7 @@ struct SyncPhoneSetupView: View {
     }
     private func step(_ number: Int, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text(String(number)).font(.pixfun(11, semibold: true)).foregroundStyle(Color.pixfunGold)
+            Text(String(number)).font(.pixfun(11, semibold: true)).foregroundStyle(Color.pixfunGoldText)
                 .frame(width: 24, height: 24).background(Color.pixfunGold.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 5) {
                 Text(LocalizedStringKey(title)).font(.pixfun(13, semibold: true))

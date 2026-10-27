@@ -2,6 +2,8 @@
 import re
 import time
 import uuid
+from copy import deepcopy
+import agent_trip
 
 
 def requests_plan_review(prompt):
@@ -33,8 +35,8 @@ def decision(run):
         options = [('use_visuals', 'Use photos & videos') if run.get('clarificationKind') == 'visual_only' else ('use_videos', 'Use videos only'), ('change_files', 'Change files')]
     elif status == 'review' or (status == 'completed' and run.get('intent') == 'plan' and run.get('timeline') and
                                 not any(a['type'] == 'preview' for a in run.get('artifacts', []))):
-        question = question or 'Review the plan. Build a preview, or describe your changes.'
-        options = [('approve', 'Build preview')]
+        question = question or 'Please confirm the script before generating a preview.'
+        options = [('approve', 'Confirm script & generate preview')]
     elif status in ('failed', 'cancelled', 'interrupted'):
         question = question or run.get('message') or 'Try this task again?'
         options = [('retry', 'Retry')]
@@ -42,7 +44,12 @@ def decision(run):
         return None
     elif run.get('choices'):
         options = [(choice['id'], choice['label']) for choice in run['choices']]
-    return {'status': status, 'version': run.get('version', 1), 'question': question,
+    kind = 'trip' if run.get('clarificationKind') == 'trip_confirmation' else ('script' if status == 'review' or (status == 'completed' and run.get('intent') == 'plan' and run.get('timeline')) else None)
+    return {'status': status, 'version': run.get('version', 1), 'question': question, 'kind': kind,
+            'detail': agent_trip.detailed_text(run.get('tripConfirmation') or {}) if kind == 'trip' else '',
+            'tripEntries': deepcopy((run.get('tripConfirmation') or {}).get('entries', [])) if kind == 'trip' else None,
+            'timeline': deepcopy(run.get('timeline', [])) if kind == 'script' else [],
+            'storyExecution': deepcopy(run.get('storyExecution')) if kind == 'script' else None,
             'options': [{'id': key, 'label': label} for key, label in options],
             'resultText': run.get('resultText', '')}
 
@@ -52,7 +59,7 @@ def capture_decision(run):
     history = run.setdefault('conversationHistory', [])
     pending = next((item for item in reversed(history) if item['state'] == 'pending'), None)
     if pending:
-        if current and all(pending.get(k) == current.get(k) for k in ('status', 'version', 'question', 'options')):
+        if current and all(pending.get(k) == current.get(k) for k in ('status', 'version', 'question', 'options', 'detail', 'tripEntries', 'timeline', 'storyExecution', 'resultText')):
             return pending
         pending['state'] = 'closed'
     if current:

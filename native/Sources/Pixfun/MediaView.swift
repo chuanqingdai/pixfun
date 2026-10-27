@@ -20,26 +20,47 @@ struct MediaView: View {
                     Text("Adding files…").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 }
                 if store.selecting {
-                    Button("Cancel", action: store.cancelSelection)
-                    Button("Select all visible") { store.selection.formUnion(store.visibleItems.map(\.id)) }
-                        .disabled(store.visibleItems.isEmpty)
-                    if !selectingForRemoval {
-                        Button("Favorite") { for item in store.items where store.selection.contains(item.id) && item.favorite != true { store.favorite(item) } }.disabled(store.selection.isEmpty)
-                        Button("Create rough cut · Beta", action: store.finishSelection).buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(store.selection.isEmpty)
-                    }
-                    Button {
-                        store.requestMediaRemoval(store.libraryItems.filter { store.selection.contains($0.id) })
-                    } label: { Text("Delete…").frame(height: 36).contentShape(Rectangle()) }
-                        .buttonStyle(.plain).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
-                        .disabled(store.selection.isEmpty)
-                        .help("Remove selected items from the library. Original files are kept.")
+                    HStack(spacing: 8) {
+                        Button("Cancel", action: store.cancelSelection)
+                            .buttonStyle(PixfunButtonStyle(kind: .quiet))
+                        Button("Select all visible") { store.selection.formUnion(store.visibleItems.map(\.id)) }
+                            .buttonStyle(PixfunButtonStyle())
+                            .disabled(store.visibleItems.isEmpty)
+                        if selectingForRemoval {
+                            Button("Delete", role: .destructive) { requestSelectedRemoval() }
+                                .buttonStyle(PixfunButtonStyle())
+                                .disabled(store.selection.isEmpty)
+                                .help("Remove selected items from the library. Original files are kept.")
+                        } else if store.selectingForBrief {
+                            Button("Add to brief", action: store.finishSelection)
+                                .buttonStyle(PixfunButtonStyle(kind: .primary))
+                                .disabled(store.selection.isEmpty)
+                        } else {
+                            MediaFavoriteButton(isFavorite: false, title: "Favorite") {
+                                for item in store.items where store.selection.contains(item.id) && item.favorite != true {
+                                    store.favorite(item)
+                                }
+                            }.disabled(!store.items.contains { store.selection.contains($0.id) && $0.favorite != true })
+                            Menu {
+                                Button(action: store.finishSelection) { Label("Create rough cut · Beta", systemImage: "film") }
+                                Divider()
+                                Button(role: .destructive) { requestSelectedRemoval() } label: { Label("Delete", systemImage: "trash") }
+                            } label: { Image(systemName: "ellipsis").font(.system(size: 16, weight: .medium)) }
+                                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                                .frame(width: 40, height: 40)
+                                .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 6))
+                                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.pixfunControlBorder))
+                                .disabled(store.selection.isEmpty)
+                                .accessibilityLabel("More actions").help("More actions")
+                        }
+                    }.fixedSize(horizontal: true, vertical: false)
                 } else if hasMedia {
                     HStack(spacing: 16) {
                         Button(action: store.beginSelection) {
                             Text("Select").frame(height: 36).contentShape(Rectangle())
                         }
                         Button { selectingForRemoval = true; store.beginSelection() } label: {
-                            Text("Delete…").frame(height: 36).contentShape(Rectangle())
+                            Text("Delete").frame(height: 36).contentShape(Rectangle())
                         }.help("Select items to remove from the library. Original files are kept.")
                     }.buttonStyle(.plain).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted)
                         .padding(.trailing, 8)
@@ -48,9 +69,9 @@ struct MediaView: View {
                         Button("Add local folder…") { store.pick(folder: true) }
                         Divider()
                         Button("Connect a device or sync folder…") { store.navigate(.mediaSync) }
-                    } label: { Label("Import", systemImage: "plus").foregroundStyle(Color.pixfunBackground) }
+                    } label: { Label("Import", systemImage: "plus").foregroundStyle(Color.pixfunOnAccent) }
                         .menuStyle(.borderlessButton).fixedSize().padding(.horizontal, 14).frame(height: 36)
-                        .tint(.pixfunBackground).foregroundStyle(Color.pixfunBackground).background(Color.pixfunGold, in: RoundedRectangle(cornerRadius: 8))
+                        .tint(.pixfunOnAccent).foregroundStyle(Color.pixfunOnAccent).background(Color.pixfunGold, in: RoundedRectangle(cornerRadius: 8))
                         .accessibilityLabel("Import media")
                         .help("Add files in place, or use Media Sync for verified copies")
                 }
@@ -125,6 +146,10 @@ struct MediaView: View {
                 Text("Only library references will be removed. Original photos and videos on your Mac or external drive will not be deleted. Analysis of these items will stop. You can import them again.")
             }
     }
+    private func requestSelectedRemoval() {
+        store.requestMediaRemoval(store.libraryItems.filter { store.selection.contains($0.id) })
+    }
+
 }
 
 struct MediaCard: View {
@@ -139,11 +164,11 @@ struct MediaCard: View {
             } label: {
                 VStack(alignment: .leading, spacing: 0) {
                     // Fill the fixed thumbnail area; playback keeps the original aspect ratio.
-                    ServiceImage(path: item.cover, fit: .fill).aspectRatio(16.0 / 10.0, contentMode: .fit)
+                    ServiceImage(path: item.cover, fit: .fill).aspectRatio(16.0 / 9.0, contentMode: .fit)
                         .overlay(alignment: .bottomLeading) {
                             if let status = item.processingLabel {
                                 HStack(spacing: 7) {
-                                    PixfunActivityIndicator(queued: status == "Queued…" || status == "Waiting to retry…", size: 18, tint: .pixfunGold)
+                                    PixfunActivityIndicator(queued: status == "Queued…" || status == "Waiting to retry…", size: 18, tint: .pixfunGoldText)
                                     Text(LocalizedStringKey(status)).font(.pixfun(12, semibold: true))
                                 }.foregroundStyle(Color.pixfunInk).padding(.horizontal, 8).padding(.vertical, 5)
                                     .background(Color.pixfunBackground.opacity(0.85), in: Capsule())
@@ -151,7 +176,7 @@ struct MediaCard: View {
                                     .padding(8).allowsHitTesting(false).accessibilityLabel(status)
                             } else if let reason = item.attentionReason {
                                 Label(LocalizedStringKey(reason.rawValue), systemImage: "exclamationmark.circle")
-                                    .font(.pixfun(11, semibold: true)).foregroundStyle(Color.pixfunGold)
+                                    .font(.pixfun(12, semibold: true)).foregroundStyle(Color.pixfunGoldText)
                                     .padding(.horizontal, 8).padding(.vertical, 5)
                                     .background(Color.pixfunBackground.opacity(0.9), in: Capsule())
                                     .padding(8).allowsHitTesting(false)
@@ -160,7 +185,7 @@ struct MediaCard: View {
                         .overlay(alignment: .topLeading) {
                             let source = store.mediaSource(item)
                             let device = MediaCaptureIdentity(camera: item.metadata?.camera, source: source)
-                            Label(LocalizedStringKey(device.name), systemImage: device.symbol).font(.pixfun(11, semibold: true))
+                            Label(LocalizedStringKey(device.name), systemImage: device.symbol).font(.pixfun(12, semibold: true))
                                 .lineLimit(1).truncationMode(.middle).foregroundStyle(.white)
                                 .padding(.horizontal, 8).padding(.vertical, 5)
                                 .background(.black.opacity(0.65), in: Capsule())
@@ -169,44 +194,44 @@ struct MediaCard: View {
                         }
                         .overlay(alignment: .bottomTrailing) {
                             if item.kind == "video", let seconds = item.metadata?.duration, seconds > 0 {
-                                Text(timestamp(seconds)).font(.caption.monospacedDigit()).padding(5).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 5)).padding(8)
+                                Text(timestamp(seconds)).font(.pixfun(12).monospacedDigit()).foregroundStyle(.white).padding(5).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 5)).padding(8)
                             }
                         }
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(item.name).font(.pixfun(14, semibold: true)).lineLimit(1).help(item.name)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.name).font(.pixfun(16, semibold: true)).lineLimit(1).help(item.name)
                         if let cardDetail {
                             Text(verbatim: cardDetail).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(1)
                         }
                         if let time = store.visualMatchTime(item.id) {
                             Label("Visual match · \(timestamp(time))", systemImage: "play.circle")
-                                .font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                                .font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                         }
-                    }.padding(13)
+                    }.padding(12)
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)
                 .accessibilityLabel("\(store.selecting ? (isSelected ? "Deselect" : "Select") : "Open") \(item.name)\(item.isExample == true ? " · Sample" : "")\(item.processingLabel.map { " · \($0)" } ?? "")")
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             let coreTags = store.coreMediaTags(for: item)
             if !coreTags.isEmpty {
-                MediaTagFlow(spacing: 6) {
+                MediaTagFlow(spacing: 8) {
                     ForEach(coreTags) { tag in
                         MediaFacetChip(tag: tag) {
                             if store.selecting { store.toggleSelection(item.id) }
                             else { store.toggleMediaTag(tag) }
                         }
                     }
-                }.padding(.horizontal, 13).padding(.bottom, 13)
+                }.padding(.horizontal, 12).padding(.bottom, 12)
             }
         }
-        .background(hovered ? Color.pixfunRaised : .pixfunSurface).clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(store.selecting && store.selection.contains(item.id) ? Color.pixfunGold : hovered ? .pixfunSubtle : .pixfunLine, lineWidth: store.selection.contains(item.id) && store.selecting ? 2 : 1))
+        .background(hovered ? Color.pixfunRaised : .pixfunSurface).clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(store.selecting && store.selection.contains(item.id) ? Color.pixfunGold : hovered ? .pixfunSubtle : .pixfunLine, lineWidth: store.selection.contains(item.id) && store.selecting ? 2 : 1))
         .onHover { hovered = $0 }
         .overlay(alignment: .topTrailing) {
             if store.selecting {
                 MediaSelectionBadge(selected: isSelected).padding(10).allowsHitTesting(false).accessibilityHidden(true)
             } else {
-                Button { store.favorite(item) } label: { Image(systemName: item.favorite == true ? "star.fill" : "star").font(.system(size: 15)).frame(width: 32, height: 32).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.2))) }
-                    .buttonStyle(.plain).foregroundStyle(item.favorite == true ? Color.pixfunGold : .white).padding(7).accessibilityLabel(item.favorite == true ? "Remove favorite" : "Favorite")
+                MediaFavoriteButton(isFavorite: item.favorite == true, overImage: true) { store.favorite(item) }
+                    .padding(7)
             }
         }
         .contextMenu {
@@ -221,7 +246,9 @@ struct MediaCard: View {
             }
             Button("Create rough cut · Beta") { store.attach([item.id]) }
             Button("Show in Finder") { store.reveal(item) }
-            Button(LocalizedStringKey(item.favorite == true ? "Remove favorite" : "Favorite")) { store.favorite(item) }
+            Button { store.favorite(item) } label: {
+                Label(LocalizedStringKey(item.favorite == true ? "Remove favorite" : "Favorite"), systemImage: MediaFavoriteButton.symbol(isFavorite: item.favorite == true))
+            }
             if item.missing == true { Button("Locate original…") { store.pick(locate: item.id) } }
             if item.analysisNeedsAttention { Button("Retry analysis") { store.retry(item) } }
             Divider()
@@ -247,11 +274,12 @@ struct MediaTagChip: View {
     }
     var body: some View {
         Button(action: action) {
-            Text(LocalizedStringKey(displayText)).font(.pixfun(11)).lineLimit(1).truncationMode(.tail)
+            Text(LocalizedStringKey(displayText)).font(.pixfun(12)).lineLimit(1).truncationMode(.tail)
                 .padding(.horizontal, 9).padding(.vertical, 6)
-                .background(tint.opacity(selected ? 0.20 : hovered ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(focused ? Color.pixfunFocus : tint.opacity(selected ? 0.8 : 0.3)))
-        }.buttonStyle(.plain).foregroundStyle(tint)
+                .background(selected ? Color.pixfunBrandSoft : hovered ? .pixfunHover : .pixfunSurface, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(focused ? Color.pixfunFocus : selected ? .pixfunSelectionBorder : .pixfunLine, lineWidth: focused ? 2 : 1))
+        }.buttonStyle(.plain).foregroundStyle(selected ? Color.pixfunGoldText : tint)
+            .accessibilityAddTraits(selected ? [.isSelected] : [])
             .onHover { hovered = $0 }
             .help("Find media tagged: \(displayText)")
             .accessibilityLabel("Search tag: \(displayText)")
@@ -303,7 +331,7 @@ struct MediaDetailTags: View {
                 Text("Tags").font(.pixfun(16, semibold: true))
                 Spacer()
                 if item.hasStructuredTags {
-                    Button("Review tags") { editingTags = true }.buttonStyle(PixfunButtonStyle(kind: .quiet))
+                    Button("Review tags") { editingTags = true }.buttonStyle(PixfunButtonStyle(kind: .textAction))
                 } else {
                     Text("Filter your library by category").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 }
@@ -391,7 +419,7 @@ struct MediaTagReview: View {
                                         Button("\(timestamp(ref.start))–\(timestamp(ref.end))") {
                                             if let seek { seek(ref.start) } else { store.openMedia(item, at: ref.start) }
                                             dismiss()
-                                        }.buttonStyle(.plain).font(.pixfun(11)).monospacedDigit().foregroundStyle(Color.pixfunGold)
+                                        }.buttonStyle(.plain).font(.pixfun(11)).monospacedDigit().foregroundStyle(Color.pixfunGoldText)
                                             .help("Observation window: \(ref.text). Review the original before treating this as a precise detection.")
                                     }
                                 }
@@ -413,7 +441,7 @@ struct MediaTagReview: View {
                 Picker("Category", selection: $category) {
                     ForEach(["scene","subject","activity","detail"], id: \.self) { Text(LocalizedStringKey($0.capitalized)).tag($0) }
                 }.labelsHidden().frame(width: 110)
-                TextField("Add a tag", text: $label).textFieldStyle(.roundedBorder)
+                TextField("Add a tag", text: $label, prompt: PixfunTypography.placeholder("Add a tag")).textFieldStyle(.roundedBorder)
                 Button("Add") {
                     let text = label.trimmingCharacters(in: .whitespacesAndNewlines)
                     let key = text.lowercased(), id = category+":"+key
@@ -423,7 +451,7 @@ struct MediaTagReview: View {
                     label = ""
                 }.disabled(label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || label.count > 48 || added.count >= 50)
             }.disabled(saving)
-            if let error { Text(error).font(.pixfun(12)).foregroundStyle(Color.orange) }
+            if let error { Text(error).font(.pixfun(12)).foregroundStyle(Color.pixfunWarning) }
         }.padding(24).frame(width: 600, height: 560).background(Color.pixfunBackground)
             .onAppear { hidden = Set(item.tagCorrections?.hidden ?? []); added = item.tagCorrections?.added ?? [] }
     }
@@ -460,7 +488,7 @@ struct MediaSelectionBadge: View {
             Circle().fill(selected ? Color.pixfunGold : Color.pixfunBackground)
             Circle().strokeBorder(selected ? Color.pixfunGold : Color.white, lineWidth: 2)
             if selected {
-                Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.pixfunBackground)
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(Color.pixfunOnAccent)
             }
         }
         .frame(width: 30, height: 30)
@@ -488,7 +516,7 @@ struct MediaDetailView: View {
                 Button(action: store.backToMedia) { Label(LocalizedStringKey(store.mediaBackTitle), systemImage: "chevron.left") }.buttonStyle(PixfunButtonStyle(kind: .quiet)).keyboardShortcut("[", modifiers: .command).accessibilityLabel("Back to \(store.mediaBackTitle)")
                 Text(item.name).font(.pixfun(17, semibold: true)).lineLimit(2).help(item.name)
                 Spacer()
-                Button { store.favorite(item) } label: { Image(systemName: item.favorite == true ? "star.fill" : "star") }.help("Favorite")
+                MediaFavoriteButton(isFavorite: item.favorite == true) { store.favorite(item) }
                 Button("Add to brief") { store.attach([item.id]) }.buttonStyle(PixfunButtonStyle(kind: .primary))
             }.padding(.horizontal, PixfunLayout.pageInset).padding(.vertical, 16)
             Rectangle().fill(Color.pixfunLine).frame(height: 1)
@@ -499,7 +527,7 @@ struct MediaDetailView: View {
                             Group {
                                 if item.kind == "image", let photo { Image(nsImage: photo).resizable().scaledToFit() }
                                 else if let player = playback.player { NativeVideoPlayer(player: player, poster: playback.showsPoster ? playback.poster ?? videoCover : nil) }
-                                else { ZStack { Color.black; if let playerError { Text(playerError).foregroundStyle(.secondary).padding() } else { ProgressView() } } }
+                                else { ZStack { Color.black; if let playerError { Text(playerError).foregroundStyle(Color.white.opacity(0.8)).padding() } else { ProgressView() } } }
                             }.frame(maxWidth: .infinity).frame(height: 420).background(.black).clipShape(RoundedRectangle(cornerRadius: 10))
                             if let error = playback.error {
                                 HStack { Text(error).font(.caption).foregroundStyle(.orange); Button("Retry playback") { playback.retry() } }
@@ -519,7 +547,7 @@ struct MediaDetailView: View {
                                     Text(credit).font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
                                 }
                                 if let link = item.context?["source"], let url = URL(string: link), url.scheme == "https" {
-                                    Link("Source footage ↗", destination: url).font(.pixfun(12)).tint(.pixfunGold)
+                                    Link("Source footage ↗", destination: url).font(.pixfun(12)).tint(.pixfunGoldText)
                                 }
                             }
                             if let state = item.mediaAnalysis, state.status == "retrying" {
@@ -528,7 +556,7 @@ struct MediaDetailView: View {
                                      : "Temporarily interrupted. Automatic retry \(state.attempt ?? 1)/\(max(1, (state.maxAttempts ?? 3) - 1)); completed results are kept.")
                                     .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                             } else if let state = item.mediaAnalysis, state.status != "ready", let message = state.message, !message.isEmpty {
-                                Text(LocalizedStringKey(message)).font(.pixfun(12)).foregroundStyle(item.analysisNeedsAttention ? Color.pixfunGold : Color.pixfunMuted)
+                                Text(LocalizedStringKey(message)).font(.pixfun(12)).foregroundStyle(item.analysisNeedsAttention ? Color.pixfunGoldText : Color.pixfunMuted)
                             }
                             if item.analysisNeedsAttention { Button("Retry analysis") { store.retry(item) } }
                         }.frame(width: 240, alignment: .leading)
@@ -578,7 +606,7 @@ struct MediaDetailView: View {
                             LazyVStack(alignment: .leading, spacing: 0) {
                                 ForEach(matchingCues, id: \.offset) { _, cue in
                                     HStack(alignment: .top, spacing: 18) {
-                                        Button(timestamp(cue.start)) { seek(cue.start) }.buttonStyle(.plain).foregroundStyle(Color.pixfunGold).monospacedDigit().frame(width: 55, alignment: .leading).accessibilityLabel("Jump to \(timestamp(cue.start))")
+                                        Button(timestamp(cue.start)) { seek(cue.start) }.buttonStyle(.plain).foregroundStyle(Color.pixfunGoldText).monospacedDigit().frame(width: 55, alignment: .leading).accessibilityLabel("Jump to \(timestamp(cue.start))")
                                         Text(cue.text).frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                                     }.padding(.vertical, 13)
                                     Divider()
@@ -600,7 +628,7 @@ struct MediaDetailView: View {
                                     .font(.pixfun(11)).foregroundStyle(Color.pixfunMuted)
                                 ForEach(Array(texts.enumerated()), id: \.offset) { _, entry in
                                     HStack(alignment: .top, spacing: 14) {
-                                        if item.kind == "video" { Button(timestamp(entry.start)) { seek(entry.start) }.buttonStyle(.plain).foregroundStyle(Color.pixfunGold).monospacedDigit() }
+                                        if item.kind == "video" { Button(timestamp(entry.start)) { seek(entry.start) }.buttonStyle(.plain).foregroundStyle(Color.pixfunGoldText).monospacedDigit() }
                                         Text(entry.text).textSelection(.enabled)
                                     }.font(.pixfun(13))
                                 }
@@ -733,7 +761,7 @@ struct MediaDetailView: View {
                             Label("Highlight", systemImage: "sparkles")
                                 .font(.pixfun(11, semibold: true))
                                 .padding(.horizontal, 8).padding(.vertical, 5)
-                                .foregroundStyle(Color.pixfunBackground).background(Color.pixfunGold, in: Capsule())
+                                .foregroundStyle(Color.pixfunOnAccent).background(Color.pixfunGold, in: Capsule())
                                 .padding(8)
                                 .help("AI editing pick: score 80+, recommended or must-keep, excluding likely duplicates and unusable shots.")
                         }
@@ -761,7 +789,7 @@ struct MediaDetailView: View {
                 }
             }
             if let state = item.shotAnalysis, let message = state.message, !message.isEmpty {
-                Text(message).font(.pixfun(12)).foregroundStyle(state.status == "failed" ? Color.orange : Color.pixfunMuted)
+                Text(message).font(.pixfun(12)).foregroundStyle(state.status == "failed" ? Color.pixfunWarning : Color.pixfunMuted)
             }
         }
     }
@@ -777,7 +805,7 @@ struct MediaDetailView: View {
                 VStack(alignment: .leading, spacing: 6) { shotQuickFacts(shot) }
             }
             if shot.duplicate_candidate || shot.unusable_candidate {
-                Text(LocalizedStringKey(shot.duplicate_candidate ? "Possible repeated content · review before removing" : "Potentially unusable · review original")).font(.pixfun(12)).foregroundStyle(Color.orange)
+                Text(LocalizedStringKey(shot.duplicate_candidate ? "Possible repeated content · review before removing" : "Potentially unusable · review original")).font(.pixfun(12)).foregroundStyle(Color.pixfunWarning)
             }
             shotEvidence(shot, segment: segment)
         }
@@ -834,7 +862,7 @@ struct MediaDetailView: View {
         if !shot.camera_motion.isEmpty { Text(LocalizedStringKey(CameraMotionLabel.display(shot.camera_motion, chinese: store.language == .chinese))).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted) }
         if shot.edit_recommendation.recommended_duration_sec.isFinite, shot.edit_recommendation.recommended_duration_sec > 0 {
             Text("Suggested cut \(shot.edit_recommendation.recommended_duration_sec, specifier: "%.1f")s")
-                .font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                .font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
         }
     }
     var fullShotDescriptions: some View {
@@ -844,7 +872,7 @@ struct MediaDetailView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 12) {
                                 Button("\(timestamp(segment.start))–\(timestamp(segment.end))") { selectedSegment = segment.id; seek(segment.start) }
-                                    .buttonStyle(.plain).font(.pixfun(12)).monospacedDigit().foregroundStyle(Color.pixfunGold)
+                                    .buttonStyle(.plain).font(.pixfun(12)).monospacedDigit().foregroundStyle(Color.pixfunGoldText)
                                     .accessibilityLabel("Play \(shotTitle(segment)) from \(timestamp(segment.start))")
                             }
                             Text(ShotReadingText.summary(segment.editorial?.description ?? segment.hoverDescription(analysisStatus: item.shotAnalysis?.status)))
@@ -907,7 +935,7 @@ struct MediaDetailView: View {
             else if !item.descriptionShots.isEmpty { fullShotDescriptions }
             if let state = item.videoDescription, let message = state.message, !message.isEmpty {
                 Text(LocalizedStringKey(state.status == "failed" ? "Couldn’t update the video description. Existing analysis is kept. Try again." : message))
-                    .font(.pixfun(12)).foregroundStyle(state.status == "failed" ? Color.pixfunGold : Color.pixfunMuted)
+                    .font(.pixfun(12)).foregroundStyle(state.status == "failed" ? Color.pixfunGoldText : Color.pixfunMuted)
                     .textSelection(.enabled)
             }
         }
@@ -950,7 +978,7 @@ struct MediaDetailView: View {
             } else {
                 Text("Analyzing locally")
             }
-        }.font(.pixfun(12, semibold: true)).foregroundStyle(Color.pixfunGold)
+        }.font(.pixfun(12, semibold: true)).foregroundStyle(Color.pixfunGoldText)
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(Color.pixfunGold.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
             .accessibilityElement(children: .combine)
@@ -975,5 +1003,33 @@ struct MediaDetailView: View {
                     }
                 }
         }
+    }
+}
+
+/// One favorite symbol, size and state treatment across cards, detail and bulk actions.
+struct MediaFavoriteButton: View {
+    let isFavorite: Bool
+    var overImage = false
+    var title: LocalizedStringKey? = nil
+    let action: () -> Void
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovered = false
+    @FocusState private var focused: Bool
+
+    static func symbol(isFavorite: Bool) -> String { isFavorite ? "star.fill" : "star" }
+    private var actionTitle: LocalizedStringKey { title ?? (isFavorite ? "Remove favorite" : "Favorite") }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: Self.symbol(isFavorite: isFavorite))
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(!enabled ? Color.pixfunSubtle : isFavorite ? (overImage ? .pixfunGold : .pixfunGoldText) : (overImage ? .white : .pixfunInk))
+                .frame(width: overImage ? 32 : 40, height: overImage ? 32 : 40)
+                .background(overImage ? Color.black.opacity(hovered ? 0.7 : 0.55) : hovered ? .pixfunHover : .pixfunSurface, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(focused ? Color.pixfunFocus : overImage ? .white.opacity(0.2) : .pixfunControlBorder, lineWidth: focused ? 2 : 1))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }.buttonStyle(.plain).focused($focused).onHover { hovered = $0 }
+            .accessibilityLabel(actionTitle).help(actionTitle)
+            .accessibilityAddTraits(isFavorite ? [.isSelected] : [])
     }
 }

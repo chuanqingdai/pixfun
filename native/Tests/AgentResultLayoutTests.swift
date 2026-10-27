@@ -154,13 +154,18 @@ struct AgentResultLayoutTests {
         var activeRun = failedRun
         var materialRun = failedRun
         materialRun.artifacts = fixtures
+        materialRun.mediaIds = ["rest", "snow", "queued"]
+        materialRun.materialProgress = [
+            AgentMaterialProgress(mediaId: "rest", name: "rest.mp4", status: "completed"),
+            AgentMaterialProgress(mediaId: "snow", name: "snow.mp4", status: "failed"),
+            AgentMaterialProgress(mediaId: "queued", name: "Long_filename_waiting_to_analyze.MOV", status: "pending")]
         materialRun.timeline = [
             AgentShot(id: "rest-1", mediaId: "rest", start: 0, end: 3, label: "Shared pause", reason: "Opening", locked: false),
             AgentShot(id: "rest-2", mediaId: "rest", start: 5, end: 8, label: "Return to the tent", reason: "Closing", locked: false)]
-        for width in [380.0, 760.0] {
+        for width in [320.0, 380.0, 760.0] {
             for expanded in [false, true] {
-                store.conversationSection("\(materialRun.id):materials").wrappedValue = expanded
-                let content = AgentRunMaterials(run: materialRun).padding(20).frame(width: width)
+                store.materialSection(materialRun).wrappedValue = expanded
+                let content = AgentMaterialProgressView(run: materialRun).padding(20).frame(width: width)
                     .environmentObject(store).environment(\.colorScheme, .dark)
                     .background(Color.pixfunBackground).foregroundStyle(Color.pixfunInk)
                 let renderer = ImageRenderer(content: content)
@@ -173,7 +178,31 @@ struct AgentResultLayoutTests {
                 try png.write(to: path); print(path.path)
             }
         }
-        store.conversationSection("\(materialRun.id):materials").wrappedValue = false
+        store.materialSectionOverrides.removeValue(forKey: materialRun.id)
+        for width in [320.0, 380.0, 760.0] {
+            let decision = AgentDecision(id: "confirmed-route", state: "answered", question: "", options: [.init(id: "confirm_trip", label: "行程正确并继续")], selected: "confirm_trip", response: nil, resultText: "", kind: "trip", detail: "1. IMG_0072.MOV · 2026-10-11 14:11 · 清华大学\n2. IMG_0073.MOV · 2026-10-11 14:23 · 北京 北京(通州)大运河文化旅游景区 · 已纠偏\n3. IMG_0074.MOV · 时间未记录 · 地点待确认")
+            var script = materialRun
+            script.status = "review"; script.intent = "create"
+            script.tripConfirmation = AgentTripConfirmation(status: "confirmed", useLocations: true, entries: [])
+            script.storySummary = "以营地的休息片段开场，先交代人物与环境，再回到帐篷收尾。\n\n两个片段来自同一素材，保留中间的时间变化，以平静的节奏呈现旅途中的停留。"
+            script.storySummary! += "\nDuration differs from request: 34.7s proposed vs 30s requested. Review before rendering."
+            script.storyExecution = AgentStoryExecution(outline: [
+                .init(id: "opening", title: "营地休息", intent: "先用人物的停留建立安静的氛围。", bridge: "随后回到帐篷，以相同场景呼应开头。", shotIds: ["rest-1"]),
+                .init(id: "ending", title: "回到帐篷", intent: "以环境画面结束这一段行程。", bridge: "", shotIds: ["rest-2"])
+            ], sourceNames: ["rest": "Camp_rest.MOV"], sourceKinds: ["rest": "video"], timelineVersion: script.version, stale: false)
+            let content = VStack(alignment: .leading, spacing: 20) {
+                AgentDecisionHistory(decision: decision)
+                AgentResultHeading(run: script)
+                AgentScriptOutline(shots: script.timeline, story: script.storyExecution)
+                AgentPlanActions(run: script)
+            }.padding(20).frame(width: width).environmentObject(store).environment(\.colorScheme, .dark)
+                .background(Color.pixfunBackground).foregroundStyle(Color.pixfunInk)
+            let renderer = ImageRenderer(content: content); renderer.scale = 2
+            guard let tiff = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { fatalError("Confirmation render failed") }
+            let path = folder.appendingPathComponent("production-confirmation-\(Int(width)).png")
+            try png.write(to: path); print(path.path)
+        }
         let keyboardRenderer = ImageRenderer(content: StoryKeyboardHelp()
             .foregroundStyle(Color.pixfunInk).background(Color.pixfunStoryRail).environment(\.colorScheme, .dark))
         keyboardRenderer.scale = 2
@@ -223,8 +252,13 @@ struct AgentResultLayoutTests {
         var renderingRun = activeRun
         renderingRun.stage = "render"
         var progressingRun = activeRun
+        progressingRun.intent = "create"
         progressingRun.stage = "plan"
         progressingRun.artifacts = fixtures
+        progressingRun.mediaIds = ["rest", "snow"]
+        progressingRun.materialProgress = [
+            AgentMaterialProgress(mediaId: "rest", name: "rest.mp4", status: "completed"),
+            AgentMaterialProgress(mediaId: "snow", name: "snow.mp4", status: "completed")]
         progressingRun.progressUpdates = [
             AgentProgressUpdate(id: "intent", kind: "stage", stage: "intent"),
             AgentProgressUpdate(id: "understand", kind: "stage", stage: "understand"),
@@ -234,9 +268,9 @@ struct AgentResultLayoutTests {
         for width in [760.0, 380.0] {
             let content = VStack(alignment: .leading, spacing: 20) {
                 Text("Activity states · layout fixture").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
-                AgentProgressTimeline(run: progressingRun)
                 AgentActivityView(run: progressingRun)
-                AgentEditDetails(run: progressingRun)
+                AgentMaterialProgressView(run: progressingRun)
+                AgentResultNotes(run: progressingRun)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(24).frame(width: width)
                 .background(Color.pixfunBackground).environment(\.colorScheme, .dark).environmentObject(store)
             let renderer = ImageRenderer(content: content)
@@ -253,8 +287,7 @@ struct AgentResultLayoutTests {
             let content = VStack(alignment: .leading, spacing: 18) {
                 Label("Pixfun", systemImage: "sparkles").foregroundStyle(Color.pixfunGold)
                 AgentFailureCard(run: failedRun, canRetry: true)
-                Text("Saved results").font(.pixfun(14, semibold: true))
-                AgentSourceResults(artifacts: Array(fixtures.prefix(1)))
+                AgentMaterialProgressView(run: materialRun)
             }.padding(24).frame(width: width).background(Color.pixfunBackground)
                 .foregroundStyle(Color.pixfunInk).environmentObject(store).environment(\.colorScheme, .dark)
             let renderer = ImageRenderer(content: content)

@@ -6,11 +6,12 @@ struct MediaLibraryActivityView: View {
     private var materials: [MediaItem] { store.libraryItems }
     private var analyzing: Int { materials.filter { $0.processingLabel != nil }.count }
     private var attention: Int { materials.filter { MediaWorkFilter.attention.includes($0) }.count }
-    private var attentionSummaries: [String] {
-        MediaAttentionReason.allCases.compactMap { reason in
-            let count = materials.filter { $0.attentionReason == reason }.count
-            return count > 0 ? reason.summary(count: count, chinese: store.language == .chinese) : nil
-        }
+    private var failed: Int {
+        materials.filter { item in
+            item.attentionReason != nil && item.missing != true && !item.processing &&
+                [item.status, item.mediaAnalysis?.status, item.shotAnalysis?.status, item.videoDescription?.status]
+                    .contains { ["failed", "error"].contains($0 ?? "") }
+        }.count
     }
     private var waiting: Int { materials.filter { $0.processingLabel == "Queued…" }.count }
     private var retrying: Int { materials.filter { $0.processingLabel == "Waiting to retry…" }.count }
@@ -21,55 +22,61 @@ struct MediaLibraryActivityView: View {
     }
     var body: some View {
         if !transfers.isEmpty || analyzing > 0 || attention > 0 || syncIssue || store.syncSnapshot?.archiving == true {
-            HStack(alignment: .center, spacing: 10) {
-                if !transfers.isEmpty || analyzing > 0 || store.syncSnapshot?.archiving == true {
-                    ProgressView().controlSize(.small).tint(Color.pixfunGold).frame(width: 16, height: 16)
-                        .accessibilityHidden(true)
-                }
-                Text(statusLine).font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunInk)
-                    .lineLimit(1).truncationMode(.tail).help(detail)
+            HStack(alignment: .center, spacing: 12) {
+                Group {
+                    if !transfers.isEmpty || analyzing > 0 || store.syncSnapshot?.archiving == true {
+                        ProgressView().controlSize(.small).tint(Color.pixfunGold).frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: "exclamationmark.circle").font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Color.pixfunGoldText)
+                    }
+                }.frame(width: 24, height: 24)
+                    .background(Color.pixfunGold.opacity(0.12), in: Circle())
+                    .accessibilityHidden(true)
+                Text(statusLine).font(.pixfun(15, semibold: true)).foregroundStyle(Color.pixfunInk)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true).help(detail)
+                Spacer(minLength: 8)
                 if materials.contains(where: { $0.mediaAnalysis?.status == "failed" && $0.missing != true && !$0.processing }) {
-                    Button("Retry failed analyses") { store.retryFailedAnalysis() }
-                        .buttonStyle(.borderless).font(.pixfun(12)).tint(.pixfunGold)
+                    Button { store.retryFailedAnalysis() } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                    }.buttonStyle(PixfunButtonStyle(kind: .primary)).fixedSize()
+                        .accessibilityLabel("Retry failed analyses")
+                        .help("Retry incomplete analysis only. Completed results are kept.")
                 }
-            }.frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+            }.padding(.horizontal, 12).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .background(Color.pixfunBrandSoft.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.pixfunGold.opacity(0.24)))
                 .accessibilityElement(children: .contain)
         }
     }
     private var statusLine: String {
-        if store.language == .chinese {
-            var parts: [String] = []
-            if let first = transfers.first { parts.append("同步中 · \(first.name) · \(first.processed)/\(first.total)") }
-            let running = max(0, analyzing - waiting - retrying)
-            if running > 0 { parts.append("正在分析 \(running) 个素材") }
-            if waiting > 0 { parts.append("\(waiting) 个排队中") }
-            if retrying > 0 { parts.append("\(retrying) 个等待重试") }
-            parts.append(contentsOf: attentionSummaries)
-            if syncIssue { parts.append("同步异常") }
-            if store.syncSnapshot?.archiving == true { parts.append("正在备份") }
-            return parts.joined(separator: " · ")
+        let chinese = store.language == .chinese
+        var parts: [String] = []
+        if let first = transfers.first {
+            let extra = transfers.count > 1 ? " +\(transfers.count - 1)" : ""
+            parts.append(chinese ? "同步中 \(first.name)\(extra) \(first.processed)/\(first.total)"
+                         : "\(first.phaseTitle) \(first.name)\(extra) \(first.processed)/\(first.total)")
         }
-        var parts = [headline]
-        if waiting > 0 { parts.append("\(waiting) queued") }
-        if retrying > 0 { parts.append("\(retrying) waiting to retry") }
-        if !transfers.isEmpty, let first = transfers.first, first.total > 0 {
-            parts.append("\(first.processed)/\(first.total) ready")
+        // Processing includes running, queued and automatic-retry work; it is
+        // not a count of simultaneous model processes.
+        if analyzing > 0 { parts.append(chinese ? "处理中 \(analyzing)" : "Processing \(analyzing)") }
+        if failed > 0 { parts.append(chinese ? "失败 \(failed)" : "Failed \(failed)") }
+        let otherAttention = max(0, attention - failed)
+        if otherAttention > 0 { parts.append(chinese ? "需检查 \(otherAttention)" : "Needs attention \(otherAttention)") }
+        if syncIssue {
+            parts.append(chinese ? "同步异常" : store.syncStatusUnavailable ? "Sync unavailable" : "Sync needs attention")
         }
-        if !transfers.isEmpty, analyzing > 0 { parts.append("\(analyzing) analyzing") }
-        if attention > 0, !transfers.isEmpty || analyzing > 0 || syncIssue { parts.append(contentsOf: attentionSummaries) }
+        if store.syncSnapshot?.archiving == true { parts.append(chinese ? "备份中" : "Backing up") }
         return parts.joined(separator: " · ")
     }
-    private var headline: String {
-        if let first = transfers.first {
-            let extra = transfers.count > 1 ? " + \(transfers.count - 1) sources" : ""
-            return "\(first.phaseTitle) · \(first.name)\(extra)"
-        }
-        if analyzing > 0 { return "Analyzing \(analyzing) \(analyzing == 1 ? "file" : "files")" }
-        if syncIssue { return store.syncStatusUnavailable ? "Sync status unavailable" : "Sync needs attention" }
-        if attention > 0 { return attentionSummaries.joined(separator: " · ") }
-        return "Backing up verified copies"
-    }
     private var detail: String {
+        let running = max(0, analyzing - waiting - retrying)
+        let progress = analyzing > 0
+            ? (store.language == .chinese
+               ? "正在分析 \(running) 个，排队 \(waiting) 个，等待自动重试 \(retrying) 个。\n"
+               : "\(running) running, \(waiting) queued, \(retrying) waiting for automatic retry.\n")
+            : ""
         if attention > 0 {
             let files = materials.compactMap { item in
                 item.attentionReason.map { item.name + " · " + $0.summary(count: 1, chinese: store.language == .chinese) }
@@ -77,17 +84,17 @@ struct MediaLibraryActivityView: View {
             let note = store.language == .chinese
                 ? "已完成的标签和描述仍可查看，可重试未完成的分析。"
                 : "Completed tags and descriptions remain available. You can retry incomplete analysis."
-            return note + "\n" + files
+            return progress + note + "\n" + files
         }
         if store.language == .chinese {
-            if analyzing > 0 { return "可以先浏览素材，分析完成后将更新标签和内容搜索。" }
+            if analyzing > 0 { return progress + "可以先浏览素材，分析完成后将更新标签和内容搜索。" }
             return "已导入的素材可正常使用，详情请查看同步任务。"
         }
         if let first = transfers.first {
             let saved = first.total > 0 ? "\(first.processed)/\(first.total) ready. " : ""
             return saved + (analyzing > 0 ? "\(analyzing) files being analyzed. Ready files are already available." : "Verified files appear here as they arrive.")
         }
-        if analyzing > 0 { return "Browse now. Content search and filters update as analysis finishes." + (attention > 0 ? " \(attention) files need attention." : "") }
+        if analyzing > 0 { return progress + "Browse now. Content search and filters update as analysis finishes." }
         if syncIssue { return "Open Media Sync for the current issue. Existing library items remain available." }
         return "Your working copies are available while the backup continues."
     }
@@ -113,7 +120,7 @@ struct MediaLibraryWelcomeView: View {
                     if source?.busy == true || source?.checking == true || store.importing {
                         ProgressView().controlSize(.regular)
                     } else {
-                        Image(systemName: "photo.stack").font(.system(size: 32, weight: .light)).foregroundStyle(Color.pixfunGold)
+                        Image(systemName: "photo.stack").font(.system(size: 32, weight: .light)).foregroundStyle(Color.pixfunGoldText)
                     }
                     Text(LocalizedStringKey(title)).font(.pixfun(28, semibold: true))
                     Text(detail).font(.pixfun(14)).foregroundStyle(Color.pixfunMuted)
@@ -231,7 +238,7 @@ private struct LibraryWelcomeWorkflow: View {
                 } else {
                     Image(systemName: "magnifyingglass").font(.system(size: 32, weight: .light))
                 }
-            }.foregroundStyle(Color.pixfunGold).frame(height: 52).accessibilityHidden(true)
+            }.foregroundStyle(Color.pixfunGoldText).frame(height: 52).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 9) {
                 Text(["Bring your media", "Auto-sync new files", "Find the moment"][index])
                     .font(.pixfun(15, semibold: true)).foregroundStyle(Color.pixfunInk)

@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('agent_tests',ROOT/'tests/agent.test.py')
 base=importlib.util.module_from_spec(spec); spec.loader.exec_module(base)
 from shot_analysis import validate_shot, normalize_shot_response, single_shot_prompt, stamp, seconds, ShotAnalyses, SHOT_PROMPT, summarize_video
+from agent_models import structured_result, ModelOutputError
 
 def shot_fixture():
     return {'shot_id':'shot_001','start_time':stamp(0),'end_time':stamp(2.92),
@@ -31,6 +32,18 @@ class ShotResponseTests(unittest.TestCase):
                 self.assertEqual(clean['description'],shot['description'])
                 self.assertEqual(clean['edit_recommendation']['recommended_duration_sec'],2.92)
         self.assertEqual(shot['edit_recommendation']['recommended_duration_sec'],3,'Do not mutate raw model evidence')
+
+    def test_known_qwen_closing_and_focus_placement_error_is_recovered(self):
+        shot=shot_fixture()
+        shot['edit_recommendation']['衔接建议']='Continue to the next scene.'
+        focus={'category':'buildings','description':'A brick building','reason':'It fills the frame',
+               'attention':['sustained_framing'],'activities':[]}
+        raw=json.dumps({'video_summary':'Building entrance','shots':[shot,{'primary_subjects':[focus]}]},ensure_ascii=False)
+        repaired=structured_result({'raw':raw[:-2]+'}}'})
+        clean=normalize_shot_response(repaired,0,2.92,[],include_focus=True)
+        self.assertEqual(clean['primary_subjects'][0]['description'],'A brick building')
+        self.assertEqual(set(clean['edit_recommendation']),{'level','recommended_duration_sec','reason'})
+        with self.assertRaises(ModelOutputError): structured_result({'raw':raw[:80]})
 
     def test_multiple_or_missing_shots_are_not_silently_discarded(self):
         shot=shot_fixture()

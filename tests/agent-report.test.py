@@ -77,12 +77,19 @@ class ReportTests(unittest.TestCase):
     def test_no_findings_does_not_invent_analysis(self):
         self.run['artifacts']=[]
         report=source_report(self.run,self.records,{})
-        self.assertTrue(all('No usable content' in r['content'] for r in report['materials']))
-        self.assertIn('Here are the findings',report['overview'])
-    def test_chinese_input_does_not_request_chinese_output(self):
+        self.assertTrue(all('暂未提取到可用内容' in r['content'] for r in report['materials']))
+        self.assertIn('已整理',report['overview'])
+    def test_report_defaults_to_chinese_without_conflicting_template(self):
         model=Models(self.answer);self.report(model)
-        self.assertIn('Write in English by default',model.calls[0][0])
+        self.assertIn('当前产品语言为简体中文',model.calls[0][0])
+        self.assertNotIn('Write in English by default',model.calls[0][0])
         self.run['prompt']='请用中文输出分析结果';self.run['artifacts']=[]
         self.assertIn('暂未提取到',source_report(self.run,self.records,{})['materials'][0]['content'])
+    def test_explicit_english_setting_applies_to_fallback(self):
+        model=Models(error=ValueError('fixture'));model.output_language='en'
+        self.run['artifacts']=[]
+        report=self.report(model)
+        self.assertIn('Here are the findings', report['overview'])
+        self.assertIn('Write generated titles', model.calls[0][0])
 
 if __name__=='__main__': unittest.main()
