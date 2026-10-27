@@ -73,9 +73,9 @@ struct AgentWorkspaceView: View {
                                     .frame(maxWidth: 620, alignment: .trailing)
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                                 if let scope = entry.editScope {
-                                    Text("Referenced \(scope.shotIds.count) shot(s) · v\(scope.version)").font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                                    Text("Referenced \(scope.shotIds.count) shot(s) · v\(scope.version)").font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                                 }
-                                Label("Pixfun", systemImage: "sparkles").font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunGold)
+                                Label("Pixfun", systemImage: "sparkles").font(.pixfun(14, semibold: true)).foregroundStyle(Color.pixfunGoldText)
                                 if entry.showsUnifiedMaterials { AgentMaterialProgressView(run: entry) }
                                 if let notice = entry.conciseSkillTitle, entry.preview == nil {
                                     Label(LocalizedStringKey(notice), systemImage: "wand.and.stars").font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
@@ -244,7 +244,7 @@ struct AgentWorkspaceView: View {
                             Button("Selected clips") { store.chooseComposerTarget(wholeFilm: false) }
                                 .disabled(store.editorSelection == nil)
                         } label: {
-                            Label(store.editorSelectionLabel, systemImage: "film").font(.pixfun(12)).foregroundStyle(Color.pixfunGold).lineLimit(1)
+                            Label(store.editorSelectionLabel, systemImage: "film").font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText).lineLimit(1)
                         }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true)
                             .help("Request scope stays fixed while you write")
                             .accessibilityLabel("AI request scope: \(store.editorSelectionLabel)")
@@ -275,7 +275,7 @@ struct AgentWorkspaceView: View {
                                 Image(systemName: "wand.and.stars"); Text(skill.title).lineLimit(1)
                                 Button { store.composerDraft.skill = nil } label: { Image(systemName: "xmark") }
                                     .buttonStyle(.plain).accessibilityLabel("Remove skill from next message")
-                            }.font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                            }.font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                         }
                         Spacer()
                     }
@@ -485,7 +485,7 @@ struct AgentDecisionHistory: View {
                 HStack(spacing: 8) {
                     Image(systemName: decision.selected == option.id ? "checkmark.circle.fill" : "circle")
                     Text(LocalizedStringKey(option.label))
-                }.font(.pixfun(13)).foregroundStyle(decision.selected == option.id ? Color.pixfunGold : Color.pixfunMuted)
+                }.font(.pixfun(13)).foregroundStyle(decision.selected == option.id ? Color.pixfunGoldText : Color.pixfunMuted)
             }
             if decision.selected == nil, let response = decision.response {
                 Text(response).font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).textSelection(.enabled)
@@ -567,7 +567,7 @@ struct AgentMediaReference: View {
                     if let timestamp {
                         HStack(spacing: 8) {
                             Text(LocalizedStringKey(timestamp)).font(.pixfun(12))
-                            if corrected { Text("Location corrected").font(.pixfun(11)).foregroundStyle(Color.pixfunGold) }
+                            if corrected { Text("Location corrected").font(.pixfun(11)).foregroundStyle(Color.pixfunGoldText) }
                         }
                     }
                     if let duration {
@@ -1053,7 +1053,7 @@ struct AgentRunResults: View {
                             Button("Undo change") { store.undoAgentEdit(run) }
                                 .disabled(!store.canUndoAgentEdit(run))
                                 .help(store.canUndoAgentEdit(run) ? "Restore the draft from before this request" : "Newer changes are kept; this edit can no longer be undone here")
-                        }.buttonStyle(.borderless).font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                        }.buttonStyle(.borderless).font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                     }
                 }
             }
@@ -1260,7 +1260,7 @@ struct AgentMaterialSummaryCard: View {
         if let progress {
             Label(LocalizedStringKey(progress.label), systemImage: progress.symbol)
                 .font(.pixfun(11)).fixedSize()
-                .foregroundStyle(progress.status == "failed" ? .orange : progress.status == "running" ? Color.pixfunGold : Color.pixfunMuted)
+                .foregroundStyle(progress.status == "failed" ? .orange : progress.status == "running" ? Color.pixfunGoldText : Color.pixfunMuted)
         } else {
             Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.pixfunMuted)
@@ -1362,17 +1362,17 @@ struct AgentSettingsView: View {
                         }
                         settingsMenu("Provider", selection: $config.baseURL, choices: providers)
                         settingsField("Text model") {
-                            TextField("Enter model ID", text: $config.model)
+                            TextField("Enter model ID", text: $config.model, prompt: PixfunTypography.placeholder("Enter model ID"))
                                 .focused($focusedField, equals: .textModel)
                                 .accessibilityLabel("Text model ID")
                         }
                         settingsField("Vision model", hint: mode == "cloud" ? nil : "Only needed for cloud video analysis.") {
-                            TextField("Enter vision model ID", text: $config.visionModel)
+                            TextField("Enter vision model ID", text: $config.visionModel, prompt: PixfunTypography.placeholder("Enter vision model ID"))
                                 .focused($focusedField, equals: .visionModel)
                                 .accessibilityLabel("Vision model ID")
                         }
                         settingsField("API key", hint: "Saved securely in macOS Keychain.") {
-                            SecureField("Paste your API key", text: $config.apiKey)
+                            SecureField("Paste your API key", text: $config.apiKey, prompt: PixfunTypography.placeholder("Paste your API key"))
                                 .focused($focusedField, equals: .apiKey)
                                 .accessibilityLabel("API key")
                         }
@@ -1388,7 +1388,7 @@ struct AgentSettingsView: View {
                                         Text(tool.name).fixedSize(horizontal: false, vertical: true)
                                         Spacer(minLength: 8)
                                         Text(!tool.installed ? "Not installed" : tool.lastExecution == "verified" ? "Checked" : tool.lastExecution == "failed" ? "Needs attention" : "Not checked")
-                                            .foregroundStyle(tool.lastExecution == "verified" ? Color.pixfunGold : Color.pixfunMuted)
+                                            .foregroundStyle(tool.lastExecution == "verified" ? Color.pixfunGoldText : Color.pixfunMuted)
                                             .fixedSize()
                                     }.font(.pixfun(12))
                                 }

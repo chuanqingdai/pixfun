@@ -6,6 +6,27 @@ import UniformTypeIdentifiers
 final class WorkspaceStore: ObservableObject {
     let service = LocalService()
     @Published private(set) var language = AppLanguage.saved
+    @Published private(set) var appearance = AppAppearance.read()
+    @Published private(set) var appearancePreview: AppAppearance?
+    var effectiveAppearance: AppAppearance { appearancePreview ?? appearance }
+    func applyAppearance() {
+        // AppKit is the single appearance authority. A SwiftUI presentation-level
+        // preferredColorScheme can leave a window override after a sheet closes.
+        let requested = effectiveAppearance.nativeAppearance
+        // Saving an already-previewed theme must not invalidate every native control.
+        if NSApp?.appearance?.name != requested?.name { NSApp?.appearance = requested }
+        for window in NSApp?.windows ?? [] where window.appearance != nil { window.appearance = nil }
+    }
+    func previewAppearance(_ value: AppAppearance?) {
+        appearancePreview = value
+        applyAppearance()
+    }
+    func saveAppearance(_ value: AppAppearance) {
+        value.persist()
+        appearance = value
+        appearancePreview = nil
+        applyAppearance()
+    }
     @Published var settingsPresented = false
     @Published private(set) var onlinePlaceNames = UserDefaults.standard.bool(forKey: PlaceNameResolver.consentKey)
     @Published private(set) var onlinePlaceBoundaries = UserDefaults.standard.bool(forKey: PlaceBoundaryLookup.consentKey)
@@ -235,10 +256,19 @@ final class WorkspaceStore: ObservableObject {
     @Published var mapCreationRunID: String?
     @Published var mapCreationHidden = false
     @Published var mapCreationError: String?
+    var availableMapCreationRuns: [AgentRun] {
+        let currentMedia = mediaMapItems
+        return agentRuns.filter {
+            $0.creationSurface == "map" && !MediaMapData.points(for: $0, in: currentMedia).isEmpty
+        }
+    }
     var mapCreationRun: AgentRun? {
         guard !mapCreationHidden else { return nil }
-        if let id = mapCreationRunID { return agentRuns.first { $0.id == id } }
-        return agentRuns.filter { $0.creationSurface == "map" }.max { $0.updatedAt < $1.updatedAt }
+        let available = availableMapCreationRuns
+        if let id = mapCreationRunID { return available.first { $0.id == id } }
+        // Resume actionable work, never let completed history filter the library on launch.
+        return available.filter { $0.busy || $0.status == "clarify" || $0.awaitingScriptConfirmation }
+            .max { $0.updatedAt < $1.updatedAt }
     }
     private func openCompletedMapCreation(previousRuns: [AgentRun]) {
         // React only to a fresh completion of the visible map task. Loading
@@ -677,6 +707,7 @@ final class WorkspaceStore: ObservableObject {
         navigate(.home)
         return true
     }
+    var selectingForBrief: Bool { selecting && selectionReturnPage != .media }
     func beginSelection() {
         selectionReturnPage = page ?? .media; selectionProjectID = composerProjectID; detail = nil
         selection = selectionReturnPage == .media ? [] : Set(composerDraft.attachments.map(\.id))

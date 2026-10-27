@@ -29,9 +29,9 @@ struct PromptEditor: NSViewRepresentable {
         editor.isAutomaticQuoteSubstitutionEnabled = false
         editor.isAutomaticDashSubstitutionEnabled = false
         editor.isAutomaticSpellingCorrectionEnabled = false
-        editor.font = NSFont(name: "DMSans-Regular", size: 16) ?? .systemFont(ofSize: 16)
+        editor.font = .systemFont(ofSize: 14)
         editor.textColor = NSColor(Color.pixfunInk)
-        editor.insertionPointColor = NSColor(Color.pixfunGold)
+        editor.insertionPointColor = NSColor(Color.pixfunGoldText)
         editor.drawsBackground = false
         editor.focusRingType = .none
         editor.textContainerInset = NSSize(width: 0, height: 8)
@@ -75,6 +75,9 @@ struct PromptEditor: NSViewRepresentable {
     func updateNSView(_ scroll: PromptScrollView, context: Context) {
         guard let editor = scroll.documentView as? PromptTextView else { return }
         context.coordinator.parent = self
+        editor.textColor = NSColor(Color.pixfunInk)
+        editor.insertionPointColor = NSColor(Color.pixfunGoldText)
+        editor.needsDisplay = true
         editor.placeholder = localizedPlaceholder
         scroll.synchronizeEditorLayout()
         // Do not replace text while the user is composing with a Chinese/Japanese IME.
@@ -181,7 +184,7 @@ final class PromptTextView: NSTextView {
         let rect = NSRect(x: origin.x, y: origin.y, width: max(0, bounds.width - origin.x * 2), height: bounds.height - origin.y)
         (placeholder as NSString).draw(with: rect, options: [.usesLineFragmentOrigin], attributes: [
             .font: font ?? NSFont.systemFont(ofSize: 16),
-            .foregroundColor: NSColor(Color.pixfunSubtle)
+            .foregroundColor: NSColor(Color.pixfunPlaceholder)
         ])
     }
 }

@@ -74,17 +74,17 @@ struct StoryTitlePicker: View {
                         Text("No motion title").tag("none")
                     }
                     if style == "route" {
-                        TextField("Departure", text: $origin).textFieldStyle(.roundedBorder)
-                        TextField("Arrival", text: $destination).textFieldStyle(.roundedBorder)
+                        TextField("Departure", text: $origin, prompt: PixfunTypography.placeholder("Departure")).textFieldStyle(.roundedBorder)
+                        TextField("Arrival", text: $destination, prompt: PixfunTypography.placeholder("Arrival")).textFieldStyle(.roundedBorder)
                         Text("Schematic only, not a geographic map. Enter your actual locations.")
                             .font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
                     } else if style == "counter" {
-                        TextField("Label · e.g. Days on the road", text: $text).textFieldStyle(.roundedBorder)
-                        TextField("Actual total · 1–9999", text: $total).textFieldStyle(.roundedBorder)
+                        TextField("Label · e.g. Days on the road", text: $text, prompt: PixfunTypography.placeholder("Label · e.g. Days on the road")).textFieldStyle(.roundedBorder)
+                        TextField("Actual total · 1–9999", text: $total, prompt: PixfunTypography.placeholder("Actual total · 1–9999")).textFieldStyle(.roundedBorder)
                         Text("Animates to your number; does not count objects in the footage.")
                             .font(.pixfun(11)).foregroundStyle(Color.pixfunMuted).fixedSize(horizontal: false, vertical: true)
                     } else if ["title", "place", "airport", "end"].contains(style) {
-                        TextField(LocalizedStringKey(style == "airport" ? "Board text · up to 24 characters" : "Title text"), text: $text).textFieldStyle(.roundedBorder)
+                        TextField(LocalizedStringKey(style == "airport" ? "Board text · up to 24 characters" : "Title text"), text: $text, prompt: PixfunTypography.placeholder(LocalizedStringKey(style == "airport" ? "Board text · up to 24 characters" : "Title text"))).textFieldStyle(.roundedBorder)
                     }
                     if !["keep","none"].contains(style) {
                         Text(LocalizedStringKey(style == "end" ? "Overlays the final seconds without extending your film. Requires at least 2.5s of footage." : "Appears over the first clip lasting at least 2.5s. Keeps your existing opening and film duration."))

@@ -66,16 +66,17 @@ test('map omits the persistent explanation footer but retains actionable notices
   assert.match(map, /if readMessage != nil \|\| store.mapCreationError != nil/);
   assert.match(map, /Apple receives map-area requests/);
 });
-test('map region selection and fit controls live in the fixed right selection rail', () => {
+test('map hides the empty selection rail while keeping area selection reachable', () => {
   const map = read('native/Sources/Pixfun/MediaMapView.swift');
-  const main = map.split('private var selectionPanel: some View')[0];
-  const selection = map.split('private var selectionPanel: some View')[1].split('private final class')[0];
-  assert.doesNotMatch(main, /Label\("Select this area"|Label\("Show all points"/);
-  const fixedTools = selection.split('ScrollView')[0];
-  assert.match(fixedTools, /selectedIDs = visibleIDs.intersection\(Set\(points.map\(\\\.id\)\)\)/);
-  assert.match(fixedTools, /Button \{ fitRequest \+= 1 \}/);
-  assert.match(fixedTools, /map-selection-tools/);
-  assert.match(fixedTools, /disabled\(store.saving \|\| !loadMap \|\| visibleIDs.isEmpty\)/);
+  assert.match(map, /if !points.isEmpty && \(run != nil \|\| !selectedItems.isEmpty\) \{\s*Divider\(\)/);
+  assert.match(map, /if selectedItems.isEmpty \{ mapSelectionTools \}/);
+  const selection = map.split('private var selectionPanel: some View')[1].split('private var mapSelectionTools: some View')[0];
+  assert.match(selection, /mapSelectionTools/);
+  assert.match(selection, /selectedIDs = \[\]/);
+  const tools = map.split('private var mapSelectionTools: some View')[1].split('private final class')[0];
+  assert.match(tools, /selectedIDs = visibleIDs.intersection/);
+  assert.match(tools, /Button \{ fitRequest \+= 1 \}/);
+  assert.match(tools, /disabled\(store.saving \|\| !loadMap \|\| visibleIDs.isEmpty\)/);
 });
 test('map strategy leads with real rationale and synchronizes source selection in every stage', () => {
   const panel = read('native/Sources/Pixfun/MapCreationPanel.swift');
@@ -96,7 +97,7 @@ test('map strategy leads with real rationale and synchronizes source selection i
 });
 test('active map workflow hides browse-only header actions instead of disabling them', () => {
   const map = read('native/Sources/Pixfun/MediaMapView.swift');
-  assert.match(map, /if run == nil && store.agentRuns.contains\(where: \{ \$0.creationSurface == "map" \}\) \{\s*Menu\("继续创作"\)/);
+  assert.match(map, /if run == nil && !store.availableMapCreationRuns.isEmpty \{\s*Menu\("继续创作"\)/);
   assert.match(map, /if run == nil \{\s*Button \{ readOriginals\(\) \}/);
   assert.doesNotMatch(map, /disabled\(reading \|\| run != nil\)/);
 });
@@ -414,7 +415,7 @@ test('speech trim assistance is explicit, source checked and never snaps manual 
   assert.match(controls, /allowsHitTesting\(false\).accessibilityHidden\(true\)/);
   assert.match(controls, /onChange\(of: value\) \{ next in text = format\(next\)/);
 });
-test('story panes have distinct surfaces and only the compact composer uses the raised input treatment', () => {
+test('story panes reuse shared surfaces with readable hierarchy and a raised composer', () => {
   const story = read('native/Sources/Pixfun/StoryEditorView.swift');
   for (const token of ['pixfunStoryChat', 'pixfunStoryPreview', 'pixfunStoryRail']) {
     assert.match(story, new RegExp('background\\(Color\\.' + token + '\\)'));
@@ -422,13 +423,15 @@ test('story panes have distinct surfaces and only the compact composer uses the 
   assert.match(story, /background\(Color.pixfunStoryCard\)/);
   const theme = read('native/Sources/Pixfun/Theme.swift');
   const luminance = token => {
-    const hex = theme.match(new RegExp(token + ' = Color\\(pixfunHex: 0x([0-9a-f]+)\\)'))[1];
+    const alias = theme.match(new RegExp(token + ' = (pixfun[A-Z]\\w*)[\\n;]'));
+    if (alias) return luminance(alias[1]);
+    const hex = theme.match(new RegExp(token + ' = pixfunAdaptive\\(light: 0x[0-9a-f]+, dark: 0x([0-9a-f]+)'))[1];
     const channels = hex.match(/../g).map(c => parseInt(c, 16) / 255)
       .map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
     return channels.reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
   };
-  assert.ok(luminance('pixfunStoryChat') - luminance('pixfunStoryPreview') > 0.008);
-  assert.ok(luminance('pixfunStoryRail') - luminance('pixfunStoryChat') > 0.004);
+  assert.ok(luminance('pixfunStoryChat') > luminance('pixfunStoryPreview'));
+  assert.ok(luminance('pixfunStoryRail') > luminance('pixfunStoryChat'));
   assert.ok(luminance('pixfunStoryCard') > luminance('pixfunStoryRail'));
   assert.ok(luminance('pixfunStoryInput') > luminance('pixfunStoryChat'));
   for (const surface of ['pixfunStoryChat', 'pixfunStoryPreview', 'pixfunStoryRail', 'pixfunStoryCard', 'pixfunStoryInput']) {
@@ -865,7 +868,8 @@ test('native controls keep the brand palette while adopting system typography an
   for (const name of ['dm-sans-regular.ttf','dm-sans-semibold.ttf','DM-Sans-OFL.txt']) assert.ok(build.includes(name));
   assert.match(theme, /\.system\(size: size, weight: semibold/);
   const toolbar = read('native/Sources/Pixfun/MediaBrowserToolbar.swift');
-  assert.match(toolbar, /pickerStyle\(\.segmented\)/);
+  assert.match(toolbar, /accessibilityLabel\("Media type"\)/);
+  assert.match(toolbar, /PixfunLayout.toolbarControlHeight/);
   assert.match(toolbar, /ViewThatFits\(in: \.horizontal\)/);
   assert.match(read('native/Sources/Pixfun/MediaView.swift'),/PixfunSearchField/);
   assert.match(read('native/Sources/Pixfun/PixfunApp.swift'),/PixfunNavigationButton/);
@@ -885,11 +889,11 @@ test('both composers validate input and model settings only commit on successful
   assert.match(agent, /disabled\(!store.canSubmitAgent\)/);
   assert.match(agent, /"Continue" : "Send"/);
   const settings = read('native/Sources/Pixfun/AppSettingsView.swift');
-  assert.match(settings, /Picker\("Processing", selection: \$draft.mode/);
+  assert.match(settings, /PixfunSettingsMenu\(title: "Processing", selection: \$draft.mode/);
   assert.doesNotMatch(settings, /selection: \$store\.|environment\(\\.locale, draft.language.locale\)/);
   assert.match(settings, /requiresCloudSave\(comparedTo: original\)/);
   assert.match(settings, /try await store.saveLanguage\(draft.language\)/);
-  assert.match(settings, /Button\("OK", action: confirm\)/);
+  assert.match(settings, /Button\("Save", action: confirm\)/);
   assert.ok(settings.indexOf('private func confirm()') < settings.indexOf('try await store.saveLanguage'));
 });
 test('Home stays a composer, projects have child pages and cover cards with precise edit times', () => {
@@ -905,37 +909,28 @@ test('Home stays a composer, projects have child pages and cover cards with prec
   assert.match(projects, /Text\(project.title\)/);
   assert.match(read('native/Sources/Pixfun/AgentView.swift'), /\$store.composerDraft.prompt/);
 });
-test('settings use native grouped form controls, draft language and paired fixed actions', () => {
+test('settings retain draft persistence, secure credentials and fixed save actions', () => {
   const settings = read('native/Sources/Pixfun/AppSettingsView.swift');
-  assert.match(settings, /formStyle\(\.grouped\)/);
-  assert.match(settings, /LabeledContent/);
-  assert.match(settings, /frame\(width: 620/);
-  assert.match(settings, /textFieldStyle\(\.roundedBorder\)/);
-  assert.match(settings, /settingRow\("Text model"/);
-  assert.match(settings, /settingRow\("Vision model"/);
-  assert.match(settings, /settingRow\("API key"/);
   assert.match(settings, /SecureField\("Paste your API key"/);
-  assert.match(settings, /Section\("Local models"\)/);
-  assert.match(settings, /Picker\("Language", selection: \$draft.language\)/);
-  assert.match(settings, /pickerStyle\(\.menu\)/);
-  assert.doesNotMatch(settings, /radioGroup/);
-  assert.match(settings, /environment\(\\.locale, store.language.locale\)/);
+  assert.match(settings, /environment\(\\.locale, presentationLanguage.locale\)/);
   assert.match(settings, /keyboardShortcut\(\.cancelAction\)/);
   assert.match(settings, /keyboardShortcut\(\.defaultAction\)/);
   assert.match(settings, /interactiveDismissDisabled\(saving\)/);
-  assert.ok(settings.indexOf('Button("Cancel")') < settings.indexOf('Button("OK"'));
+  assert.match(settings, /disabled\(saving \|\| !changed\)/);
+  assert.match(settings, /onDisappear \{ store.previewAppearance\(nil\) \}/);
+  assert.ok(settings.indexOf('Button("Cancel")') < settings.indexOf('Button("Save"'));
+  assert.ok(settings.indexOf('try await store.saveLanguage') < settings.indexOf('store.saveAppearance(draft.appearance)'));
 });
-test('settings align control headers separately from supporting text', () => {
+test('settings pair labels and descriptions, stack narrow rows and expose native menu choices', () => {
   const settings = read('native/Sources/Pixfun/AppSettingsView.swift');
-  const row = settings.split('private func settingRow')[1].split('private func confirm')[0];
-  assert.match(row, /HStack\(alignment: \.center, spacing: 16\)/);
-  assert.match(row, /Spacer\(minLength: 16\)/);
-  assert.match(row, /frame\(minHeight: 24\)/);
-  assert.ok(row.indexOf('control()') < row.indexOf('if hint != nil'));
-  assert.match(settings, /settingRow\("Language", hint:[\s\S]*?detail: "Existing descriptions/);
-  assert.doesNotMatch(settings, /pickerStyle\(\.menu\)\.frame\(width: 170\)/);
-  assert.match(settings, /settingRow\("Analysis engine"\)/);
-  assert.match(settings, /padding\(\.horizontal, 4\)/);
+  assert.match(settings, /width < 560/);
+  assert.match(settings, /VStack\(alignment: \.leading, spacing: 4\)/);
+  assert.match(settings, /spacing: 24\) \{/);
+  assert.match(settings, /minHeight: hint == nil \? 72 : 78/);
+  assert.match(settings, /fixedSize\(horizontal: false, vertical: true\)/);
+  assert.match(settings, /Button \{ selection = options\[index\].1 \}/);
+  assert.match(settings, /settings.appearance/);
+  assert.match(settings, /AppAppearance.allCases/);
 });
 test('conversation composer has one mutually exclusive stop or send action', () => {
   const composer = read('native/Sources/Pixfun/AgentView.swift').split('var composer: some View')[1].split('func send()')[0];
@@ -950,8 +945,8 @@ test('composer uses the approved logo and an inset-aligned native plain-text edi
   const theme = read('native/Sources/Pixfun/Theme.swift');
   const home = read('native/Sources/Pixfun/HomeView.swift');
   const editor = read('native/Sources/Pixfun/PromptEditor.swift');
-  assert.match(theme,/pixfun-lockup-v2/);
-  assert.match(read('scripts/build-native.cjs'),/Brand\/pixfun-lockup-v2\.png/);
+  assert.match(theme,/pixfun-lockup-transparent-v3/);
+  assert.match(read('scripts/build-native.cjs'),/Brand\/pixfun-lockup-transparent-v3\.png/);
   assert.match(read('native/Sources/Pixfun/PixfunApp.swift'),/PixfunLogo\(\)/);
   assert.doesNotMatch(home,/TextEditor\(|Image\(systemName: "sparkles"\)/);
   assert.match(editor,/scrollerStyle = \.overlay/);

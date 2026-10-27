@@ -46,6 +46,16 @@ Use the existing desktop Python environment with the dependencies in `desktop/ph
 
 The Agent workspace now connects the installed local VisionFlow/MLX runtime for intent routing, sampled visual understanding, speech transcription, semantic search and grounded rough-cut planning. Local optical-flow/quality/OCR evidence informs planning. Users review a timeline before FFmpeg builds a preview, edit source ranges/order/locks, and export the result with a native save panel. See [Agent architecture, API contracts and limitations](AGENT-ARCHITECTURE.md). Large-model runtimes/weights are **not bundled**: they must already be installed or explicitly configured. Cloud use is optional and asks task-specific permission; real cloud integration remains unverified until a provider, models and credentials are supplied. Generated music, voiceover and publishing are not implemented. No transcript is presented as a visual description. Audio can be attached in Home but is intentionally excluded from Media categories.
 
+## Pixfun design system and appearance
+
+The client uses semantic light/dark colors, system Chinese/Latin typography, 40-point standard controls, 40-point navigation rows, 28-point page headings and 16:9 media cards. Gold button fills retain dark labels in both appearances; gold text, selected navigation, input borders and focus colors have independent light values. Player footage is not recolored.
+
+Settings → General → Appearance offers **Follow system / Light / Dark**, defaulting to Follow system. The preference is stored locally as `appAppearance`; system mode clears the application appearance override. AppKit is the sole appearance authority so dismissing a preview cannot leave the main window in a different theme. Selecting an appearance previews it across the app. **Save** persists it; **Cancel** restores the previously saved appearance. Appearance-only changes do not validate or write cloud credentials.
+
+Settings use one surface per group, 16-point row padding, a 24-point column gap, 14-point labels/descriptions, 240-point field columns, and content-driven row heights. Containers below 560 points stack labels above controls. Location permissions and model configuration retain their existing behavior; the footer keeps Cancel/Save and errors visible while the form scrolls.
+
+`native/Tests/ThemeTests.swift` resolves the actual dynamic AppKit palette in Aqua and Dark Aqua and checks text, button, input-boundary and selection contrast. `scripts/test-native.cjs` includes this check along with existing native regressions. Appearance persistence and draft isolation are covered by the native model tests.
+
 ## Build and run
 
 Current verified build: Apple Silicon, macOS 13+, Swift 5.10 / Xcode Command Line Tools. Intel and App Store distribution have not been verified. No Swift package dependencies are downloaded.
@@ -73,7 +83,7 @@ npm run desktop:legacy
 
 - The conversation composer has one trailing action: Stop while a task runs, Send/Continue when idle. Pending actions display their spinner inside that same button; Stop and Send never appear together. Stopping keeps the unsent draft and attachments, and Send retains its validation and keyboard shortcut.
 
-- Model settings use 46-point, full-width controls with persistent labels, plain text-field styling and masked API-key entry. The form scrolls within a screen-height-aware sheet; Cancel/Save and save errors stay in its fixed footer. Local tool diagnostics are collapsed by default. Draft settings still commit only after a successful save, with task-specific cloud consent unchanged.
+- Model settings use the shared design-system rows and 40-point fields with persistent labels, plain text-field styling and masked API-key entry. The form scrolls within a screen-height-aware sheet; Cancel/Save and save errors stay in its fixed footer. Local tool diagnostics are collapsed by default. Draft settings still commit only after a successful save, with task-specific cloud consent unchanged.
 
 - Agent turns show the current step and a collapsible per-material list with filenames, completed count, and analyzing/waiting/failed/paused states. A partial finding does not mark a whole material complete. Completed states survive failure and restart; filenames open the existing Media detail view. Older tasks use their saved analysis counters. Clarification, retry/stop controls and results remain in the conversation.
 

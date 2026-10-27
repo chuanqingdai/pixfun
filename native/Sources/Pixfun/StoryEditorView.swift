@@ -266,7 +266,7 @@ struct StoryEditorWorkspace: View {
                 }
                 if !selection.isEmpty { Button { selection = []; primary = nil; tool = nil; syncSelection() } label: { Image(systemName: "xmark") }.help("Clear selection").accessibilityLabel("Clear story selection") }
             }
-            HStack { Image(systemName: "magnifyingglass"); TextField("Find a moment…", text: $filter).textFieldStyle(.plain) }
+            HStack { Image(systemName: "magnifyingglass"); TextField("Find a moment…", text: $filter, prompt: PixfunTypography.placeholder("Find a moment…")).textFieldStyle(.plain) }
                 .font(.pixfun(12)).padding(8).background(Color.pixfunStoryInput).cornerRadius(7)
             if !StoryTimeline.chapters(shots).isEmpty {
                 Menu {
@@ -350,10 +350,10 @@ struct StoryEditorWorkspace: View {
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                             Text("\(index + 1)")
                             if run?.editReceipt?.undone == false && run?.editReceipt?.changedShotIds.contains(shot.id) == true {
-                                Image(systemName: "pencil.circle.fill").foregroundStyle(Color.pixfunGold)
+                                Image(systemName: "pencil.circle.fill").foregroundStyle(Color.pixfunGoldText)
                                     .help("Updated by the latest AI edit").accessibilityLabel("Updated by AI")
                             }
-                            if shot.id == activeID { Image(systemName: playing ? "speaker.wave.2.fill" : "location.fill").foregroundStyle(Color.pixfunGold) }
+                            if shot.id == activeID { Image(systemName: playing ? "speaker.wave.2.fill" : "location.fill").foregroundStyle(Color.pixfunGoldText) }
                             if item(shot)?.metadata?.hasAudio == true && finish.gain(for: shot.id) == 0 { Image(systemName: "speaker.slash.fill").help("Original sound muted") }
                             Text("Cut \(timestamp(start))–\(timestamp(start + shot.end - shot.start))").monospacedDigit()
                             Spacer(minLength: 0)
@@ -954,7 +954,7 @@ extension StoryEditorWorkspace {
     }
     func captionTools(_ cue: AgentFinishing.Caption) -> some View {
         VStack(spacing: 8) {
-                TextField("Caption", text: Binding(get: { cue.text }, set: { text in var next = cue; next.text = text; updateCaption(next, typing: true) }))
+                TextField("Caption", text: Binding(get: { cue.text }, set: { text in var next = cue; next.text = text; updateCaption(next, typing: true) }), prompt: PixfunTypography.placeholder("Caption"))
                     .textFieldStyle(.roundedBorder).accessibilityLabel("Caption text")
                 HStack {
                     Text("In")

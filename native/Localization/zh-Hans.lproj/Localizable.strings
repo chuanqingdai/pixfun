@@ -908,3 +908,17 @@
 "Clear map selection" = "取消选择";
 "Story chapters did not match the shot sequence. Retry planning; your analysis and confirmed route are kept." = "故事章节与分镜顺序未对应，请重试编排。素材分析和已确认行程均已保留。";
 "Add videos, then ask me to analyze or edit…" = "添加素材，开始分析或创作…";
+
+/* Pixfun design system · appearance and settings */
+"Appearance" = "外观";
+"Follow system" = "跟随系统";
+"Light" = "浅色";
+"Dark" = "深色";
+"Changes apply when you save. Appearance is previewed immediately." = "修改后点击保存生效，外观可即时预览。";
+"Follow your Mac, or choose a light or dark interface. Photos and videos keep their original colors." = "跟随 Mac 系统外观，或单独选择浅色与深色。照片与视频保持原有色彩。";
+"Place information" = "位置信息";
+"Enable place-name lookup first." = "请先开启地点名称查询。";
+"Enable place-name and area lookup first." = "请先开启地点名称与区域识别。";
+"Unsaved changes" = "有未保存的修改";
+
+"More actions" = "更多操作";

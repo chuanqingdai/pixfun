@@ -2,39 +2,65 @@ import SwiftUI
 import AppKit
 import CoreText
 
-// Keep these tokens aligned with public/palette.css, the original web workspace.
+// Pixfun design-system semantic colors. Dynamic providers also serve AppKit views.
 extension Color {
     init(pixfunHex: UInt32) {
         self.init(.sRGB, red: Double((pixfunHex >> 16) & 255) / 255,
                   green: Double((pixfunHex >> 8) & 255) / 255,
                   blue: Double(pixfunHex & 255) / 255, opacity: 1)
     }
-    static let pixfunBackground = Color(pixfunHex: 0x151819)
-    static let pixfunSidebar = Color(pixfunHex: 0x171b1d)
-    static let pixfunSurface = Color(pixfunHex: 0x1d2123)
-    static let pixfunRaised = Color(pixfunHex: 0x272c2f)
-    static let pixfunHover = Color(pixfunHex: 0x303639)
-    static let pixfunLine = Color(pixfunHex: 0x363e42)
-    static let pixfunInk = Color(pixfunHex: 0xe9ebe8)
-    static let pixfunMuted = Color(pixfunHex: 0xb1b9bc)
-    static let pixfunSubtle = Color(pixfunHex: 0x9aa5aa)
+    static func pixfunAdaptive(light: UInt32, dark: UInt32, contrastLight: UInt32? = nil, contrastDark: UInt32? = nil) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.accessibilityHighContrastDarkAqua, .accessibilityHighContrastAqua, .darkAqua, .aqua])
+            let hex: UInt32
+            switch match {
+            case .accessibilityHighContrastDarkAqua: hex = contrastDark ?? dark
+            case .accessibilityHighContrastAqua: hex = contrastLight ?? light
+            case .darkAqua: hex = dark
+            default: hex = light
+            }
+            return NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255,
+                           green: CGFloat((hex >> 8) & 255) / 255,
+                           blue: CGFloat(hex & 255) / 255, alpha: 1)
+        })
+    }
+    static let pixfunBackground = pixfunAdaptive(light: 0xffffff, dark: 0x151819)
+    static let pixfunSidebar = pixfunSurface
+    static let pixfunSurface = pixfunAdaptive(light: 0xf4f5f6, dark: 0x1d2123)
+    static let pixfunRaised = pixfunAdaptive(light: 0xe9ecef, dark: 0x272c2f)
+    static let pixfunHover = pixfunAdaptive(light: 0xe3e7ea, dark: 0x303639)
+    static let pixfunInput = pixfunAdaptive(light: 0xffffff, dark: 0x272c2f)
+    static let pixfunLine = pixfunAdaptive(light: 0xd4d9dd, dark: 0x363e42, contrastLight: 0x76818a, contrastDark: 0x9aa5aa)
+    static let pixfunControlBorder = pixfunAdaptive(light: 0x76818a, dark: 0x748088, contrastLight: 0x1d2327, contrastDark: 0xe9ebe8)
+    static let pixfunInk = pixfunAdaptive(light: 0x1d2327, dark: 0xe9ebe8)
+    static let pixfunMuted = pixfunAdaptive(light: 0x59636b, dark: 0xb1b9bc)
+    static let pixfunSubtle = pixfunAdaptive(light: 0x59636b, dark: 0x9aa5aa)
+    static let pixfunPlaceholder = pixfunSubtle
     static let pixfunGold = Color(pixfunHex: 0xd7b581)
     static let pixfunGoldHover = Color(pixfunHex: 0xe5c796)
-    static let pixfunBrandSoft = Color(pixfunHex: 0x343027)
+    static let pixfunGoldPressed = Color(pixfunHex: 0xc4a16c)
+    static let pixfunGoldText = pixfunAdaptive(light: 0x7a541f, dark: 0xd7b581)
+    static let pixfunSelectionBorder = pixfunAdaptive(light: 0x8a642e, dark: 0xd7b581)
+    static let pixfunBrandSoft = pixfunAdaptive(light: 0xf5ecdc, dark: 0x343027)
+    static let pixfunOnSelected = pixfunAdaptive(light: 0x6f4b1c, dark: 0xe9ebe8)
     static let pixfunOnAccent = Color(pixfunHex: 0x20221f)
-    static let pixfunFocus = Color(pixfunHex: 0x9bbfd9)
+    static let pixfunFocus = pixfunSelectionBorder
+    static let pixfunDanger = pixfunAdaptive(light: 0xb43d3d, dark: 0xf0a2a2)
+    static let pixfunWarning = pixfunMuted
+    static let pixfunSuccess = pixfunAdaptive(light: 0x26734d, dark: 0x91cbaa)
 
-    // Cool chat, recessed preview, lighter neutral story rail. Keep card and input
-    // surfaces distinct without changing the rest of the app's dark palette.
-    static let pixfunStoryChat = Color(pixfunHex: 0x1e262c)
-    static let pixfunStoryPreview = Color(pixfunHex: 0x101314)
-    static let pixfunStoryRail = Color(pixfunHex: 0x282c2c)
-    static let pixfunStoryCard = Color(pixfunHex: 0x303637)
-    static let pixfunStoryInput = Color(pixfunHex: 0x2c3438)
-    static let pixfunStoryInputLine = Color(pixfunHex: 0x526168)
+    // Editing panes reuse the same surfaces as the rest of the app.
+    // The actual video canvas retains its own dark surround.
+    static let pixfunStoryChat = pixfunSurface
+    static let pixfunStoryPreview = pixfunBackground
+    static let pixfunStoryRail = pixfunRaised
+    static let pixfunStoryCard = pixfunHover
+    static let pixfunStoryInput = pixfunInput
+    static let pixfunStoryInputLine = pixfunControlBorder
 }
 
 enum PixfunTypography {
+    static func placeholder(_ title: LocalizedStringKey) -> Text { Text(title).foregroundColor(.pixfunPlaceholder) }
     static func register() {
         for name in ["dm-sans-regular", "dm-sans-semibold"] {
             guard let url = Bundle.main.url(forResource: name, withExtension: "ttf", subdirectory: "Fonts") else { continue }
@@ -43,19 +69,12 @@ enum PixfunTypography {
     }
 }
 
-/// One semantic palette for toolbar categories, card chips and detail groups.
-/// Labels/icons remain visible so color is never the only category cue.
+/// Categories are identified by their labels and symbols, not decorative hues.
+/// Gold is reserved for selected filters and actions across every category.
 enum MediaTagPalette {
-    static func facet(_ facet: MediaFacet) -> Color {
-        switch facet {
-        case .location: return Color(pixfunHex: 0x9EC9EE)
-        case .scene: return Color(pixfunHex: 0x9DD4BC)
-        case .subject: return Color(pixfunHex: 0xCEBAED)
-        case .activity: return .pixfunGold
-        }
-    }
-    static let technique = Color(pixfunHex: 0xA9C5D3)
-    static let story = Color(pixfunHex: 0xE3B6B4)
+    static func facet(_ facet: MediaFacet) -> Color { .pixfunMuted }
+    static let technique = Color.pixfunMuted
+    static let story = Color.pixfunMuted
     static let detail = Color.pixfunMuted
 }
 
@@ -77,27 +96,27 @@ struct SyncSelectionLabel: View {
     @State private var hovered = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: symbol).font(.system(size: 14)).frame(width: 20)
-                .foregroundStyle(prominent ? Color.pixfunGold : Color.pixfunMuted)
-            Text(LocalizedStringKey(title)).font(.pixfun(13, semibold: prominent)).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(prominent ? Color.pixfunGoldText : Color.pixfunMuted)
+            Text(LocalizedStringKey(title)).font(.pixfun(14, semibold: prominent)).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 12)
             Image(systemName: accessory).font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(prominent ? Color.pixfunGold : Color.pixfunMuted)
+                .foregroundStyle(prominent ? Color.pixfunGoldText : Color.pixfunMuted)
                 .frame(width: prominent ? 26 : 14, height: 26)
                 .background(prominent ? Color.pixfunHover : .clear, in: RoundedRectangle(cornerRadius: 5))
         }
         .foregroundStyle(Color.pixfunInk)
         .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: prominent ? 48 : 40)
         .background(hovered && enabled ? Color.pixfunHover : prominent ? .pixfunRaised : .pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : hovered && enabled ? .pixfunGold : .pixfunLine, lineWidth: focused ? 2 : 1))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : hovered && enabled ? .pixfunSelectionBorder : .pixfunControlBorder, lineWidth: focused ? 2 : 1))
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .opacity(enabled ? 1 : 0.5).onHover { hovered = $0 }
         .accessibilityElement(children: .combine)
     }
 }
 
-enum PixfunButtonKind { case secondary, primary, quiet }
+enum PixfunButtonKind { case secondary, primary, quiet, textAction }
 
 struct PixfunButtonStyle: ButtonStyle {
     var kind: PixfunButtonKind = .secondary
@@ -111,18 +130,18 @@ struct PixfunButtonStyle: ButtonStyle {
         @Environment(\.isFocused) private var focused
         @State private var hovered = false
         var fill: Color {
-            if !enabled { return kind == .quiet ? .clear : .pixfunRaised }
-            if kind == .primary { return hovered ? .pixfunGoldHover : .pixfunGold }
-            return hovered ? .pixfunRaised : kind == .quiet ? .clear : .pixfunSurface
+            if !enabled { return (kind == .quiet || kind == .textAction) ? .clear : .pixfunRaised }
+            if kind == .primary { return configuration.isPressed ? .pixfunGoldPressed : hovered ? .pixfunGoldHover : .pixfunGold }
+            return hovered || configuration.isPressed ? .pixfunHover : (kind == .quiet || kind == .textAction) ? .clear : .pixfunSurface
         }
         var body: some View {
             configuration.label
-                .font(.pixfun(13, semibold: true))
-                .foregroundStyle(!enabled ? Color.pixfunSubtle : kind == .primary ? .pixfunOnAccent : hovered ? .pixfunInk : .pixfunMuted)
-                .padding(.horizontal, 12).frame(minHeight: 30)
-                .background(fill.opacity(configuration.isPressed ? 0.75 : 1), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : kind == .secondary ? .pixfunLine : .clear, lineWidth: focused ? 2 : 1))
-                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .font(.pixfun(14, semibold: true))
+                .foregroundStyle(!enabled ? Color.pixfunSubtle : kind == .primary ? .pixfunOnAccent : kind == .textAction ? .pixfunGoldText : .pixfunInk)
+                .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 40)
+                .background(fill, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(focused ? Color.pixfunFocus : kind == .secondary ? .pixfunControlBorder : .clear, lineWidth: focused ? 2 : 1))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
                 .onHover { hovered = $0 }
         }
     }
@@ -136,7 +155,7 @@ struct PixfunSearchField: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(Color.pixfunSubtle)
-            TextField(LocalizedStringKey(placeholder), text: $text, prompt: Text(LocalizedStringKey(placeholder)).foregroundColor(.pixfunSubtle)).textFieldStyle(.plain).font(.pixfun(13)).focused($focused)
+            TextField(LocalizedStringKey(placeholder), text: $text, prompt: PixfunTypography.placeholder(LocalizedStringKey(placeholder))).textFieldStyle(.plain).font(.pixfun(14)).focused($focused)
                 .accessibilityLabel(placeholder)
             if !text.isEmpty {
                 Button { if let clear { clear() } else { text = "" } } label: {
@@ -144,9 +163,9 @@ struct PixfunSearchField: View {
                         .frame(width: 22, height: 24).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("Clear search")
             }
-        }.padding(.horizontal, 11).frame(height: 30)
-            .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunSubtle : .pixfunLine))
+        }.padding(.horizontal, 12).frame(minHeight: 40)
+            .background(Color.pixfunInput, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(focused ? Color.pixfunFocus : .pixfunControlBorder, lineWidth: focused ? 2 : 1))
     }
 }
 
@@ -159,20 +178,21 @@ struct PixfunCardStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .background(hovered || configuration.isPressed ? Color.pixfunRaised : .pixfunSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(focused ? Color.pixfunFocus : hovered ? .pixfunSubtle : .pixfunLine))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : hovered ? .pixfunSubtle : .pixfunLine, lineWidth: focused ? 2 : 1))
                 .onHover { hovered = $0 }
         }
     }
 }
 
 enum PixfunSidebarMetrics {
-    static let contentInset: CGFloat = 10
+    static let contentInset: CGFloat = 12
 }
 
 enum PixfunLayout {
+    static let toolbarControlHeight: CGFloat = 40
     static let pageInset: CGFloat = 24
-    static let sectionSpacing: CGFloat = 20
+    static let sectionSpacing: CGFloat = 24
 }
 
 struct PixfunNavigationButton: View {
@@ -183,12 +203,12 @@ struct PixfunNavigationButton: View {
     @FocusState private var focused: Bool
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: page.symbol).font(.system(size: 16, weight: .regular)).frame(width: 20)
-                Text(LocalizedStringKey(page.navigationTitle)).font(.pixfun(13, semibold: selected)).lineLimit(1)
+                Text(LocalizedStringKey(page.navigationTitle)).font(.pixfun(14, semibold: selected)).lineLimit(1)
                 Spacer(minLength: 0)
-            }.foregroundStyle(selected ? Color.pixfunGold : hovered ? .pixfunInk : .pixfunMuted)
-                .padding(.horizontal, PixfunSidebarMetrics.contentInset).frame(height: 34)
+            }.foregroundStyle(selected ? Color.pixfunOnSelected : hovered ? .pixfunInk : .pixfunMuted)
+                .padding(.horizontal, PixfunSidebarMetrics.contentInset).frame(minHeight: 40)
                 .background(selected ? Color.pixfunBrandSoft : hovered ? .pixfunRaised : .clear, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : .clear, lineWidth: 2))
                 .contentShape(RoundedRectangle(cornerRadius: 8))
@@ -198,18 +218,19 @@ struct PixfunNavigationButton: View {
 }
 
 struct PixfunLogo: View {
-    private let scale: CGFloat = 120.0 / 156.0
+    // The same transparent, full-color artwork is used in both appearances.
+    // Crop only transparent export margins; never tint or blend the logo.
+    private let scale: CGFloat = 120.0 / 1811.0
     var body: some View {
-        // Exact approved web lockup. Its black matte is composited away just as
-        // the website does; the symbol and lettering are not redrawn or retyped.
         GeometryReader { _ in
-            if let url = Bundle.main.url(forResource: "pixfun-lockup-v2", withExtension: "png", subdirectory: "Brand"),
+            if let url = Bundle.main.url(forResource: "pixfun-lockup-transparent-v3", withExtension: "png", subdirectory: "Brand"),
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: image).resizable().interpolation(.high)
-                    .frame(width: 218 * scale, height: 218 * 362 / 1086 * scale)
-                    .offset(x: -31 * scale, y: -17 * scale)
+                    .frame(width: 2172 * scale, height: 724 * scale)
+                    .offset(x: -196 * scale, y: -153 * scale + 4)
             }
-        }.frame(width: 120, height: 42 * scale).clipped().blendMode(.screen)
+        }.frame(width: 120, height: 32).clipped()
+            .padding(.horizontal, 8).padding(.vertical, 6)
             .accessibilityElement(children: .ignore).accessibilityLabel("Pixfun")
     }
 }
@@ -219,7 +240,7 @@ struct PixfunActivityIndicator: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var queued = false
     var size: CGFloat = 22
-    var tint: Color = .pixfunGold
+    var tint: Color = .pixfunGoldText
     var body: some View {
         Group {
             if queued {
@@ -238,11 +259,15 @@ struct PixfunActivityIndicator: View {
     }
 }
 
-// Native window chrome remains draggable, but no longer introduces a light-gray toolbar.
+// Keep native window chrome and AppKit surfaces in sync with the selected appearance.
 struct PixfunWindowAppearance: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { AppearanceView() }
-    func updateNSView(_ view: NSView, context: Context) {}
+    func updateNSView(_ view: NSView, context: Context) { view.window?.backgroundColor = NSColor(Color.pixfunBackground) }
     private final class AppearanceView: NSView {
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            window?.backgroundColor = NSColor(Color.pixfunBackground)
+        }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             window?.titlebarAppearsTransparent = true

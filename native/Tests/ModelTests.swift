@@ -213,6 +213,23 @@ import Foundation
             return
         }
         let savedSettings = AppSettingsDraft()
+        let appearanceSuite = "com.pixfun.appearance-tests.\(UUID().uuidString)"
+        let appearanceDefaults = UserDefaults(suiteName: appearanceSuite)!
+        defer { appearanceDefaults.removePersistentDomain(forName: appearanceSuite) }
+        check(AppAppearance.read(from: appearanceDefaults) == .system, "missing appearance follows the system")
+        for mode in AppAppearance.allCases {
+            mode.persist(in: appearanceDefaults)
+            check(AppAppearance.read(from: appearanceDefaults) == mode, "appearance preference round trips")
+        }
+        appearanceDefaults.set("obsolete-value", forKey: AppAppearance.preferenceKey)
+        check(AppAppearance.read(from: appearanceDefaults) == .system, "unknown appearance safely follows system")
+        check(AppAppearance.system.colorScheme == nil && AppAppearance.system.nativeAppearance == nil, "follow system clears SwiftUI and AppKit overrides")
+        check(AppAppearance.light.colorScheme == .light && AppAppearance.dark.colorScheme == .dark, "explicit themes override system")
+        var appearanceDraft = savedSettings
+        appearanceDraft.appearance = .light
+        check(savedSettings.appearance == .system && appearanceDraft != savedSettings, "appearance preview remains an isolated draft")
+        check(!appearanceDraft.requiresCloudSave(comparedTo: savedSettings), "theme-only changes never touch credentials or cloud")
+
         check(CatalogFailure.message(CancellationError()) == nil, "cancelled catalog task never becomes a persistent error")
         check(CatalogFailure.message(URLError(.cancelled)) == nil, "cancelled catalog request never becomes an error notice")
         check(CatalogFailure.message(URLError(.notConnectedToInternet)) != nil, "real catalog failures remain available in search information")
@@ -1801,7 +1818,29 @@ import Foundation
         generated.version += 1; editorStore.agentRuns = [generated]
         check(editorStore.editorProjectID == nil && editorStore.page == .media, "background completion does not interrupt media browsing")
         let mapCompletion = WorkspaceStore()
-        var mapVideo = generated; mapVideo.creationSurface = "map"
+        var mapVideo = generated; mapVideo.creationSurface = "map"; mapVideo.mediaIds = [mapA.id]
+        mapCompletion.items = [mapA]
+        let mapHistory = WorkspaceStore()
+        mapHistory.items = [mapA, mapB]
+        mapHistory.agentRuns = [mapVideo]
+        check(mapHistory.mapCreationRun == nil, "completed map history never replaces the current library map on launch")
+        check(mapHistory.availableMapCreationRuns.map(\.id) == [mapVideo.id], "current located history stays available for explicit resumption")
+        mapHistory.mapCreationRunID = mapVideo.id
+        check(mapHistory.mapCreationRun?.id == mapVideo.id, "explicitly selected located history can be shown")
+        check(MediaMapData.points(for: mapVideo, in: mapHistory.mediaMapItems).map(\.id) == [mapA.id], "explicit task context projects only its current library media")
+        mapHistory.items = [mapB]
+        check(mapHistory.mapCreationRun == nil && mapHistory.availableMapCreationRuns.isEmpty, "removed task media cannot hide the replacement library coordinates")
+        check(mapHistory.mediaMapItems.compactMap(MediaMapPoint.init).count == 1, "unrelated library GPS remains available after stale history is rejected")
+        mapHistory.items = [unlocatedMapItem]
+        check(mapHistory.mapCreationRun == nil, "a task without any valid current coordinate does not expose a map rail")
+        mapHistory.items = [mapA, mapB]; mapHistory.mapCreationRunID = nil
+        var resumableMapRun = mapVideo; resumableMapRun.status = "running"
+        mapHistory.agentRuns = [resumableMapRun]
+        check(mapHistory.mapCreationRun?.id == mapVideo.id, "active work with current coordinates still resumes after launch")
+        mapHistory.mapCreationHidden = true
+        check(mapHistory.mapCreationRun == nil, "explicitly hiding an active task still returns to the library")
+        mapHistory.mapCreationHidden = false; mapHistory.items = [mapB]
+        check(mapHistory.mapCreationRun == nil, "even active history cannot consume the map when its sources are gone")
         mapCompletion.page = .mediaMap; mapCompletion.mapCreationRunID = mapVideo.id
         mapCompletion.agentRuns = [mapVideo]
         check(mapCompletion.page == .mediaMap, "loading an already completed map task does not redirect")

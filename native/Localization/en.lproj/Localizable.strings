@@ -1,1 +1,15 @@
 /* English source strings are the fallback; filenames and user content are verbatim. */
+
+/* Pixfun design system · appearance and settings */
+"Appearance" = "Appearance";
+"Follow system" = "Follow system";
+"Light" = "Light";
+"Dark" = "Dark";
+"Changes apply when you save. Appearance is previewed immediately." = "Changes apply when you save. Appearance is previewed immediately.";
+"Follow your Mac, or choose a light or dark interface. Photos and videos keep their original colors." = "Follow your Mac, or choose a light or dark interface. Photos and videos keep their original colors.";
+"Place information" = "Place information";
+"Enable place-name lookup first." = "Enable place-name lookup first.";
+"Enable place-name and area lookup first." = "Enable place-name and area lookup first.";
+"Unsaved changes" = "Unsaved changes";
+"Expanded" = "Expanded";
+"Collapsed" = "Collapsed";

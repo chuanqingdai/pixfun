@@ -186,7 +186,7 @@ struct MapCreationPanel: View {
                     if entry.location == nil {
                         Text("无定位").font(.pixfun(10)).foregroundStyle(Color.pixfunMuted)
                     } else if entry.correction != nil {
-                        Text("已调整").font(.pixfun(10)).foregroundStyle(Color.pixfunGold)
+                        Text("已调整").font(.pixfun(10)).foregroundStyle(Color.pixfunGoldText)
                     }
                 }.frame(maxWidth: .infinity, minHeight: 52, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("在地图中定位")
@@ -202,7 +202,7 @@ struct MapCreationPanel: View {
                         Image(systemName: "mappin.and.ellipse").font(.system(size: 15))
                         Text("调整位置").font(.pixfun(10))
                     }.frame(width: 48, height: 48).contentShape(Rectangle())
-                }.buttonStyle(.plain).foregroundStyle(Color.pixfunGold).disabled(locked)
+                }.buttonStyle(.plain).foregroundStyle(Color.pixfunGoldText).disabled(locked)
                     .accessibilityLabel("调整 \(entry.name) 的位置")
                     .accessibilityIdentifier("map-adjust-location-\(entry.mediaId)")
             }
@@ -237,7 +237,7 @@ struct MapCreationPanel: View {
                     .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).lineSpacing(4)
             }
             if let notice = story?.chapterNotice {
-                Text(notice).font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                Text(notice).font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
             }
             if let outline = story?.outline, !outline.isEmpty {
                 VStack(alignment: .leading, spacing: 18) {
@@ -254,7 +254,7 @@ struct MapCreationPanel: View {
         let duration = shots.reduce(0) { $0 + $1.end - $1.start }
         let stage = count == 1 ? "全片" : index == 0 ? "开场" : index == count - 1 ? "收尾" : "第\(index + 1)段"
         return HStack(alignment: .top, spacing: 12) {
-            Text(stage).font(.pixfun(11, semibold: true)).foregroundStyle(Color.pixfunGold)
+            Text(stage).font(.pixfun(11, semibold: true)).foregroundStyle(Color.pixfunGoldText)
                 .frame(width: 36, alignment: .leading).padding(.top, 2)
             VStack(alignment: .leading, spacing: 7) {
                 Text(chapter.title).font(.pixfun(14, semibold: true)).fixedSize(horizontal: false, vertical: true)
@@ -278,7 +278,7 @@ struct MapCreationPanel: View {
             DisclosureGroup("分镜安排", isExpanded: $shotsExpanded) {
                 shotList.padding(.top, 12)
             }.font(.pixfun(13, semibold: true))
-            if run.currentScriptConfirmed { Label("编排策略已确认", systemImage: "checkmark.circle.fill").font(.pixfun(12)).foregroundStyle(Color.pixfunGold) }
+            if run.currentScriptConfirmed { Label("编排策略已确认", systemImage: "checkmark.circle.fill").font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText) }
         }
     }
 
@@ -328,11 +328,11 @@ struct MapCreationPanel: View {
                 latitude = entry.location.map { String(format: "%.6f", $0.latitude) } ?? ""
                 longitude = entry.location.map { String(format: "%.6f", $0.longitude) } ?? ""
                 editingCoordinates.toggle()
-            }.buttonStyle(.plain).font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+            }.buttonStyle(.plain).font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
             if editingCoordinates {
                 Text(entry.name).font(.pixfun(12)).lineLimit(1)
-                TextField("纬度（WGS84）", text: $latitude)
-                TextField("经度（WGS84）", text: $longitude)
+                TextField("纬度（WGS84）", text: $latitude, prompt: PixfunTypography.placeholder("纬度（WGS84）"))
+                TextField("经度（WGS84）", text: $longitude, prompt: PixfunTypography.placeholder("经度（WGS84）"))
                 HStack {
                     Button("应用坐标") {
                         if let lat = Double(latitude), let lon = Double(longitude) {

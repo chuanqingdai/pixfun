@@ -28,7 +28,7 @@ struct MediaLibraryActivityView: View {
                         ProgressView().controlSize(.small).tint(Color.pixfunGold).frame(width: 16, height: 16)
                     } else {
                         Image(systemName: "exclamationmark.circle").font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.pixfunGold)
+                            .foregroundStyle(Color.pixfunGoldText)
                     }
                 }.frame(width: 24, height: 24)
                     .background(Color.pixfunGold.opacity(0.12), in: Circle())
@@ -120,7 +120,7 @@ struct MediaLibraryWelcomeView: View {
                     if source?.busy == true || source?.checking == true || store.importing {
                         ProgressView().controlSize(.regular)
                     } else {
-                        Image(systemName: "photo.stack").font(.system(size: 32, weight: .light)).foregroundStyle(Color.pixfunGold)
+                        Image(systemName: "photo.stack").font(.system(size: 32, weight: .light)).foregroundStyle(Color.pixfunGoldText)
                     }
                     Text(LocalizedStringKey(title)).font(.pixfun(28, semibold: true))
                     Text(detail).font(.pixfun(14)).foregroundStyle(Color.pixfunMuted)
@@ -238,7 +238,7 @@ private struct LibraryWelcomeWorkflow: View {
                 } else {
                     Image(systemName: "magnifyingglass").font(.system(size: 32, weight: .light))
                 }
-            }.foregroundStyle(Color.pixfunGold).frame(height: 52).accessibilityHidden(true)
+            }.foregroundStyle(Color.pixfunGoldText).frame(height: 52).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 9) {
                 Text(["Bring your media", "Auto-sync new files", "Find the moment"][index])
                     .font(.pixfun(15, semibold: true)).foregroundStyle(Color.pixfunInk)

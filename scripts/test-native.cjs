@@ -20,6 +20,11 @@ run('swiftc', ['-parse-as-library', '-module-cache-path', cache,
   'native/Sources/Pixfun/Theme.swift', 'native/Sources/Pixfun/PromptEditor.swift',
   'native/Tests/PromptEditorTests.swift', '-o', promptOutput]);
 run(promptOutput, []);
+const themeOutput = path.join(root, 'build-native/NativeThemeTests');
+run('swiftc', ['-parse-as-library', '-module-cache-path', cache,
+  'native/Sources/Pixfun/Models.swift', 'native/Sources/Pixfun/MediaSearch.swift',
+  'native/Sources/Pixfun/Theme.swift', 'native/Tests/ThemeTests.swift', '-o', themeOutput]);
+run(themeOutput, []);
 const keyboardOutput = path.join(root, 'build-native/StoryKeyboardTests');
 run('swiftc', ['-parse-as-library', '-module-cache-path', cache,
   'native/Sources/Pixfun/StoryPlaybackKeys.swift', 'native/Tests/StoryKeyboardTests.swift', '-o', keyboardOutput]);

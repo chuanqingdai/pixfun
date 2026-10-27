@@ -50,13 +50,7 @@ struct MediaMapView: View {
     }
     private var days: [String] { Array(Set(allPoints.compactMap(\.day))).sorted(by: >) }
     private var points: [MediaMapPoint] {
-        if let run {
-            let entries = run.tripConfirmation?.entries ?? []
-            return mapItems.filter { (run.mediaIds ?? []).contains($0.id) }.compactMap { item in
-                let entry = entries.first { $0.mediaId == item.id }
-                return MediaMapPoint(item, pendingLocation: entry?.correction != nil ? entry?.location : nil)
-            }
-        }
+        if let run { return MediaMapData.points(for: run, in: mapItems) }
         return allPoints.filter { day.isEmpty || $0.day == day }
     }
     private var selected: [MediaMapPoint] { MediaMapData.ordered(points.filter { selectedIDs.contains($0.id) }) }
@@ -88,7 +82,7 @@ struct MediaMapView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Media map").font(.pixfun(20, semibold: true))
-                    Text(chinese ? "素材库 · \(points.count) 个素材有可展示坐标" : "Library · \(points.count) mapped items")
+                    Text(chinese ? "\(run == nil ? "素材库" : "创作素材") · \(points.count) 个素材有可展示坐标" : "\(run == nil ? "Library" : "Creation") · \(points.count) mapped items")
                         .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted)
                 }
                 Spacer()
@@ -102,9 +96,9 @@ struct MediaMapView: View {
                         }
                     }.fixedSize()
                 }
-                if run == nil && store.agentRuns.contains(where: { $0.creationSurface == "map" }) {
+                if run == nil && !store.availableMapCreationRuns.isEmpty {
                     Menu("继续创作") {
-                        ForEach(store.agentRuns.filter { $0.creationSurface == "map" }) { saved in
+                        ForEach(store.availableMapCreationRuns) { saved in
                             Button("\(saved.attachments?.first?.name ?? "地图创作") · \(store.language.text(saved.statusLabel))") {
                                 store.mapCreationRunID = saved.id; store.mapCreationHidden = false
                             }
@@ -126,13 +120,14 @@ struct MediaMapView: View {
                     Toggle("Capture order", isOn: $showOrder).toggleStyle(.checkbox).disabled(days.isEmpty)
                         .help("Number recorded capture times. Connect points only when location evidence is sufficient.")
                     Spacer()
+                    if selectedItems.isEmpty { mapSelectionTools }
                 }.font(.pixfun(12)).padding(.horizontal, 20).padding(.bottom, 12)
             }
             if readMessage != nil || store.mapCreationError != nil {
                 VStack(alignment: .leading, spacing: 4) {
                     if let readMessage { Text(verbatim: readMessage) }
                     if let error = store.mapCreationError { Text(verbatim: error) }
-                }.font(.pixfun(12)).foregroundStyle(Color.pixfunGold)
+                }.font(.pixfun(12)).foregroundStyle(Color.pixfunGoldText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20).padding(.bottom, 12)
             }
@@ -142,12 +137,12 @@ struct MediaMapView: View {
                     VStack(spacing: 14) {
                         Image(systemName: "mappin.slash").font(.system(size: 32)).foregroundStyle(Color.pixfunMuted)
                         Text("No recorded coordinates to display").font(.pixfun(17, semibold: true))
-                        Text(run != nil ? "点击右侧素材的“调整位置”可补充坐标。" : "Place names alone cannot position media on a map. Read original locations or import photos and videos with GPS metadata.")
+                        Text("Place names alone cannot position media on a map. Read original locations or import photos and videos with GPS metadata.")
                             .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).multilineTextAlignment(.center).frame(maxWidth: 430)
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if !loadMap {
                     VStack(spacing: 16) {
-                        Image(systemName: "map").font(.system(size: 32)).foregroundStyle(Color.pixfunGold)
+                        Image(systemName: "map").font(.system(size: 32)).foregroundStyle(Color.pixfunGoldText)
                         Text("Load Apple Maps?").font(.pixfun(17, semibold: true))
                         Text("Apple receives map-area requests. Thumbnails and files stay on this Mac. This does not enable place-name lookups.")
                             .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).multilineTextAlignment(.center).frame(maxWidth: 440)
@@ -175,6 +170,7 @@ struct MediaMapView: View {
                     }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+                if !points.isEmpty && (run != nil || !selectedItems.isEmpty) {
                 Divider()
                 Group {
                 if let run {
@@ -187,13 +183,18 @@ struct MediaMapView: View {
                 }
                 .frame(width: 340)
                 .accessibilityIdentifier("map-workflow-rail")
+                }
             }
         }
         .frame(minWidth: 700, maxWidth: .infinity, minHeight: 540, maxHeight: .infinity)
         .navigationTitle("Media map")
         .background(Color.pixfunBackground).foregroundStyle(Color.pixfunInk)
         .task(id: inputKey) { allPoints = mapItems.compactMap(MediaMapPoint.init) }
-        .onChange(of: run?.id) { _ in selectedIDs = []; fitRequest += 1 }
+        .onAppear { if let run { store.mapCreationRunID = run.id } }
+        .onChange(of: run?.id) { id in
+            if store.mapCreationRunID == nil, let id { store.mapCreationRunID = id }
+            selectedIDs = []; fitRequest += 1
+        }
         .onChange(of: day) { _ in selectedIDs = []; visibleIDs = []; fitRequest += 1 }
         .onChange(of: days) { values in if !day.isEmpty && !values.contains(day) { day = "" } }
         .onDisappear { readTask?.cancel() }
@@ -244,26 +245,10 @@ struct MediaMapView: View {
                     .disabled(selectedItems.isEmpty || store.saving)
             }.padding(16).background(Color.pixfunRaised)
             Divider()
-            HStack(spacing: 8) {
-                Button {
-                    selectedIDs = visibleIDs.intersection(Set(points.map(\.id)))
-                    showOrder = true
-                } label: { Label("Select this area", systemImage: "viewfinder") }
-                    .buttonStyle(PixfunButtonStyle(kind: .quiet))
-                    .disabled(store.saving || !loadMap || visibleIDs.isEmpty)
-                Spacer(minLength: 0)
-                Button { fitRequest += 1 } label: {
-                    Label("Show all points", systemImage: "arrow.up.left.and.arrow.down.right")
-                }.buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!loadMap || points.isEmpty)
-            }.font(.pixfun(12)).padding(.horizontal, 12).padding(.vertical, 8)
-                .accessibilityIdentifier("map-selection-tools")
+            mapSelectionTools.padding(.horizontal, 12).padding(.vertical, 8)
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if selectedItems.isEmpty {
-                        Text("在地图上选择素材，或选择当前区域。")
-                            .font(.pixfun(13)).foregroundStyle(Color.pixfunMuted).padding(.vertical, 12)
-                    }
                     ForEach(selectedItems) { item in
                         HStack(alignment: .top, spacing: 6) {
                         Button {
@@ -302,6 +287,22 @@ struct MediaMapView: View {
                 .padding(16)
         }.frame(maxHeight: .infinity).background(Color.pixfunSurface)
     }
+    private var mapSelectionTools: some View {
+            HStack(spacing: 8) {
+                Button {
+                    selectedIDs = visibleIDs.intersection(Set(points.map(\.id)))
+                    showOrder = true
+                } label: { Label("Select this area", systemImage: "viewfinder") }
+                    .buttonStyle(PixfunButtonStyle(kind: .quiet))
+                    .disabled(store.saving || !loadMap || visibleIDs.isEmpty)
+                Spacer(minLength: 0)
+                Button { fitRequest += 1 } label: {
+                    Label("Show all points", systemImage: "arrow.up.left.and.arrow.down.right")
+                }.buttonStyle(PixfunButtonStyle(kind: .quiet)).disabled(!loadMap || points.isEmpty)
+            }.font(.pixfun(12))
+                .accessibilityIdentifier("map-selection-tools")
+    }
+
 }
 
 private final class MediaMapAnnotation: NSObject, MKAnnotation {
@@ -333,7 +334,7 @@ private struct MediaMapThumbnail: View {
             .overlay(alignment: .topLeading) {
                 if let state {
                     Image(systemName: state == "running" ? "hourglass" : state == "completed" ? "checkmark.circle.fill" : state == "failed" ? "exclamationmark.circle.fill" : "circle.dotted")
-                        .font(.system(size: 12)).foregroundStyle(Color.pixfunGold)
+                        .font(.system(size: 12)).foregroundStyle(Color.pixfunGoldText)
                         .padding(3).background(Color.pixfunBackground, in: Circle())
                 }
             }

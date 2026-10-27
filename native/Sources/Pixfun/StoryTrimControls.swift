@@ -26,7 +26,7 @@ struct StorySpeechHints: View {
                 Text(LocalizedStringKey(leading ? "In" : "Out"))
                 Text("→ \(StoryTimeline.timecode(point.time))").monospacedDigit()
             }
-        }.buttonStyle(.plain).foregroundStyle(Color.pixfunGold).help(point.text).disabled(disabled)
+        }.buttonStyle(.plain).foregroundStyle(Color.pixfunGoldText).help(point.text).disabled(disabled)
     }
 }
 
@@ -44,7 +44,7 @@ struct StoryTimeField: View {
     func format(_ seconds: Double) -> String { secondsOnly ? String(format: "%.2f", seconds) : StoryTimeline.timecode(seconds) }
     var formatted: String { format(value) }
     var body: some View {
-        TextField(label, text: $text).textFieldStyle(.plain).font(.pixfun(11)).monospacedDigit()
+        TextField(label, text: $text, prompt: PixfunTypography.placeholder(LocalizedStringKey(label))).textFieldStyle(.plain).font(.pixfun(11)).monospacedDigit()
             .padding(5).frame(width: secondsOnly ? 52 : 80)
             .background(Color.pixfunBackground, in: RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(invalid ? Color.orange : Color.pixfunLine))
@@ -184,7 +184,7 @@ struct StoryReplacementPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Text("Replace with project media").font(.pixfun(17, semibold: true)); Spacer(); Button("Cancel") { dismiss() }.disabled(applying) }
-            TextField("Search project media…", text: $query).textFieldStyle(.roundedBorder)
+            TextField("Search project media…", text: $query, prompt: PixfunTypography.placeholder("Search project media…")).textFieldStyle(.roundedBorder)
             ScrollView {
                 LazyVStack(spacing: 8) {
                     if loading { ProgressView("Finding alternatives from saved analysis…").font(.pixfun(12)) }
@@ -205,7 +205,7 @@ struct StoryReplacementPicker: View {
                                         ServiceImage(path: item.cover).frame(width: 80, height: 54).clipped().cornerRadius(6)
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(item.name).font(.pixfun(13, semibold: true)).lineLimit(1)
-                                            Text(LocalizedStringKey(candidate.reasonKey)).font(.pixfun(11)).foregroundStyle(Color.pixfunGold)
+                                            Text(LocalizedStringKey(candidate.reasonKey)).font(.pixfun(11)).foregroundStyle(Color.pixfunGoldText)
                                             Text("\(StoryTimeline.timecode(candidate.start))–\(StoryTimeline.timecode(candidate.end))").font(.pixfun(11)).monospacedDigit()
                                             Text(candidate.description).font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(2)
                                         }

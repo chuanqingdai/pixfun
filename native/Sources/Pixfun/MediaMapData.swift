@@ -81,6 +81,17 @@ enum MediaMapData {
     static let maximumStep = 2000.0
     static let maximumExtent = 5000.0
     static let maximumSpeed = 50.0
+    /// Project only current library records; historical attachments are not live map media.
+    static func points(for run: AgentRun, in items: [MediaItem]) -> [MediaMapPoint] {
+        let ids = Set(run.mediaIds ?? [])
+        let entries = Dictionary((run.tripConfirmation?.entries ?? []).map { ($0.mediaId, $0) },
+                                 uniquingKeysWith: { first, _ in first })
+        return items.filter { ids.contains($0.id) }.compactMap { item in
+            let entry = entries[item.id]
+            return MediaMapPoint(item, pendingLocation: entry?.correction != nil ? entry?.location : nil)
+        }
+    }
+
     static func ordered(_ points: [MediaMapPoint]) -> [MediaMapPoint] {
         points.sorted {
             let a = $0.captured ?? .distantFuture, b = $1.captured ?? .distantFuture

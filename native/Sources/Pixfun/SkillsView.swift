@@ -31,7 +31,7 @@ struct SkillsView: View {
                     Text(LocalizedStringKey(skill.category == "motion" ? "Graphic workflow" : "Story framework")).font(.pixfun(18, semibold: true))
                     ForEach(Array(skill.structure.enumerated()), id: \.offset) { index, title in
                         HStack(alignment: .top, spacing: 18) {
-                            Text(String(format: "%02d", index + 1)).font(.title3.monospacedDigit()).foregroundStyle(Color.pixfunGold)
+                            Text(String(format: "%02d", index + 1)).font(.title3.monospacedDigit()).foregroundStyle(Color.pixfunGoldText)
                             VStack(alignment: .leading, spacing: 8) { Text(title).font(.pixfun(15, semibold: true)); Text(skill.beats[index]).foregroundStyle(Color.pixfunMuted) }
                         }
                     }
@@ -70,7 +70,7 @@ struct SkillsView: View {
                         Text("Nine-step workflow").font(.pixfun(18, semibold: true))
                         ForEach(Array(workflow.enumerated()), id: \.offset) { index, point in
                             HStack(alignment: .top, spacing: 18) {
-                                Text(String(format: "%02d", index + 1)).font(.pixfun(15, semibold: true).monospacedDigit()).foregroundStyle(Color.pixfunGold)
+                                Text(String(format: "%02d", index + 1)).font(.pixfun(15, semibold: true).monospacedDigit()).foregroundStyle(Color.pixfunGoldText)
                                 section(point.title, point.body)
                             }
                         }
