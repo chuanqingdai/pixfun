@@ -9,7 +9,6 @@ struct AgentWorkspaceView: View {
     @State private var height: CGFloat = 36
     @State private var focused = false
     @State private var composerHasFocus = false
-    @State private var modelSettings = false
     @State private var scrollState = AgentScrollState()
     @State private var visibleMessageID: String?
     @State private var showAttachments = false
@@ -25,7 +24,7 @@ struct AgentWorkspaceView: View {
             }
             conversation
         }.padding(.horizontal, compact ? 16 : 28).padding(.top, 16).padding(.bottom, 18)
-            .sheet(isPresented: $modelSettings) { AgentSettingsView() }.navigationTitle("Project")
+            .navigationTitle("Project")
             .sheet(isPresented: $changeFiles) {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Files for this task").font(.pixfun(18, semibold: true))
@@ -271,7 +270,7 @@ struct AgentWorkspaceView: View {
                         .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Add material").disabled(store.importing || store.saving)
                         .modifier(ComposerAttachmentHint(active: store.needsComposerMaterials && !store.importing && !store.saving))
                     Spacer()
-                    Button { modelSettings = true } label: { ComposerToolLabel(title: "Models", symbol: "slider.horizontal.3") }
+                    Button { store.settingsPresented = true } label: { ComposerToolLabel(title: "Models", symbol: "slider.horizontal.3") }
                         .buttonStyle(PixfunButtonStyle(kind: .quiet)).help("Model settings")
                     if run.busy {
                         Button { store.agentAction("stop", run: run) } label: {

@@ -2,6 +2,28 @@
 
 This is the default Mac client, implemented in **SwiftUI + AppKit + AVKit**. It does not embed Electron, Chromium, WKWebView, HTML, or JavaScript UI. The website is a separate product surface and is unchanged.
 
+## Media 0.2.0
+
+- Import original photos/videos in place, or configure verified-copy sync from cards, folders and paired phones. Keep original filenames and source references. The empty library emphasizes manual import and also offers sync.
+- Browse by type, favorite, import date, source folder/device, place, scene, primary subject and activity. Search saved descriptions, shot evidence, transcripts and on-screen text; optional local visual indexing adds seekable scene matches.
+- Read an overall video description followed by distinct moments when present. Shot navigation stays below the player; secondary analysis, measurements and provenance are collapsed. Editorial estimates and sampled technical measurements retain separate labels.
+- Show available capture time, device, dimensions, frame rate, codecs, audio and GPS metadata. Hide the card's time row until a valid capture time is available. Container creation time is not substituted for capture time.
+- Generate evidence-backed subject/activity tags, keep background details searchable, and support manual tag corrections. Chinese is the default for the interface and newly generated analysis; settings use a draft and apply only after confirmation.
+- Resume interrupted content-analysis queues, reuse completed evidence, and retry transient failures with bounded backoff. Library removal requires confirmation and preserves original files.
+- Optional Apple coordinate lookup provides address context. A separate, default-off OpenStreetMap boundary toggle can group mapped campuses, parks and scenic areas. Lake proximity remains qualified as “nearby”; missing or ambiguous boundaries preserve the address. User-saved place names take priority.
+
+Boundary lookup sends coordinates only, caches results locally, and displays OpenStreetMap attribution. The community Overpass endpoint is for a limited pilot, capped at 100 requests/day with service-error cooldown. Production must configure an operated/contracted HTTPS endpoint using `PixfunBoundaryEndpoint` in the signed app's Info.plist. Public-service availability and boundary coverage are not guaranteed.
+
+Media verification (synthetic fixtures, no personal library changes):
+
+```sh
+node scripts/test-media.cjs
+node scripts/build-desktop-backend.cjs --skip-icon
+node scripts/build-native.cjs --stage-only
+```
+
+Use the existing desktop Python environment with the dependencies in `desktop/phone-requirements.txt`; FFmpeg with lavfi support generates the synthetic test clip. Visual-index and optional aesthetic checks require their configured local models. Tests report unavailable optional integrations as skips.
+
 ## Architecture and current scope
 
 - `PixfunApp.swift`: a native window, sidebar, system menus and keyboard commands.

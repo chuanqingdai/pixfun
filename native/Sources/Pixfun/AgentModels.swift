@@ -418,11 +418,34 @@ struct AgentCapabilities: Codable {
     var cloudText: Bool; var cloudVision: Bool
     var baseURL: String; var model: String; var visionModel: String; var localModel: String; var note: String
     var tools: [AgentToolCapability]?
+    var engineVersion: String? = nil
+}
+struct AgentQualityReport: Codable {
+    var version: Int; var status: String; var summary: String; var note: String
+    var checks: [String]; var issues: [AgentQualityIssue]
+    var audioProcessing: AgentAudioProcessing? = nil
+}
+struct AgentQualityIssue: Codable {
+    var kind: String; var message: String; var start: Double?; var end: Double?; var shotIds: [String]
+    var cueIndex: Int? = nil
+    var text: String? = nil
+}
+struct EditorNarrationRequest: Hashable {
+    var runID: String; var version: Int; var index: Int; var text: String
+    var start: Double; var end: Double
+    func matches(_ cues: [AgentFinishing.Narration]) -> Bool {
+        cues.indices.contains(index) && cues[index].text == text &&
+            cues[index].start == start && cues[index].end == end
+    }
+}
+struct AgentAudioProcessing: Codable {
+    var narrationDucking: Bool; var reusedNarration: Int; var totalNarration: Int
+    var loudnessNormalized: Bool? = nil
 }
 struct AgentToolCapability: Codable, Identifiable {
     var id: String; var name: String; var installed: Bool; var lastExecution: String
 }
-struct CloudSettings: Codable {
+struct CloudSettings: Codable, Equatable {
     var baseURL = "https://api.openai.com/v1"
     var model = ""
     var visionModel = ""

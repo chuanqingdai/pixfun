@@ -43,9 +43,57 @@ enum PixfunTypography {
     }
 }
 
+/// One semantic palette for toolbar categories, card chips and detail groups.
+/// Labels/icons remain visible so color is never the only category cue.
+enum MediaTagPalette {
+    static func facet(_ facet: MediaFacet) -> Color {
+        switch facet {
+        case .location: return Color(pixfunHex: 0x9EC9EE)
+        case .scene: return Color(pixfunHex: 0x9DD4BC)
+        case .subject: return Color(pixfunHex: 0xCEBAED)
+        case .activity: return .pixfunGold
+        }
+    }
+    static let technique = Color(pixfunHex: 0xA9C5D3)
+    static let story = Color(pixfunHex: 0xE3B6B4)
+    static let detail = Color.pixfunMuted
+}
+
 extension Font {
     static func pixfun(_ size: CGFloat = 14, semibold: Bool = false) -> Font {
-        .custom(semibold ? "DMSans-SemiBold" : "DMSans-Regular", size: size)
+        // Native UI typography: SF for Latin and the system's Chinese fallback.
+        .system(size: size, weight: semibold ? .semibold : .regular)
+    }
+}
+
+/// A shared selection surface for source selection and advanced settings.
+struct SyncSelectionLabel: View {
+    let title: String
+    let symbol: String
+    var accessory = "chevron.down"
+    var prominent = false
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.isFocused) private var focused
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 14)).frame(width: 20)
+                .foregroundStyle(prominent ? Color.pixfunGold : Color.pixfunMuted)
+            Text(LocalizedStringKey(title)).font(.pixfun(13, semibold: prominent)).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 12)
+            Image(systemName: accessory).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(prominent ? Color.pixfunGold : Color.pixfunMuted)
+                .frame(width: prominent ? 26 : 14, height: 26)
+                .background(prominent ? Color.pixfunHover : .clear, in: RoundedRectangle(cornerRadius: 5))
+        }
+        .foregroundStyle(Color.pixfunInk)
+        .padding(.horizontal, 12).frame(maxWidth: .infinity, minHeight: prominent ? 48 : 40)
+        .background(hovered && enabled ? Color.pixfunHover : prominent ? .pixfunRaised : .pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : hovered && enabled ? .pixfunGold : .pixfunLine, lineWidth: focused ? 2 : 1))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .opacity(enabled ? 1 : 0.5).onHover { hovered = $0 }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -71,7 +119,7 @@ struct PixfunButtonStyle: ButtonStyle {
             configuration.label
                 .font(.pixfun(13, semibold: true))
                 .foregroundStyle(!enabled ? Color.pixfunSubtle : kind == .primary ? .pixfunOnAccent : hovered ? .pixfunInk : .pixfunMuted)
-                .padding(.horizontal, 12).frame(minHeight: 36)
+                .padding(.horizontal, 12).frame(minHeight: 30)
                 .background(fill.opacity(configuration.isPressed ? 0.75 : 1), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : kind == .secondary ? .pixfunLine : .clear, lineWidth: focused ? 2 : 1))
                 .contentShape(RoundedRectangle(cornerRadius: 8))
@@ -88,7 +136,7 @@ struct PixfunSearchField: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.system(size: 13)).foregroundStyle(Color.pixfunSubtle)
-            TextField(placeholder, text: $text, prompt: Text(placeholder).foregroundColor(.pixfunSubtle)).textFieldStyle(.plain).font(.pixfun(13)).focused($focused)
+            TextField(LocalizedStringKey(placeholder), text: $text, prompt: Text(LocalizedStringKey(placeholder)).foregroundColor(.pixfunSubtle)).textFieldStyle(.plain).font(.pixfun(13)).focused($focused)
                 .accessibilityLabel(placeholder)
             if !text.isEmpty {
                 Button { if let clear { clear() } else { text = "" } } label: {
@@ -96,7 +144,7 @@ struct PixfunSearchField: View {
                         .frame(width: 22, height: 24).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel("Clear search")
             }
-        }.padding(.horizontal, 11).frame(height: 36)
+        }.padding(.horizontal, 11).frame(height: 30)
             .background(Color.pixfunSurface, in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunSubtle : .pixfunLine))
     }
@@ -118,27 +166,39 @@ struct PixfunCardStyle: ButtonStyle {
     }
 }
 
+enum PixfunSidebarMetrics {
+    static let contentInset: CGFloat = 10
+}
+
+enum PixfunLayout {
+    static let pageInset: CGFloat = 24
+    static let sectionSpacing: CGFloat = 20
+}
+
 struct PixfunNavigationButton: View {
     let page: WorkspacePage
     let selected: Bool
     let action: () -> Void
     @State private var hovered = false
+    @FocusState private var focused: Bool
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: page.symbol).font(.system(size: 17, weight: .regular)).frame(width: 22)
-                Text(page.rawValue).font(.pixfun(14, semibold: selected))
+            HStack(spacing: 10) {
+                Image(systemName: page.symbol).font(.system(size: 16, weight: .regular)).frame(width: 20)
+                Text(LocalizedStringKey(page.navigationTitle)).font(.pixfun(13, semibold: selected)).lineLimit(1)
                 Spacer(minLength: 0)
             }.foregroundStyle(selected ? Color.pixfunGold : hovered ? .pixfunInk : .pixfunMuted)
-                .padding(.horizontal, 14).frame(height: 44)
+                .padding(.horizontal, PixfunSidebarMetrics.contentInset).frame(height: 34)
                 .background(selected ? Color.pixfunBrandSoft : hovered ? .pixfunRaised : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Color.pixfunFocus : .clear, lineWidth: 2))
                 .contentShape(RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).onHover { hovered = $0 }
+        }.buttonStyle(.plain).focused($focused).onHover { hovered = $0 }
             .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
 
 struct PixfunLogo: View {
+    private let scale: CGFloat = 120.0 / 156.0
     var body: some View {
         // Exact approved web lockup. Its black matte is composited away just as
         // the website does; the symbol and lettering are not redrawn or retyped.
@@ -146,10 +206,10 @@ struct PixfunLogo: View {
             if let url = Bundle.main.url(forResource: "pixfun-lockup-v2", withExtension: "png", subdirectory: "Brand"),
                let image = NSImage(contentsOf: url) {
                 Image(nsImage: image).resizable().interpolation(.high)
-                    .frame(width: 218, height: 218 * 362 / 1086)
-                    .offset(x: -31, y: -17)
+                    .frame(width: 218 * scale, height: 218 * 362 / 1086 * scale)
+                    .offset(x: -31 * scale, y: -17 * scale)
             }
-        }.frame(width: 156, height: 42).clipped().blendMode(.screen)
+        }.frame(width: 120, height: 42 * scale).clipped().blendMode(.screen)
             .accessibilityElement(children: .ignore).accessibilityLabel("Pixfun")
     }
 }

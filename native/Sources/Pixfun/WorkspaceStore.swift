@@ -5,14 +5,85 @@ import UniformTypeIdentifiers
 @MainActor
 final class WorkspaceStore: ObservableObject {
     let service = LocalService()
-    @Published var page: WorkspacePage? = .home { didSet { if page != .media { detail = nil; mediaReturnProjectID = nil }; expandCompletedEditor() } }
+    @Published private(set) var language = AppLanguage.saved
+    @Published var settingsPresented = false
+    @Published private(set) var onlinePlaceNames = UserDefaults.standard.bool(forKey: PlaceNameResolver.consentKey)
+    @Published private(set) var onlinePlaceBoundaries = UserDefaults.standard.bool(forKey: PlaceBoundaryLookup.consentKey)
+    private lazy var placeNames: PlaceNameResolver = {
+        let resolver = PlaceNameResolver(canRequest: { NSApp?.isActive == true })
+        resolver.onChange = { [weak self, weak resolver] in
+            guard let self, let resolver else { return }
+            self.items = resolver.applyingCache(to: self.items, language: self.language.rawValue)
+            self.persistPlaceNames()
+        }
+        return resolver
+    }()
+    private var savedPlaces: [String: ResolvedPlace] = [:]
+    private var placeWriteTask: Task<Void, Never>?
+    private var placeWriteRetry = Date.distantPast
+    private func persistPlaceNames() {
+        guard ready, onlinePlaceNames, placeWriteTask == nil, Date() >= placeWriteRetry else { return }
+        let changes = items.compactMap { item -> (String, ResolvedPlace)? in
+            guard !item.hasSavedPlaceName, let place = item.validResolvedPlace,
+                  place.language == language.rawValue, savedPlaces[item.id] != place else { return nil }
+            return (item.id, place)
+        }
+        guard !changes.isEmpty else { return }
+        placeWriteTask = Task { [weak self] in
+            guard let self else { return }
+            defer { placeWriteTask = nil }
+            for (id, place) in changes {
+                guard !Task.isCancelled, onlinePlaceNames, place.language == language.rawValue else { break }
+                do {
+                    struct Response: Decodable { var ok: Bool }
+                    let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(place))
+                    let response: Response = try await service.post("/api/desktop/analysis/place", ["id": id, "place": value], native: true)
+                    if response.ok { savedPlaces[id] = place }
+                } catch { placeWriteRetry = Date().addingTimeInterval(30); break }
+            }
+        }
+    }
+    func saveOnlinePlaceNames(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: PlaceNameResolver.consentKey)
+        onlinePlaceNames = enabled
+        updatePlaceNames()
+    }
+    func saveOnlinePlaceBoundaries(_ enabled: Bool) {
+        placeNames.cancel()
+        UserDefaults.standard.set(enabled, forKey: PlaceBoundaryLookup.consentKey)
+        onlinePlaceBoundaries = enabled
+        updatePlaceNames()
+    }
+    func savePlaceSettings(names: Bool, boundaries: Bool) {
+        placeNames.cancel()
+        UserDefaults.standard.set(names, forKey: PlaceNameResolver.consentKey)
+        UserDefaults.standard.set(boundaries, forKey: PlaceBoundaryLookup.consentKey)
+        onlinePlaceNames = names
+        onlinePlaceBoundaries = boundaries
+        updatePlaceNames()
+    }
+    private func updatePlaceNames() {
+        items = placeNames.applyingCache(to: items, language: language.rawValue)
+        persistPlaceNames()
+        placeNames.schedule(items.compactMap { $0.placeQuery(language: language.rawValue) },
+                            enabled: onlinePlaceNames, foreground: NSApp?.isActive == true)
+    }
+    func saveLanguage(_ language: AppLanguage) async throws {
+        struct Response: Decodable { var ok: Bool }
+        let _: Response = try await service.post("/api/desktop/settings", ["key":"language", "value":language.rawValue], native: true)
+        UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
+        self.language = language
+        updatePlaceNames()
+    }
+    @Published var page: WorkspacePage? = .media { didSet { if page != .media { detail = nil; mediaReturnProjectID = nil }; expandCompletedEditor() } }
     @Published private(set) var mediaReturnProjectID: String?
-    var mediaBackTitle: String { mediaReturnProjectID == nil ? "Media" : "Conversation" }
+    var mediaBackTitle: String { mediaReturnProjectID == nil ? "Library" : "Conversation" }
     @Published var ready = false
     @Published var startupError: String?
     @Published var error: String?
     @Published var items: [MediaItem] = [] { didSet {
         searchDocuments = Dictionary(uniqueKeysWithValues: items.map { ($0.id, MediaSearchDocument($0)) })
+        mediaTagFrequencies = MediaTagPresentation.frequencies(libraryItems)
         refreshMediaSearch()
     } }
     @Published var projects: [Project] = []
@@ -21,13 +92,127 @@ final class WorkspaceStore: ObservableObject {
     @Published var projectDrafts: [String: Draft] = [:] { didSet { if restoredDraft { persistProjectDrafts() } } }
     @Published var selectedProjectID: String? { didSet { expandCompletedEditor() } }
     private var selectionProjectID: String?
-    @Published var query = "" { didSet { refreshMediaSearch() } }
+    private var selectionReturnPage: WorkspacePage = .media
+    @Published var mediaAddedRange = MediaAddedRange.all { didSet { refreshMediaSearch() } }
+    @Published var mediaWorkFilter = MediaWorkFilter.all { didSet { refreshMediaSearch() } }
+    @Published var syncSnapshot: MediaSyncSnapshot?
+    @Published var syncStatusUnavailable = false
+    @Published var query = "" { didSet { if query != oldValue { visualHits = []; visualQuery = "" }; refreshMediaSearch() } }
+    @Published var catalogStatus: CatalogStatus?
+    @Published var catalogBusy = false
+    @Published var catalogError: String?
+    private var visualHits: [CatalogHit] = []
+    private var visualQuery = ""
+    var catalogMessage: String {
+        if let error = catalogError { return error }
+        if catalogBusy { return catalogStatus?.job?.message ?? "Queued for local processing…" }
+        let count = catalogStatus?.indexed ?? 0
+        let total = catalogStatus?.total ?? libraryItems.filter { $0.kind == "video" }.count
+        if let stale = catalogStatus?.stale, stale > 0 { return "\(count)/\(total) videos indexed · \(stale) need rebuilding after source or shot changes." }
+        if count == 0 { return "No videos indexed. Build an index to search what appears on screen." }
+        return "\(count)/\(total) videos indexed · Type a scene and press Return. Matches are suggestions."
+    }
+    func refreshCatalogStatus() async {
+        guard ready else { return }
+        do { catalogStatus = try await service.get("/api/desktop/agent/catalog", native: true) }
+        catch { catalogError = error.localizedDescription }
+    }
+    func startCatalogIndex() {
+        let ids = libraryItems.filter { $0.kind == "video" && $0.missing != true }.map(\.id)
+        guard !ids.isEmpty else { catalogError = "No online videos to index."; return }
+        performCatalog(["action":"index", "ids":ids])
+    }
+    func searchVisualMedia() {
+        guard (catalogStatus?.indexed ?? 0) > 0, [.all, .content].contains(searchScope),
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        performCatalog(["action":"search", "query":query], querySnapshot: query)
+    }
+    func stopCatalog() {
+        Task {
+            struct Result: Decodable { var ok: Bool }
+            do { let _: Result = try await service.post("/api/desktop/agent/catalog", ["action":"stop"], native: true) }
+            catch { catalogError = error.localizedDescription }
+        }
+    }
+    private func performCatalog(_ payload: [String: Any], querySnapshot: String? = nil) {
+        guard !catalogBusy else { return }
+        catalogBusy = true; catalogError = nil
+        if querySnapshot != nil { visualHits = []; visualQuery = ""; refreshMediaSearch() }
+        Task {
+            defer { catalogBusy = false }
+            struct Response: Decodable { var job: CatalogJob }
+            do {
+                let response: Response = try await service.post("/api/desktop/agent/catalog", payload, native: true)
+                var job = response.job
+                while job.status == "running" {
+                    try await Task.sleep(nanoseconds: 700_000_000)
+                    let status: CatalogStatus = try await service.get("/api/desktop/agent/catalog", native: true)
+                    catalogStatus = status
+                    guard let current = status.job, current.id == job.id else { throw ServiceError(message: "The local task changed. Refresh and retry.") }
+                    job = current
+                }
+                if job.status == "failed" { throw ServiceError(message: job.message) }
+                if job.status == "completed", let searched = querySnapshot, query == searched {
+                    visualHits = job.hits; visualQuery = searched; refreshMediaSearch()
+                }
+                if !job.failures.isEmpty { catalogError = "\(job.failures.count) videos unavailable for visual search. HDR / rotation, missing files or model errors may need attention. Existing results were kept." }
+                await refreshCatalogStatus()
+            } catch { catalogError = error.localizedDescription }
+        }
+    }
+    func visualMatchTime(_ id: String) -> Double? {
+        guard [.all, .content].contains(searchScope), visualQuery == query else { return nil }
+        return visualHits.first { $0.mediaId == id }?.start
+    }
+    func visualMatch(_ id: String) -> CatalogHit? {
+        guard [.all, .content].contains(searchScope), visualQuery == query else { return nil }
+        return visualHits.first { $0.mediaId == id }
+    }
+    func saveMediaTags(_ item: MediaItem, hidden: Set<String>, added: [EvidenceTag]) async throws {
+        struct Response: Decodable { var ok: Bool }
+        let _: Response = try await service.post("/api/desktop/agent/media-tags", ["id":item.id,
+            "hidden":Array(hidden), "added":added.map { ["category":$0.category, "label":$0.label] }], native: true)
+        try await refresh()
+    }
     @Published var category = MediaCategory.all { didSet { refreshMediaSearch() } }
     @Published var folder = "" { didSet { refreshMediaSearch() } }
+    @Published var syncSourceID: String? { didSet { refreshMediaSearch() } }
+    @Published var syncSourceName: String?
     @Published var searchScope = MediaSearchScope.all { didSet { refreshMediaSearch() } }
     @Published var sort = MediaSort.original { didSet { refreshMediaSearch() } }
+    @Published private(set) var comparingBeauty = false
+    private var beautyScores: [String: Double] = [:]
+    var canCompareBeauty: Bool { agentCapabilities?.tools?.contains { $0.id == "beauty" && $0.installed && $0.lastExecution == "verified" } == true }
+    func compareBeauty() {
+        guard canCompareBeauty, !comparingBeauty else { return }
+        let selected = visibleItems.filter { $0.status == "ready" && $0.missing != true }
+        guard !selected.isEmpty, selected.count <= 100 else { error = "Filter to 1–100 ready materials before comparing."; return }
+        let previousSort = sort
+        comparingBeauty = true
+        struct Job: Decodable { var id: String; var status: String; var scores: [String: Double]?; var message: String? }
+        struct Response: Decodable { var job: Job }
+        Task {
+            defer { comparingBeauty = false }
+            do {
+                var result: Response = try await service.post("/api/desktop/agent/beauty-sort", ["mediaIds":selected.map(\.id)], native: true)
+                for _ in 0..<360 where result.job.status == "running" {
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    result = try await service.post("/api/desktop/agent/beauty-sort", ["jobId":result.job.id], native: true)
+                }
+                guard result.job.status == "completed", let scores = result.job.scores else {
+                    throw ServiceError(message: result.job.message ?? "Comparison is taking longer than expected. Your order is unchanged.")
+                }
+                beautyScores = scores
+                // Do not override a different order chosen while inference ran.
+                if sort == previousSort { sort = .beauty } else { refreshMediaSearch() }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+    @Published var mediaFacets = MediaFacetSelection() { didSet { refreshMediaSearch() } }
+    @Published private(set) var mediaFacetOptions: [MediaFacet: [MediaFacetOption]] = [:]
     @Published var locations: [String: MediaLocation] = [:] { didSet { refreshMediaSearch() } }
     private var searchDocuments: [String: MediaSearchDocument] = [:]
+    private var mediaTagFrequencies: [String: Int] = [:]
     @Published private(set) var mediaSearchResults: [MediaSearchResult] = []
     var lastOpenedMediaID: String?
     var mediaSeekTime: Double = 0
@@ -127,6 +312,9 @@ final class WorkspaceStore: ObservableObject {
         return agentRuns.filter { $0.projectId == id }.max { $0.updatedAt < $1.updatedAt }
     }
     @Published var removed: MediaItem?
+    @Published var mediaRemovalRequest: [MediaItem] = []
+    @Published private(set) var removingMedia = false
+    @Published private(set) var removedItems: [MediaItem] = []
     private var restoredDraft = false
     private var poller: Task<Void, Never>?
     private var draftURL: URL { service.dataDirectory.appendingPathComponent("native-draft.json") }
@@ -220,22 +408,81 @@ final class WorkspaceStore: ObservableObject {
     var visibleItems: [MediaItem] {
         mediaSearchResults.map(\.item)
     }
+    var libraryItems: [MediaItem] { items.filter { $0.kind != "audio" && $0.isExample != true } }
+    func mediaSource(_ item: MediaItem) -> MediaSourceIdentity {
+        let device = syncSnapshot?.devices.first { $0.id == item.syncSourceId }
+        return MediaSourceIdentity(item: item, sourceName: device?.name, sourceKind: device?.kind)
+    }
     private func refreshMediaSearch() {
-        mediaSearchResults = MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort)
-            .results(items, locations: locations, documents: searchDocuments)
+        let eligible = libraryItems.filter { mediaAddedRange.includes($0) && mediaWorkFilter.includes($0) }
+        var candidates = MediaFilter(category: category, query: query, scope: searchScope, folder: folder, sort: sort, syncSourceID: syncSourceID)
+            .results(eligible, locations: locations, documents: searchDocuments)
+        if [.all, .content].contains(searchScope) && isSearchingMedia && visualQuery == query {
+            let allowed = MediaFilter(category: category, query: "", scope: searchScope, folder: folder, sort: sort, syncSourceID: syncSourceID)
+                .results(eligible, locations: locations, documents: searchDocuments)
+            candidates = MediaSearchMerge.combine(text: candidates, visual: visualHits, allowed: allowed)
+        }
+        let documents = candidates.compactMap { searchDocuments[$0.id] }
+        mediaFacetOptions = Dictionary(uniqueKeysWithValues: MediaFacet.allCases.map {
+            ($0, mediaFacets.options(for: $0, documents: documents))
+        })
+        mediaSearchResults = candidates.filter { mediaFacets.matches(searchDocuments[$0.id]?.quickTags ?? []) }
+        if sort == .beauty {
+            mediaSearchResults = mediaSearchResults.enumerated().sorted { a,b in
+                let left = beautyScores[a.element.id] ?? -.infinity, right = beautyScores[b.element.id] ?? -.infinity
+                return left == right ? a.offset < b.offset : left > right
+            }.map(\.element)
+        }
+    }
+    func mediaTags(for item: MediaItem) -> [MediaFacetTag] {
+        searchDocuments[item.id]?.quickTags ?? MediaQuickTags.tags(item)
+    }
+    func coreMediaTags(for item: MediaItem) -> [MediaFacetTag] {
+        MediaTagPresentation.core(item, frequencies: mediaTagFrequencies)
+    }
+    func filterMediaTag(_ tag: MediaFacetTag) {
+        navigate(.media)
+        detail = nil
+        resetMediaFilters()
+        mediaFacets.values[tag.facet] = tag
+    }
+    func searchMediaTag(_ tag: MediaSearchTag) {
+        navigate(.media)
+        detail = nil
+        resetMediaFilters()
+        searchScope = tag.scope
+        query = tag.text
+    }
+    func toggleMediaTag(_ tag: MediaFacetTag) {
+        mediaFacets.values[tag.facet] = mediaFacets.values[tag.facet]?.id == tag.id ? nil : tag
     }
     var isSearchingMedia: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     var mediaResultSummary: String {
         let count = visibleItems.count
-        return isSearchingMedia ? "\(count) \(count == 1 ? "result" : "results") · \(items.filter { $0.kind != "audio" }.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
+        if language == .chinese {
+            if syncSourceID != nil { return "\(count) 个素材 · \(syncSourceName ?? "导入设备")" }
+            return hasMediaFilters ? "找到 \(count) 个素材 · 共 \(libraryItems.count) 个" : "\(count) 个本地素材"
+        }
+        if syncSourceID != nil { return "\(count) \(count == 1 ? "file" : "files") · \(syncSourceName ?? "Imported device")" }
+        return hasMediaFilters ? "\(count) \(count == 1 ? "result" : "results") · \(libraryItems.count) local files" : "\(count) local \(count == 1 ? "file" : "files")"
     }
     var folders: [MediaFolder] {
-        let paths = items.filter { $0.kind != "audio" }.compactMap { locations[$0.id]?.folder }
+        let paths = libraryItems.filter { $0.syncSourceId == nil }.compactMap { locations[$0.id]?.folder }
         return Dictionary(grouping: paths, by: { $0 }).map { MediaFolder(path: $0.key, count: $0.value.count) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
-    var hasMediaFilters: Bool { isSearchingMedia || !folder.isEmpty || category != .all || searchScope != .all }
-    func resetMediaFilters() { query = ""; folder = ""; category = .all; searchScope = .all }
+    var importedSources: [(id: String, name: String, symbol: String)] {
+        let grouped = Dictionary(grouping: libraryItems.filter { $0.syncSourceId != nil }, by: { $0.syncSourceId! })
+        return grouped.map { let source = mediaSource($0.value[0]); return (id: $0.key, name: source.name, symbol: source.symbol) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    var hasMediaFilters: Bool { mediaAddedRange != .all || mediaWorkFilter != .all || syncSourceID != nil || isSearchingMedia || !folder.isEmpty || category != .all || searchScope != .all || !mediaFacets.isEmpty }
+    func resetMediaFilters() { query = ""; folder = ""; category = .all; searchScope = .all; mediaFacets = .init(); syncSourceID = nil; syncSourceName = nil; mediaAddedRange = .all; mediaWorkFilter = .all }
+    func openSyncedMedia(_ id: String, name: String) {
+        navigate(.media); detail = nil; resetMediaFilters(); sort = .original
+        syncSourceName = name; syncSourceID = id
+        perform { try await self.refresh() }
+    }
     func openMedia(_ item: MediaItem, at seconds: Double = 0) {
         mediaReturnProjectID = page == .project ? selectedProjectID : nil
         mediaSeekTime = max(0, seconds); lastOpenedMediaID = item.id; detail = item; page = .media
@@ -251,6 +498,7 @@ final class WorkspaceStore: ObservableObject {
         startupError = nil
         do {
             try await service.start()
+            try await saveLanguage(language)
             if let config = CloudSettings.read(), !config.model.isEmpty {
                 struct Configured: Decodable { var ok: Bool }
                 let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(config)) as! [String: Any]
@@ -292,7 +540,7 @@ final class WorkspaceStore: ObservableObject {
             }
         } catch { service.stop(); startupError = error.localizedDescription }
     }
-    func stop() { poller?.cancel(); service.stop() }
+    func stop() { poller?.cancel(); placeNames.cancel(); placeWriteTask?.cancel(); service.stop() }
     func refresh() async throws {
         struct Library: Decodable { var items: [MediaItem] }
         struct Projects: Decodable { var projects: [Project] }
@@ -301,7 +549,13 @@ final class WorkspaceStore: ObservableObject {
         let history: Projects = try await service.get("/api/desktop/projects")
         let paths: Locations = try await service.get("/api/desktop/locations", native: true)
         locations = Dictionary(uniqueKeysWithValues: paths.items.map { ($0.id, $0) })
-        items = library.items; projects = history.projects
+        savedPlaces = Dictionary(uniqueKeysWithValues: library.items.compactMap { item in item.validResolvedPlace.map { (item.id, $0) } })
+        items = placeNames.applyingCache(to: library.items, language: language.rawValue); projects = history.projects
+        persistPlaceNames()
+        placeNames.schedule(items.compactMap { $0.placeQuery(language: language.rawValue) },
+                            enabled: onlinePlaceNames, foreground: NSApp?.isActive == true)
+        do { syncSnapshot = try await service.get("/api/desktop/sync", native: true); syncStatusUnavailable = false }
+        catch { syncSnapshot = nil; syncStatusUnavailable = true }
         struct Runs: Decodable { var runs: [AgentRun] }
         let runs: Runs = try await service.get("/api/desktop/agent/runs", native: true)
         agentRuns = runs.runs
@@ -320,16 +574,22 @@ final class WorkspaceStore: ObservableObject {
         catch { self.error = "Could not save project drafts: \(error.localizedDescription)"; return false }
     }
     func attach(_ ids: Set<String>) { draft.attach(items.filter { ids.contains($0.id) }); page = .home }
-    func beginSelection() { selectionProjectID = composerProjectID; detail = nil; selection = Set(composerDraft.attachments.map(\.id)); selecting = true; page = .media }
+    func beginSelection() {
+        selectionReturnPage = page ?? .media; selectionProjectID = composerProjectID; detail = nil
+        selection = selectionReturnPage == .media ? [] : Set(composerDraft.attachments.map(\.id))
+        selecting = true; page = .media
+    }
     func finishSelection() {
+        let destination = selectionProjectID
         var value = draft(for: selectionProjectID); value.attach(items.filter { selection.contains($0.id) })
         setDraft(value, for: selectionProjectID)
         cancelSelection()
+        if let destination { selectedProjectID = destination; page = .project } else { page = .home }
     }
     func cancelSelection() {
         let destination = selectionProjectID
         selecting = false; selection.removeAll(); selectionProjectID = nil
-        if let destination { selectedProjectID = destination; page = .project } else { page = .home }
+        if let destination { selectedProjectID = destination; page = .project } else { page = selectionReturnPage }
     }
     func toggleSelection(_ id: String) { if selection.contains(id) { selection.remove(id) } else { selection.insert(id) } }
     func use(_ skill: CreatorSkill) { draft.skill = skill.chosen; page = .home }
@@ -552,7 +812,7 @@ final class WorkspaceStore: ObservableObject {
         panel.canChooseDirectories = folder; panel.canChooseFiles = !folder
         panel.allowsMultipleSelection = locate == nil
         panel.prompt = locate == nil ? "Add files" : "Reconnect"
-        if !folder { panel.allowedContentTypes = [.movie, .image, .audio] }
+        if !folder { panel.allowedContentTypes = [.movie, .image, .audio] + [UTType(filenameExtension: "lrf")].compactMap { $0 } }
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
         importing = true
@@ -573,7 +833,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
     nonisolated static func collect(_ urls: [URL]) throws -> [String] {
-        let extensions = Set("mp4 mov m4v mkv webm avi mts m2ts ogv jpg jpeg png webp gif avif heic heif bmp tif tiff mp3 wav m4a aac flac ogg aiff aif opus".split(separator: " ").map(String.init))
+        let extensions = Set("mp4 mov m4v mkv webm avi mts m2ts ogv lrf jpg jpeg png webp gif avif heic heif bmp tif tiff mp3 wav m4a aac flac ogg aiff aif opus".split(separator: " ").map(String.init))
         var files: [String] = [], seen: Set<String> = []
         func add(_ url: URL) throws {
             let resource = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
@@ -596,19 +856,76 @@ final class WorkspaceStore: ObservableObject {
         perform { try await self.service.update("/api/desktop/update", ["id": item.id, "favorite": item.favorite != true]); try await self.refresh() }
     }
     func remove(_ item: MediaItem) {
-        perform {
-            try await self.service.update("/api/desktop/remove", ["id": item.id])
-            self.removed = item; self.detail = nil
-            self.draft.attachments.removeAll { $0.id == item.id }
-            try await self.refresh()
+        requestMediaRemoval([item])
+    }
+    func requestMediaRemoval(_ candidates: [MediaItem]) {
+        guard !removingMedia else { return }
+        let ids = Set(candidates.map(\.id))
+        let targets = libraryItems.filter { ids.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        guard targets.allSatisfy({ ["ready", "error", "cancelled"].contains($0.status) }) else {
+            error = language == .chinese ? "部分素材仍在导入，请等待导入完成后再删除。" : "Some files are still being imported. Wait for import to finish before removing them."
+            return
+        }
+        // Freeze the targets before confirmation; polling/filter changes cannot expand them.
+        mediaRemovalRequest = targets
+    }
+    func removeConfirmedMedia(_ targets: [MediaItem]) {
+        guard !removingMedia, !targets.isEmpty else { return }
+        mediaRemovalRequest = []
+        removingMedia = true
+        Task {
+            defer { removingMedia = false }
+            var completed: [MediaItem] = []
+            do {
+                for item in targets {
+                    try await service.update("/api/desktop/remove", ["id": item.id])
+                    completed.append(item)
+                }
+            } catch { self.error = error.localizedDescription }
+            if !completed.isEmpty {
+                removedItems = completed
+                let ids = Set(completed.map(\.id))
+                if let detail, ids.contains(detail.id) { self.detail = nil }
+                draft.attachments.removeAll { ids.contains($0.id) }
+                selection.subtract(ids)
+                if selecting && selection.isEmpty { cancelSelection() }
+            }
+            // Refresh even after a partial failure; only successful removals are undoable.
+            do { try await refresh() } catch { self.error = error.localizedDescription }
         }
     }
     func undoRemove() {
-        guard let item = removed else { return }
-        perform { try await self.service.update("/api/desktop/restore", ["id": item.id]); self.removed = nil; try await self.refresh() }
+        guard !removingMedia, !removedItems.isEmpty else { return }
+        let targets = removedItems
+        removingMedia = true
+        Task {
+            defer { removingMedia = false }
+            do {
+                for item in targets {
+                    try await service.update("/api/desktop/restore", ["id": item.id])
+                    removedItems.removeAll { $0.id == item.id }
+                }
+            } catch { self.error = error.localizedDescription }
+            do { try await refresh() } catch { self.error = error.localizedDescription }
+        }
     }
     func retry(_ item: MediaItem) {
         perform { try await self.service.update("/api/desktop/retry", ["id": item.id]); try await self.refresh() }
+    }
+    func retryFailedAnalysis() {
+        perform {
+            struct Response: Decodable { var ok: Bool; var queued: Int }
+            let _: Response = try await self.service.post("/api/desktop/analysis/retry-failed", [:], native: true)
+            try await self.refresh()
+        }
+    }
+    func reanalyzeMedia() {
+        perform {
+            struct Response: Decodable { var ok: Bool; var queued: Int }
+            let _: Response = try await self.service.post("/api/desktop/analysis/reanalyze", [:], native: true)
+            try await self.refresh()
+        }
     }
     func describeVideo(_ item: MediaItem, force: Bool = false) {
         guard item.kind == "video" else { return }
