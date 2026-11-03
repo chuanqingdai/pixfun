@@ -5,7 +5,7 @@ if(!fs.existsSync(path.join(app,'Contents/MacOS/Pixfun')))throw new Error('Run d
 const stage=fs.mkdtempSync(path.join(root,'build-native/dmg-'));
 fs.cpSync(app,path.join(stage,'Pixfun.app'),{recursive:true,verbatimSymlinks:true});
 fs.symlinkSync('/Applications',path.join(stage,'Applications'));
-const output=path.join(root,`dist-native/Pixfun-0.2.0-${process.arch}.dmg`);
+const output=path.join(root,`dist-native/Pixfun-0.3.0-${process.arch}.dmg`);
 const result=spawnSync('/usr/bin/hdiutil',['create','-volname','Pixfun','-srcfolder',stage,'-ov','-format','UDZO',output],{stdio:'inherit'});
 if(result.status!==0)process.exit(result.status||1);
 console.log(output);

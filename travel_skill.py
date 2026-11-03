@@ -1,7 +1,9 @@
 """Versioned adapter for the imported creator skill, not a claim of full post-production."""
 import hashlib
 import re
+import uuid
 from pathlib import Path
+from motion_skill import resolve_motion_skill
 
 SKILL_ID = 'visionflow-travel-director'
 DEFAULT_SKILL = {'id': SKILL_ID, 'title': 'Travel Vlog',
@@ -10,6 +12,29 @@ SOURCE = Path(__file__).resolve().parent / 'creator-skills' / SKILL_ID / 'SKILL.
 SHORT_ID = 'visionflow-travel-short'
 SHORT_SOURCE = SOURCE.parent.parent / SHORT_ID / 'SKILL.md'
 ADAPTER_VERSION = '2'
+
+def requested_skill(prompt, chosen=None):
+    """Only the current message/explicit composer selection can activate a skill.
+
+    Inspect names without reading any skill source. Ordinary travel/video requests,
+    questions about skills and names found in media evidence do not activate one.
+    """
+    from motion_skill import CATALOG
+    catalog = {SKILL_ID: 'Travel Vlog', SHORT_ID: 'Travel Short',
+               **{key: value[0] for key, value in CATALOG.items()}}
+    if chosen is not None and not isinstance(chosen, dict): return chosen
+    selected = chosen
+    for clause in re.split(r'[。.!?！？;；\n,，]', prompt):
+        for key, title in catalog.items():
+            names = r'\s*(?:' + re.escape(title) + '|' + re.escape(key) + r')(?![a-z0-9_-])'
+            if re.search(r'(?:(?:不要|不用|忽略|禁用|取消|不)(?:\s*(?:使用|启用|加载|应用|调用|用))?|without\s+|ignore\s+|disable\s+|skip\s+|(?:do not|don\x27t)\s+(?:use|load|apply)\s+)' + names, clause, re.I):
+                if (selected or {}).get('id') == key: selected = None
+                continue
+            if re.search(r'(?:使用|启用|加载|应用|调用|用|按|\buse\s+|\bapply\s+|\bload\s+|\benable\s+)' + names, clause, re.I):
+                # Questions and hypotheticals are not a request to run the skill.
+                if re.search(r'如何|怎么|是否|怎样|如果|\b(?:how|whether|if)\b', clause, re.I): continue
+                selected = {'id': key, 'title': title, 'strategy': 'Use the installed ' + title + ' skill.'}
+    return selected
 
 # Only installed, allowlisted content is executable policy. A client-supplied path is never read.
 def resolve_skill(chosen):
@@ -26,7 +51,7 @@ def resolve_skill(chosen):
                 'pending':['Multi-image layouts and the other four packaging recipes',
                            'Full audiovisual review and delivery package']}
     if not chosen or chosen.get('id') != SKILL_ID:
-        return None
+        return resolve_motion_skill(chosen)
     if not SOURCE.is_file():
         raise ValueError('The Travel Vlog specification is missing. Restore the bundled skill before retrying.')
     source = SOURCE.read_text(encoding='utf-8')
@@ -106,6 +131,65 @@ def validate_story_structure(shots, records, prompt=''):
         if not matches or (visual[shot['mediaId']]['kind'] == 'video' and not any(
                 s['start'] <= shot['start']+.035 and s['end'] >= shot['end']-.035 for s in matches)):
             raise ValueError('Each intro reference must appear again in a complete body source range; intro flashes do not count as coverage.')
+
+
+def repair_story_structure(shots, records, prompt=''):
+    """Repair only a model-generated highlight-intro shape, using validated shots.
+
+    The model gets one normal format-repair attempt first. If it still treats a
+    full opening shot as the highlight montage, build the small repeated intro
+    deterministically from ranges that already exist in the body. This does not
+    add media, invent content, or relax the structural/coverage validators.
+    """
+    try:
+        validate_story_structure(shots, records, prompt)
+        return shots
+    except ValueError as exc:
+        if not str(exc).startswith(('Travel Vlog requires a separate highlight intro',
+                                    'Travel Vlog intro needs 5–8 shots',
+                                    'All highlight intro shots must form one opening',
+                                    'Each intro reference must appear again')):
+            raise
+        original_error = exc
+
+    # Keep real body shots. An intro-only model shot becomes body so its source
+    # still receives the meaningful exposure required by all_usable_unique.
+    existing_body = [s for s in shots if s.get('section') != 'intro']
+    body = []
+    for shot in shots:
+        if shot.get('section') != 'intro':
+            body.append(dict(shot))
+            continue
+        covered = any(candidate['mediaId'] == shot['mediaId'] and
+                      (records[shot['mediaId']]['kind'] == 'image' or
+                       (candidate['start'] <= shot['start'] + .035 and
+                        candidate['end'] >= shot['end'] - .035))
+                      for candidate in existing_body)
+        if not covered:
+            body.append({**shot, 'section': 'body'})
+
+    # Prefer distinct sources so the opening is a genuine visual overview.
+    candidates, seen = [], set()
+    for shot in body:
+        if shot['mediaId'] in seen: continue
+        if shot['end'] - shot['start'] < .6: continue
+        seen.add(shot['mediaId']); candidates.append(shot)
+    if len(candidates) < 5:
+        raise original_error
+    candidates = candidates[:min(8, max(5, len(candidates)))]
+    count = len(candidates)
+    body_seconds = sum(s['end'] - s['start'] for s in body)
+    target = 3.0 if body_seconds + 3.0 < 45 else 5.0
+    piece = target / count
+    intro = []
+    for shot in candidates:
+        length = shot['end'] - shot['start']
+        start = shot['start'] if records[shot['mediaId']]['kind'] == 'image' else shot['start'] + max(0, (length - piece) / 2)
+        intro.append({**shot, 'id': uuid.uuid4().hex, 'start': round(start, 3),
+                      'end': round(start + piece, 3), 'section': 'intro', 'locked': False})
+    repaired = intro + body
+    validate_story_structure(repaired, records, prompt)
+    return repaired
 
 def normalize_short_sequence(shots, prompt):
     """A single-pass short film's opening is body, not a repeated intro montage.

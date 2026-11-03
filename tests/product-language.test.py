@@ -7,7 +7,7 @@ from unittest.mock import patch
 import json
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from product_language import ENGLISH_DEFAULT, explicitly_chinese
+from product_language import CHINESE_DEFAULT, ENGLISH_DEFAULT, explicitly_chinese
 from agent_models import ModelGateway
 
 
@@ -17,12 +17,12 @@ class LanguageTests(unittest.TestCase):
             self.assertFalse(explicitly_chinese(text))
         for text in ['请用中文回答','使用简体中文输出','中文描述','Reply in Chinese']:
             self.assertTrue(explicitly_chinese(text))
-    def test_local_model_receives_english_default(self):
+    def test_local_model_receives_chinese_default(self):
         gateway=ModelGateway.__new__(ModelGateway);gateway.vision='fixture'
         requests=[]
         gateway.local=lambda payload,cancel: requests.append(payload) or {'summary':'English result'}
         gateway.ask('理解这些素材',threading.Event())
-        self.assertTrue(requests[0]['prompt'].startswith(ENGLISH_DEFAULT))
+        self.assertTrue(requests[0]['prompt'].startswith(CHINESE_DEFAULT))
         self.assertIn('理解这些素材',requests[0]['prompt'])
     def test_cloud_receives_identical_policy_without_real_request(self):
         gateway=ModelGateway.__new__(ModelGateway)
@@ -35,7 +35,14 @@ class LanguageTests(unittest.TestCase):
         class Opener:
             def open(self,req,**kwargs): requests.append(json.loads(req.data));return Response()
         with patch('agent_models.request.build_opener',return_value=Opener()): gateway.ask('理解这些素材',threading.Event(),'cloud')
-        self.assertTrue(requests[0]['messages'][1]['content'].startswith(ENGLISH_DEFAULT))
+        self.assertTrue(requests[0]['messages'][1]['content'].startswith(CHINESE_DEFAULT))
+    def test_explicit_english_setting_is_preserved(self):
+        gateway=ModelGateway.__new__(ModelGateway);gateway.vision='fixture';gateway.output_language='en'
+        requests=[]
+        gateway.local=lambda payload,cancel: requests.append(payload) or {'summary':'English result'}
+        gateway.ask('理解这些素材',threading.Event())
+        self.assertTrue(requests[0]['prompt'].startswith(ENGLISH_DEFAULT))
+        self.assertNotIn(CHINESE_DEFAULT, requests[0]['prompt'])
     def test_asr_keeps_source_language(self):
         gateway=ModelGateway.__new__(ModelGateway);gateway.speech='fixture'
         requests=[];gateway.local=lambda payload,cancel: requests.append(payload) or {'cues':[{'text':'出发吧'}]}

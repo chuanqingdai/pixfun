@@ -13,14 +13,14 @@ struct ProjectsView: View {
                 EmptyWorkspace(symbol: "folder", title: "Your stories start here", detail: "Describe your video in Home to start a project.")
             } else {
                 ScrollView(showsIndicators: false) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 20, alignment: .top)], alignment: .leading, spacing: 24) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 240, maximum: 360), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
                         ForEach(store.sortedProjects) { project in
                             ProjectCard(project: project)
                         }
                     }.padding(2).padding(.bottom, 24)
                 }
             }
-        }.padding(32).navigationTitle("Project")
+        }.padding(24).navigationTitle("Project")
     }
 }
 
@@ -39,15 +39,15 @@ struct ProjectCard: View {
                             .overlay(Image(systemName: "film").font(.system(size: 28, weight: .light)).foregroundStyle(Color.pixfunSubtle))
                     }
                 }.aspectRatio(16 / 9, contentMode: .fit).clipped().accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(project.title).font(.pixfun(16, semibold: true)).foregroundStyle(Color.pixfunInk)
                         .lineLimit(2).frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
                     Text("Edited \(edited.formatted(date: .abbreviated, time: .shortened))")
                         .font(.pixfun(12)).foregroundStyle(Color.pixfunMuted).lineLimit(1)
-                }.padding(16)
+                }.padding(12)
             }.background(hovering ? Color.pixfunRaised : Color.pixfunSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(hovering ? Color.pixfunGold : Color.pixfunLine))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(hovering ? Color.pixfunGold : Color.pixfunLine))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .help(project.title).accessibilityLabel("Open \(project.title), edited \(edited.formatted())")
@@ -74,7 +74,7 @@ struct ProjectDetailView: View {
                             Divider()
                         }
                         BriefComposer()
-                    }.padding(32).frame(maxWidth: 880).frame(maxWidth: .infinity)
+                    }.padding(24).frame(maxWidth: 880).frame(maxWidth: .infinity)
                 }
             } else {
                 EmptyWorkspace(symbol: "folder", title: "Project unavailable", detail: "Return to Project to choose another story.")

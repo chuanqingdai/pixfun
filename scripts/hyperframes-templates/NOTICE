@@ -1,0 +1,6 @@
+Split-flap-board is from HyperFrames by HeyGen, Apache-2.0.
+Source: https://github.com/heygen-com/hyperframes
+Revision: 69a2169 (locally pinned upstream snapshot).
+Template HTML is retained unmodified. vf_travel_graphics.py adapts variables,
+offline GSAP loading, placement, duration and font at render time.
+The route schematic is a Pixfun implementation, not a geographic map.

@@ -91,7 +91,7 @@ struct StoryAudioPopover: View {
         VStack(spacing: 8) {
             TextField("Narration text", text: Binding(get: { cue.text }, set: { text in
                 var next = finish; next.narration[index].text = text; commit(next, true)
-            }), axis: .vertical).lineLimit(2...4).textFieldStyle(.roundedBorder).font(.pixfun(12))
+            }), prompt: PixfunTypography.placeholder("Narration text"), axis: .vertical).lineLimit(2...4).textFieldStyle(.roundedBorder).font(.pixfun(12))
             HStack(spacing: 6) {
                 Text("In")
                 StoryTimeField(value: cue.start, label: "Narration start", valid: {

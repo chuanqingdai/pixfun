@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, urlparse
 from transcript_quality import checked_cues
+from media_metadata import location_from_tags, device_id_from_tags
 
 
 ROOT = Path(__file__).resolve().parent
@@ -138,6 +139,9 @@ def probe_media(source: Path) -> dict:
         "mediaCreatedAt": tags.get("creation_time"),
         "dateSource": "QuickTime creationdate" if tags.get("com.apple.quicktime.creationdate") else "Container creation_time" if tags.get("creation_time") else None,
         "camera": tags.get("com.apple.quicktime.model") or tags.get("model"),
+        "location": location_from_tags(tags),
+        "captureMetadataVersion": 2,
+        "captureDeviceID": device_id_from_tags(tags),
         "duration": round(duration, 2),
         "durationLabel": format_duration(duration),
         "width": width,
@@ -147,6 +151,9 @@ def probe_media(source: Path) -> dict:
         "hasSubtitles": bool(subtitles),
         "subtitleCount": len(subtitles),
         "subtitleCodec": subtitles[0].get("codec_name", "unknown") if subtitles else None,
+        "subtitleTracks": [{"index": s.get("index", i), "codec": s.get("codec_name", "unknown"),
+                            "language": s.get("tags", {}).get("language"),
+                            "title": s.get("tags", {}).get("title")} for i, s in enumerate(subtitles)],
         "videoCodec": video.get("codec_name", "unknown"),
         "audioCodec": audio.get("codec_name", "unknown") if audio else None,
         "size": int(fmt.get("size") or source.stat().st_size),
@@ -331,7 +338,7 @@ def parse_subtitle_text(content: str) -> list[dict]:
 
 def local_subtitle_track(source: Path, previous_signature=None) -> dict:
     """Read a same-name local caption file; never fetch remote transcripts."""
-    for suffix in (".vtt", ".srt", ".en.vtt", ".en.srt"):
+    for suffix in (".vtt", ".srt", ".zh.vtt", ".zh.srt", ".zh-CN.vtt", ".zh-CN.srt", ".zh-Hans.vtt", ".zh-Hans.srt", ".en.vtt", ".en.srt"):
         path = source.with_suffix(suffix)
         try:
             stat = path.stat()
@@ -349,21 +356,29 @@ def local_subtitle_track(source: Path, previous_signature=None) -> dict:
     return {}
 
 
-def extract_subtitle_cues(source: Path, job_id: str) -> list[dict]:
-    """Extract the first editable subtitle stream into timeline-aligned cues."""
+def extract_subtitle_track(source: Path, job_id: str, metadata=None) -> dict:
+    """Try editable tracks in file order, skipping bitmap tracks; keep source identity."""
     if not command_exists("ffmpeg"):
-        return []
+        return {}
     output_dir = OUTPUTS / job_id
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "subtitle-track.srt"
-    code, _, _ = run_command(
-        ["ffmpeg", "-y", "-i", str(source), "-map", "0:s:0", "-c:s", "srt", str(output)],
-        timeout=60,
-    )
-    if code != 0 or not output.exists() or output.stat().st_size == 0:
-        output.unlink(missing_ok=True)
-        return []
-    return parse_subtitle_text(output.read_text(encoding="utf-8", errors="replace"))
+    tracks = (metadata or probe_media(source)).get('subtitleTracks', [])
+    editable = {'mov_text', 'subrip', 'srt', 'ass', 'ssa', 'webvtt', 'text', 'ttml'}
+    for track in tracks:
+        if track.get('codec') not in editable or not isinstance(track.get('index'), int): continue
+        code, _, _ = run_command(['ffmpeg', '-y', '-i', str(source), '-map', '0:'+str(track['index']), '-c:s', 'srt', str(output)], timeout=60)
+        if code or not output.exists() or not output.stat().st_size: continue
+        cues = parse_subtitle_text(output.read_text(encoding='utf-8', errors='replace'))
+        if cues:
+            return {'subtitleCues':cues, 'subtitleState':'embedded', 'subtitleSource':'embedded',
+                    'subtitleTrackIndex':track['index'], 'subtitleLanguage':track.get('language'),
+                    'subtitleMessage':'Extracted from the subtitle track'}
+    return {}
+
+
+def extract_subtitle_cues(source: Path, job_id: str) -> list[dict]:
+    return extract_subtitle_track(source, job_id).get('subtitleCues', [])
 
 
 def transcribe_audio_cues(source: Path, job_id: str) -> tuple[list[dict], dict]:
@@ -658,7 +673,18 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/mac-early-access", "/mac-early-access/"):
             self.send_file(PUBLIC / "mac-early-access.html")
             return
-        if path.rstrip('/') in {"/stories/" + name for name in ("alpine", "citywalk", "food", "outdoors", "islands")}:
+        case_redirects = {
+            "/stories/hotel-xcaret": "/stories/hunza-travel",
+            "/stories/phone-yellowstone": "/stories/phone-paris",
+            "/stories/camera-tyrol": "/stories/camera-night-sky",
+        }
+        if path.rstrip('/') in case_redirects:
+            self.send_response(302)
+            self.send_header("Location", case_redirects[path.rstrip('/')])
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path.rstrip('/') in {"/stories/" + name for name in ("hunza-travel", "alpine", "citywalk", "food", "outdoors", "islands", "phone-paris", "camera-night-sky", "drone-snowdonia", "island-maafushi")}:
             self.send_file(PUBLIC / "footage-case.html")
             return
         if path == "/downloads/pixfun-mac.dmg":
@@ -828,7 +854,7 @@ class Handler(BaseHTTPRequestHandler):
             if data.get('website'):
                 raise ValueError('Please try submitting the form again.')
         except (ValueError, TypeError, UnicodeError):
-            self.send_json({"ok": False, "error": "Check your email, editing needs, monthly budget and contact consent."}, 400)
+            self.send_json({"ok": False, "error": "Check your shooting devices, media size, storage locations, priorities, email and contact consent."}, 400)
             return
         now, address = time.monotonic(), self.client_address[0]
         with APPLICATION_LOCK:

@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('agent_tests',ROOT/'tests/agent.test.py')
 base=importlib.util.module_from_spec(spec); spec.loader.exec_module(base)
 from shot_analysis import validate_shot, normalize_shot_response, single_shot_prompt, stamp, seconds, ShotAnalyses, SHOT_PROMPT, summarize_video
+from agent_models import structured_result, ModelOutputError
 
 def shot_fixture():
     return {'shot_id':'shot_001','start_time':stamp(0),'end_time':stamp(2.92),
@@ -31,6 +32,18 @@ class ShotResponseTests(unittest.TestCase):
                 self.assertEqual(clean['description'],shot['description'])
                 self.assertEqual(clean['edit_recommendation']['recommended_duration_sec'],2.92)
         self.assertEqual(shot['edit_recommendation']['recommended_duration_sec'],3,'Do not mutate raw model evidence')
+
+    def test_known_qwen_closing_and_focus_placement_error_is_recovered(self):
+        shot=shot_fixture()
+        shot['edit_recommendation']['衔接建议']='Continue to the next scene.'
+        focus={'category':'buildings','description':'A brick building','reason':'It fills the frame',
+               'attention':['sustained_framing'],'activities':[]}
+        raw=json.dumps({'video_summary':'Building entrance','shots':[shot,{'primary_subjects':[focus]}]},ensure_ascii=False)
+        repaired=structured_result({'raw':raw[:-2]+'}}'})
+        clean=normalize_shot_response(repaired,0,2.92,[],include_focus=True)
+        self.assertEqual(clean['primary_subjects'][0]['description'],'A brick building')
+        self.assertEqual(set(clean['edit_recommendation']),{'level','recommended_duration_sec','reason'})
+        with self.assertRaises(ModelOutputError): structured_result({'raw':raw[:80]})
 
     def test_multiple_or_missing_shots_are_not_silently_discarded(self):
         shot=shot_fixture()
@@ -59,18 +72,54 @@ class ShotTests(unittest.TestCase):
     # Use the existing isolated library/model fixture without inheriting its tests.
     setUp=base.AgentTests.setUp
     tearDown=base.AgentTests.tearDown
+    def use_short_continuous_fixture(self):
+        item,_=self.library.get(self.asset)
+        self.library.patch(self.asset,metadata={**item['metadata'],'duration':3})
+        original=self.agent.command
+        def command(args,*rest,**kwargs):
+            # Control the detected-cut input; still extract actual fixture frames.
+            if any('select=gt(scene' in str(arg) for arg in args): return b''
+            return original(args,*rest,**kwargs)
+        self.agent.command=command
+
     def test_direct_shot_output_completes_without_model_retry(self):
+        self.use_short_continuous_fixture()
         original=self.models.ask
         responses=[]
+        focus={'category':'people','description':'穿格子衣服的人','reason':'镜头持续跟随这个人',
+               'attention':['camera_following'],'activities':[{'category':'walking','reason':'这个人沿道路步行'}]}
         def flat(prompt,*args,**kwargs):
             result=original(prompt,*args,**kwargs)
             if 'EDITORIAL_SHOT' in prompt:
                 responses.append(prompt)
+                result['shots'][0]['primary_subjects']=[focus]
                 return result['shots'][0]
             return result
         self.models.ask=flat
-        _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        with patch.object(self.agent,'observe',side_effect=AssertionError('Short path must reuse the shot vision call')):
+            _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
         self.assertEqual(len(responses),len(result['output']['shots']))
+        self.assertEqual(result['focusVersion'],2)
+        self.assertEqual([t['id'] for t in result['tags']],['subject:people','activity:walking'])
+        self.assertEqual(result['tags'][1]['evidence'][0]['subjectDescription'],'穿格子衣服的人')
+
+    def test_direct_missing_focus_repairs_once_then_preserves_shot_without_guessing(self):
+        self.use_short_continuous_fixture()
+        original=self.models.ask; responses=[]
+        def malformed(prompt,*args,**kwargs):
+            result=original(prompt,*args,**kwargs)
+            if 'EDITORIAL_SHOT' in prompt:
+                responses.append(prompt)
+                result['shots'][0].pop('primary_subjects',None)
+                result['shots'][0]['description']='A child walks with cyclists in the background.'
+            return result
+        self.models.ask=malformed
+        _,result=self.agent.understand({'mode':'local'},self.asset,threading.Event(),progress=lambda _:None)
+        self.assertEqual(len(responses),2)
+        self.assertIn('valid primary_subjects',responses[1])
+        self.assertEqual(result['focusVersion'],2)
+        self.assertEqual(result['tags'],[],'Modern malformed focus must not fall back to keywords')
+        self.assertEqual(result['output']['shots'][0]['description'],'A child walks with cyclists in the background.')
 
     def test_multiple_shots_receive_bounded_correction_not_first_shot_selection(self):
         original=self.models.ask; responses=[]

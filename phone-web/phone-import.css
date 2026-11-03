@@ -1,0 +1,19 @@
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#151819;color:#e9ebe8;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}
+header{max-width:600px;margin:auto;padding:24px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{font-size:24px;font-weight:750;letter-spacing:-.8px}.header-label{font-size:12px;color:#9aa5aa}
+main{max-width:480px;margin:0 auto;padding:64px 24px 40px}
+h1{font-size:clamp(28px,7vw,34px);line-height:1.2;letter-spacing:-1px;margin:0 0 16px;font-weight:650}h1:focus{outline:none}
+#guidance,#completionNote{font-size:14px;color:#b1b9bc;line-height:1.7;margin:0 0 30px}
+.choose-button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:54px;padding:12px;border:1px solid #d7b581;border-radius:9px;background:#d7b581;color:#20221f;font-size:15px;font-weight:600;cursor:pointer}
+.choose-button:hover,button.primary:hover{background:#e5c796}.choose-button:has(+input:focus-visible),button:focus-visible,summary:focus-visible{outline:2px solid #9bbfd9;outline-offset:4px}
+#files{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
+.hint{font-size:11px;color:#9aa5aa;line-height:1.7;margin:12px 0 0}.hint:not(#privacyNote){text-align:center}#privacyNote{margin-top:24px}
+#selectedFiles{margin-top:24px;border-block:1px solid #363e42}summary{cursor:pointer;min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;list-style:none}summary::-webkit-details-marker{display:none}.details-label{color:#d7b581;font-size:12px;flex-shrink:0}.details-label::after{content:' +'}details[open] .details-label::after{content:' −'}
+#fileList{padding:0;margin:0 0 12px;list-style:none;max-height:190px;overflow:auto}#fileList li{padding:10px 0;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:12px}#fileList li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}#fileList li small{flex-shrink:0;color:#b1b9bc;font-size:11px}
+button{font-family:inherit;cursor:pointer}button.primary{width:100%;min-height:54px;border:0;border-radius:9px;background:#d7b581;color:#20221f;font-size:15px;font-weight:600;margin-top:24px}button:disabled{background:#303639;cursor:not-allowed;color:#9aa5aa}
+body[data-screen=choose]:has(#start:not([hidden])) .choose-button{background:transparent;color:#e9ebe8;border-color:#485257}
+#progressLabel{font-size:13px;line-height:1.6;color:#d7b581;margin:0 0 16px;overflow-wrap:anywhere}progress{display:block;width:100%;height:6px;accent-color:#d7b581;border:0;border-radius:4px;overflow:hidden}progress::-webkit-progress-bar{background:#363e42}progress::-webkit-progress-value{background:#d7b581}
+.error{padding:14px;background:#3b2626;color:#ffc4c4;font-size:13px;line-height:1.6;border-radius:8px;margin:20px 0 0;overflow-wrap:anywhere}
+body[data-screen=complete] main{text-align:center}.result{font-size:16px;font-weight:600;color:#e9ebe8;margin:0 0 28px;line-height:1.6}#completionNote{margin-bottom:0}
+@media(max-width:420px){header{padding:22px 24px}main{padding-top:48px}}

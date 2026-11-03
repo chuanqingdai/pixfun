@@ -1,0 +1,10 @@
+aiortc==1.10.1
+aioice==0.10.2
+av==13.1.0
+cryptography==50.0.2
+pyopenssl==26.4.0
+pylibsrtp==0.12.0
+pyee==13.0.1
+ifaddr==0.2.0
+dnspython==2.7.0
+google-crc32c==1.8.0

@@ -11,12 +11,12 @@ def extract_frame(command, source, destination, cancel, seconds=None):
     def sample(at):
         # Never mistake a file from a failed/previous attempt for a fresh frame.
         temporary.unlink(missing_ok=True)
-        args = ['ffmpeg', '-v', 'error', '-y']
+        args = ['ffmpeg', '-v', 'error', '-y', '-threads', '1', '-filter_threads', '1']
         if at is not None:
             args += ['-ss', str(at)]
         command(args + ['-i', source, '-frames:v', '1', '-vf',
                        'scale=768:768:force_original_aspect_ratio=decrease:out_range=pc,format=yuvj420p',
-                       '-update', '1', temporary], cancel)
+                       '-threads', '1', '-update', '1', temporary], cancel)
         if not temporary.is_file():
             return False
         data = temporary.read_bytes()

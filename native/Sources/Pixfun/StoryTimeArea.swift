@@ -34,7 +34,7 @@ struct StoryTimeArea: View {
             VStack(spacing: 4) {
                 HStack(spacing: 10) {
                     Button { following = true; reveal(time, proxy: proxy) } label: { Image(systemName: "location.fill") }
-                        .foregroundStyle(following ? Color.pixfunGold : Color.pixfunMuted)
+                        .foregroundStyle(following ? Color.pixfunGoldText : Color.pixfunMuted)
                         .accessibilityLabel("Follow playhead").accessibilityValue(following ? "On" : "Paused").help("Return to playhead and follow playback")
                     Spacer()
                     Button { zoom = max(1, zoom / 2) } label: { Image(systemName: "minus.magnifyingglass") }
@@ -184,7 +184,7 @@ struct StoryInsertionGap: View {
     @State private var hovering = false
     var body: some View {
         Button(action: insert) { Image(systemName: "plus").font(.system(size: 11)).frame(maxWidth: .infinity).frame(height: 14).contentShape(Rectangle()) }
-            .buttonStyle(.plain).foregroundStyle(hovering ? Color.pixfunGold : Color.clear)
+            .buttonStyle(.plain).foregroundStyle(hovering ? Color.pixfunGoldText : Color.clear)
             .onHover { hovering = $0 }.accessibilityLabel("Insert clip here")
     }
 }
@@ -204,7 +204,7 @@ struct StoryAddClipPicker: View {
                 Button("Import files…") { store.pick() }.disabled(store.importing)
                 Button("Cancel") { dismiss() }
             }
-            TextField("Search media…", text: $query).textFieldStyle(.roundedBorder)
+            TextField("Search media…", text: $query, prompt: PixfunTypography.placeholder("Search media…")).textFieldStyle(.roundedBorder)
             if store.importing { ProgressView("Importing…").controlSize(.small) }
             if let issue { Text(issue).font(.pixfun(12)).foregroundStyle(.orange) }
             ScrollView {

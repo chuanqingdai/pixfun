@@ -24,11 +24,15 @@ from urllib.parse import urlparse, unquote
 
 import app as engine
 from photo_source import prepare_photo
+from media_metadata import photo_capture_metadata
 from agent_engine import AgentEngine
+from agent_editor import assist as editor_assist
 from video_description import VideoDescriptions
 from shot_analysis import ShotAnalyses
+from media_sync import MediaSync
+from media_analysis import MediaAnalysis
 
-VIDEO = {'.mp4', '.mov', '.m4v', '.mkv', '.webm', '.avi', '.mts', '.m2ts', '.ogv'}
+VIDEO = {'.mp4', '.mov', '.m4v', '.mkv', '.webm', '.avi', '.mts', '.m2ts', '.ogv', '.lrf'}
 PHOTO = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.heic', '.heif', '.bmp', '.tif', '.tiff'}
 AUDIO = {'.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.aiff', '.aif', '.opus'}
 FINAL = {'ready', 'error', 'cancelled'}
@@ -45,6 +49,7 @@ class Library:
         self.path = self.directory / 'library.sqlite3'
         self.lock = threading.RLock()
         self.cancel = {}
+        self.content_analysis = None
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         with self.connect() as db:
             db.execute('PRAGMA journal_mode=WAL')
@@ -89,6 +94,22 @@ class Library:
         if not row:
             raise FileNotFoundError('Media not found')
         return json.loads(row[0]), Path(row[1])
+
+    def map_metadata(self, media_id):
+        """Explicit, one-file local read. No analysis, source edits or database mutations."""
+        record, source = self.get(media_id)
+        if record.get('isExample') or record.get('kind') not in ('image', 'video'):
+            raise ValueError('No original capture metadata for this item')
+        before = source.stat()
+        if record['kind'] == 'image':
+            metadata = photo_capture_metadata(source)
+        else:
+            metadata = engine.probe_media(source)
+            if not metadata.get('available'): raise ValueError('Original metadata could not be read')
+        after = source.stat()
+        if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+            raise ValueError('Source changed during metadata read; try again')
+        return {key: metadata.get(key) for key in ('camera', 'captureDeviceID', 'capturedAt', 'dateSource', 'location')}
 
     def install_example(self, directory):
         """Index the bundled example once. Never copy media or resurrect removed entries."""
@@ -141,6 +162,7 @@ class Library:
         if not isinstance(paths, list) or len(paths) > 100:
             raise ValueError('Import up to 100 files at a time.')
         added, errors, pending = [], [], []
+        batch_id = uuid.uuid4().hex
         for value in paths:
             try:
                 path = Path(value).resolve(strict=True)
@@ -167,9 +189,13 @@ class Library:
                         'id': media_id, 'file': {'name': path.name, 'size': stat.st_size, 'lastModified': int(stat.st_mtime * 1000), 'type': mimetypes.guess_type(path.name)[0] or ''},
                         'kind': kind, 'status': 'queued', 'metadata': None, 'result': None, 'error': None,
                         'favorite': previous.get('favorite', False), 'description': previous.get('description', ''),
+                        'importedAt': previous.get('importedAt') or time.time()*1000,
+                        'importBatchId': previous.get('importBatchId', batch_id),
                         'url': f'/api/desktop/media/{media_id}'
                     }
                     record['context'] = previous.get('context', {})
+                    for field in ('syncSourceId', 'syncSourceName', 'syncSourceKind', 'originalFileName'):
+                        if field in previous: record[field] = previous[field]
                     sidecar = path.with_suffix('.pixfun.json')
                     if not previous and sidecar.is_file() and sidecar.stat().st_size < 16384:
                         try:
@@ -186,6 +212,8 @@ class Library:
                 errors.append(f'{Path(str(value)).name}: {exc}')
         for media_id in pending:
             self.enqueue(media_id)
+            if self.content_analysis:
+                self.content_analysis.schedule(media_id)
         return {'items': added, 'errors': errors}
 
     def enqueue(self, media_id):
@@ -215,6 +243,8 @@ class Library:
             metadata = engine.probe_media(decoded)
             if record['kind'] == 'image':
                 metadata.update(duration=None, fps=None, hasAudio=False)
+                try: metadata.update(photo_capture_metadata(source))
+                except (OSError, ValueError, TypeError): pass  # Unsupported original formats remain unlocated.
             if not metadata.get('available') or not (metadata.get('hasAudio') if record['kind'] == 'audio' else metadata.get('width')):
                 raise ValueError('Cannot read this media. Try another format.')
             self.patch(media_id, metadata=metadata)
@@ -238,9 +268,9 @@ class Library:
                     segment['label'] = f"{'Chapter' if sampled else 'Segment'} {index + 1}"
                     segment['note'] = 'Time-sampled navigation' if sampled else 'Detected cut or estimated split'
                 analysis['segments'] = engine.make_timeline_thumbnails(source, job_id, analysis['segments'])
-                analysis['subtitleCues'] = engine.extract_subtitle_cues(source, job_id)
-                analysis['subtitleState'] = 'embedded' if analysis['subtitleCues'] else 'unavailable' if metadata.get('hasAudio') else 'silent'
-                analysis['subtitleMessage'] = 'Extracted from the subtitle track' if analysis['subtitleCues'] else 'No embedded subtitles. Speech recognition is not bundled in this build.'
+                analysis.update(subtitleCues=[], subtitleState='pending' if metadata.get('hasAudio') else 'silent',
+                                subtitleMessage='Speech recognition runs during content analysis.' if metadata.get('hasAudio') else 'This video has no audio track')
+                analysis.update(engine.extract_subtitle_track(source, job_id, metadata))
                 if not analysis['subtitleCues']:
                     analysis.update(engine.local_subtitle_track(source))
                 result = {'ok': True, 'jobId': job_id, 'analysis': analysis}
@@ -297,8 +327,7 @@ class Library:
             if len(record['messages']) >= 100:
                 raise ValueError('This project has reached 100 briefs. Start a new project.')
             record.update(updatedAt=now, status='draft', attachments=attachments)
-            if 'skill' in payload:
-                record['skill'] = skill
+            record['skill'] = skill
             record['messages'].append({'text': prompt.strip(), 'createdAt': now, 'attachments': attachments, 'skill': record.get('skill')})
             db.execute('INSERT INTO projects(id,record,updated) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record,updated=excluded.updated', (project_id, json.dumps(record), now))
         return record
@@ -341,7 +370,7 @@ def cancellable_command(args, timeout=120):
 
 class Handler(engine.Handler):
     def log_message(self, format, *args):
-        if urlparse(self.path).path in ('/api/desktop/library', '/api/desktop/projects', '/api/desktop/locations'):
+        if urlparse(self.path).path in ('/api/desktop/library', '/api/desktop/projects', '/api/desktop/locations', '/api/desktop/sync'):
             return # Idle polling must not grow service.log every second.
         super().log_message(format, *args)
     def authorized(self, native=False):
@@ -381,10 +410,14 @@ class Handler(engine.Handler):
                     self.send_json({'ok': True, 'items': [{'id': media_id, 'path': source} for media_id, source in rows]})
             elif path == '/api/desktop/projects':
                 self.send_json({'ok': True, 'projects': self.server.library.projects()})
+            elif path == '/api/desktop/sync':
+                if self.authorized(native=True): self.send_json(self.server.media_sync.snapshot())
             elif path == '/api/desktop/agent/runs':
                 if self.authorized(native=True): self.send_json({'runs': self.server.agent.list()})
             elif path == '/api/desktop/agent/capabilities':
                 if self.authorized(native=True): self.send_json(self.server.agent.models.capabilities())
+            elif path == '/api/desktop/agent/catalog':
+                if self.authorized(native=True): self.send_json(self.server.catalog.status())
             elif path == '/api/desktop/settings':
                 with self.server.library.connect() as db:
                     self.send_json({'ok': True, 'settings': dict(db.execute('SELECT key,value FROM settings'))})
@@ -413,14 +446,53 @@ class Handler(engine.Handler):
             if not 0 <= length <= 128 * 1024:
                 self.send_json({'ok': False, 'error': 'Request too large'},413)
                 return
-            if (path.startswith('/api/desktop/agent/') or path.startswith('/api/desktop/description/') or path.startswith('/api/desktop/shots/') or path in ('/api/desktop/register', '/api/desktop/locate')) and not self.authorized(native=True):
+            if (path.startswith('/api/desktop/analysis/') or path.startswith('/api/desktop/agent/') or path.startswith('/api/desktop/description/') or path.startswith('/api/desktop/shots/') or path in ('/api/desktop/register', '/api/desktop/locate', '/api/desktop/sync')) and not self.authorized(native=True):
                 return
             payload = self.read_json()
             if not isinstance(payload, dict):
                 raise ValueError('Invalid request')
             library = self.server.library
-            if path == '/api/desktop/projects':
+            if path == '/api/desktop/analysis/map-metadata':
+                if not isinstance(payload.get('id'), str): raise ValueError('A media ID is required')
+                self.send_json({'ok': True, 'metadata': library.map_metadata(payload['id'])})
+            elif path == '/api/desktop/analysis/place':
+                from place_context import validate_place
+                if not isinstance(payload.get('id'), str): raise ValueError('A media ID is required')
+                record, _ = library.get(payload['id'])
+                place = validate_place(record, payload.get('place'))
+                library.patch(payload['id'], resolvedPlace=place)
+                # No visual re-analysis or implicit full-library regeneration.
+                self.send_json({'ok': True})
+            elif path == '/api/desktop/agent/media-tags':
+                from media_evidence import validate_corrections
+                key = payload.get('id')
+                if not isinstance(key,str): raise ValueError('A registered media ID is required')
+                library.get(key)
+                library.patch(key, tagCorrections=validate_corrections(payload))
+                self.send_json({'ok':True})
+            elif path == '/api/desktop/agent/catalog':
+                if payload.get('action') == 'stop':
+                    self.server.catalog.stop()
+                    self.send_json({'ok':True})
+                else:
+                    self.send_json(self.server.catalog.start(payload))
+            elif path == '/api/desktop/analysis/retry-failed':
+                ids = [item['id'] for item in library.list()
+                       if (item.get('mediaAnalysis') or {}).get('status') == 'failed']
+                count = sum(self.server.content_analysis.schedule(key) for key in ids)
+                self.send_json({'ok':True, 'queued':count})
+            elif path == '/api/desktop/analysis/reanalyze':
+                ids = payload.get('ids')
+                if ids is None: ids = [item['id'] for item in library.list()]
+                if not isinstance(ids, list) or any(not isinstance(key, str) for key in ids): raise ValueError('Invalid media IDs')
+                for key in ids: library.get(key)
+                count = sum(self.server.content_analysis.schedule(key, force=True) for key in dict.fromkeys(ids))
+                self.send_json({'ok':True, 'queued':count})
+            elif path == '/api/desktop/projects':
                 self.send_json({'ok': True, 'project': library.save_project(payload)})
+            elif path == '/api/desktop/sync':
+                try: self.send_json(self.server.media_sync.action(payload))
+                except OSError as exc: self.send_json({'ok':False,'error':MediaSync.friendly(exc)},400)
             elif path == '/api/desktop/description/start':
                 if not isinstance(payload.get('id'),str): raise ValueError('A media ID is required')
                 if not isinstance(payload.get('force',False),bool): raise ValueError('Invalid force option')
@@ -438,6 +510,12 @@ class Handler(engine.Handler):
                 self.send_json({'run': self.server.agent.start(payload)})
             elif path == '/api/desktop/agent/action':
                 self.send_json({'run': self.server.agent.action(payload)})
+            elif path == '/api/desktop/agent/export':
+                self.send_json({'export': self.server.agent.exports.action(payload)})
+            elif path == '/api/desktop/agent/editor-assist':
+                self.send_json(editor_assist(self.server.agent, payload))
+            elif path == '/api/desktop/agent/beauty-sort':
+                self.send_json({'job': self.server.agent.beauty_sort.request(payload)})
             elif path == '/api/desktop/agent/configure':
                 if any(r['status'] in ('queued','running') for r in self.server.agent.list()):
                     raise ValueError('Finish or stop pending tasks before changing model configuration.')
@@ -465,13 +543,22 @@ class Handler(engine.Handler):
                 library.patch(payload['id'], **fields)
                 self.send_json({'ok':True})
             elif path == '/api/desktop/retry':
-                library.enqueue(payload['id'])
+                item, _ = library.get(payload['id'])
+                if item.get('status') != 'ready': library.enqueue(payload['id'])
+                # Retry incomplete stages with the same source/cache signatures.
+                # Full reanalysis remains a separate explicit action.
+                self.server.content_analysis.schedule(payload['id'])
                 self.send_json({'ok':True})
             elif path == '/api/desktop/stop':
+                self.server.catalog.stop()
                 library.stop()
+                self.server.content_analysis.stop()
+                self.server.descriptions.stop()
+                self.server.shots.stop()
                 self.send_json({'ok':True})
             elif path in ('/api/desktop/remove','/api/desktop/restore'):
                 if path.endswith('remove'):
+                    self.server.content_analysis.stop(payload['id'])
                     record, _ = library.get(payload['id'])
                     if record['status'] not in FINAL:
                         raise ValueError('Stop processing before removing this item')
@@ -479,9 +566,12 @@ class Handler(engine.Handler):
                     db.execute('UPDATE media SET removed=? WHERE id=?',(int(path.endswith('remove')),payload['id']))
                 self.send_json({'ok':True})
             elif path == '/api/desktop/settings':
-                if payload.get('key') not in ('skill', 'projectDraft') or not isinstance(payload.get('value'),str):
+                if payload.get('key') not in ('skill', 'projectDraft', 'language') or not isinstance(payload.get('value'),str):
                     raise ValueError('Invalid setting')
                 key = payload['key']
+                if key == 'language':
+                    if not self.authorized(native=True): return
+                    if payload['value'] not in ('en', 'zh-Hans'): raise ValueError('Unsupported language')
                 limit = 80 if key == 'skill' else 40000
                 if len(payload['value']) > limit:
                     raise ValueError('Setting is too long')
@@ -489,6 +579,7 @@ class Handler(engine.Handler):
                     raise ValueError('Invalid draft')
                 with library.connect() as db:
                     db.execute('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)',(key,payload['value']))
+                if key == 'language': self.server.agent.models.output_language = payload['value']
                 self.send_json({'ok':True})
             else:
                 self.send_error(404)
@@ -511,15 +602,33 @@ def main():
         raise SystemExit('This library is already open in another Pixfun client.')
     engine.run_command = cancellable_command
     library = Library(engine.DATA)
-    if os.environ.get('PIXFUN_EXAMPLE_DIR'):
-        library.install_example(os.environ['PIXFUN_EXAMPLE_DIR'])
+    # First use starts with an empty library; samples are not user imports.
     server = engine.ThreadingHTTPServer(('127.0.0.1',0),Handler)
     server.library, server.token, server.native_token = library, token, native
     server.agent = AgentEngine(library)
+    from media_catalog import MediaCatalog
+    server.catalog = MediaCatalog(library, server.agent)
     server.descriptions = VideoDescriptions(library, server.agent)
     server.shots = ShotAnalyses(library, server.agent)
+    server.content_analysis = MediaAnalysis(library, server.agent, server.descriptions, server.shots)
+    library.content_analysis = server.content_analysis
+    server.media_sync = MediaSync(library, PHOTO, VIDEO)
+    server.media_sync.browser_import.analysis = server.content_analysis.schedule
+    # Explicit one-time local maintenance request; never auto-force every launch.
+    request = os.environ.get('PIXFUN_REANALYZE_LIBRARY', '')
+    with library.connect() as db:
+        saved = db.execute('SELECT value FROM settings WHERE key=?', ('analysisMaintenanceRequest',)).fetchone()
+    force_all = bool(request and (not saved or saved[0] != request))
+    server.content_analysis.recover(force_all=force_all)
+    if force_all:
+        with library.connect() as db: db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('analysisMaintenanceRequest', request))
     def shutdown(*_):
+        server.catalog.stop()
+        server.media_sync.stopping.set()
+        for event in list(server.media_sync.events.values()): event.set()
         library.stop()
+        server.content_analysis.closing = True
+        server.content_analysis.stop()
         server.descriptions.stop()
         server.shots.stop()
         for event in server.agent.cancels.values(): event.set()
@@ -537,6 +646,8 @@ def main():
     try:
         server.serve_forever(poll_interval=.2)
     finally:
+        server.media_sync.close()
+        server.content_analysis.close()
         server.descriptions.stop()
         server.shots.stop()
         server.agent.close()
