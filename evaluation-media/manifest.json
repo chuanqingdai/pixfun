@@ -1,0 +1,72 @@
+[
+  {
+    "case": "01",
+    "id": "P01",
+    "file": "Pump geyser 20190715 085719 1.jpg",
+    "bytes": 12866791,
+    "sha256": "16a5046f6737705d1ecd063137a1bca2c3b71b7d6300f1c35d3ca1f69a1c1d75"
+  },
+  {
+    "case": "02",
+    "id": "P02",
+    "file": "Pump geyser 20190715 085726 1.jpg",
+    "bytes": 13058367,
+    "sha256": "0cfa95561a9c541befc00ce89922cc0b2f91c54633a16eb2ebd883672e84f1fb"
+  },
+  {
+    "case": "03",
+    "id": "V02",
+    "file": "IMG_0137.MOV",
+    "bytes": 26838576,
+    "sha256": "09aa8a0f4a33c3db86f559cd375e5f87363ac2551f6b6f42a84d55371ad65660"
+  },
+  {
+    "case": "04",
+    "id": "V03",
+    "file": "IMG_0141.MOV",
+    "bytes": 26698790,
+    "sha256": "d806ce4d598eaf0e918912750e3791bd910fb56efb8a6a9138e3b6e558aabf31"
+  },
+  {
+    "case": "05",
+    "id": "V01",
+    "file": "IMG_0127.MOV",
+    "bytes": 270904380,
+    "sha256": "45ef579f641f4912a869690936225f330bb36f429707f8b40195c249ce4d8176"
+  },
+  {
+    "case": "06",
+    "id": "V04",
+    "file": "IMG_0034.MOV",
+    "bytes": 9304267,
+    "sha256": "e01a6cacc8d5e1099b273d2eeada974bc07488cdf2b689dcc57a9c8e5fa36b75"
+  },
+  {
+    "case": "07",
+    "id": "V05",
+    "file": "IMG_0029 2.MOV",
+    "bytes": 17735242,
+    "sha256": "d8fcdfca0a4a0ab5d11f87c45f77f8e17e9812c76954eb5803435f856ad87588"
+  },
+  {
+    "case": "08",
+    "id": "V06",
+    "file": "IMG_0001 2.MOV",
+    "bytes": 23518951,
+    "sha256": "37aa904ad0c3642d2f1b545769a436a705510b4c6bab0bf557ebdf3c37dcf39c"
+  },
+  {
+    "case": "09",
+    "id": "V07",
+    "file": "Grotto geyser 20190714 210951 VID.webm",
+    "bytes": 142105504,
+    "sha256": "cc68451038d2a0b419d657a505854d9c72ac3179818aceba39db5ff7a8f6a5ce"
+  },
+  {
+    "case": "10",
+    "id": "V08",
+    "file": "Castle geyser 20190714 072044 VID.webm",
+    "bytes": 232741365,
+    "sha256": "bd3114bad6af7f61e01b5f19abc93f39b9e51e535efa2f35f2e18f5553260264"
+  }
+]
